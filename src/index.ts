@@ -13,6 +13,9 @@ import tracesRouter from "./routes/traces.js";
 
 const app = express();
 
+// Trust proxy for Vercel (required for rate limiting to work correctly)
+app.set("trust proxy", true);
+
 // SOTA Security Middleware
 // Security headers
 app.use(
