@@ -47,7 +47,16 @@ try {
     console.error(
       "\n💡 Please check your .env file and ensure all required variables are set."
     );
-    process.exit(1);
+    // Don't exit in serverless environments (Vercel)
+    if (process.env.VERCEL !== "1" && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
+      process.exit(1);
+    }
+    // In serverless, throw the error so it can be caught
+    throw new Error(
+      `Environment validation failed: ${error.issues
+        .map((i) => `${i.path.join(".")}: ${i.message}`)
+        .join(", ")}`
+    );
   }
   throw error;
 }
