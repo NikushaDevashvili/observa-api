@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import { OnboardingService } from "../services/onboardingService.js";
+import { signupSchema } from "../validation/schemas.js";
 
 const router = Router();
 
@@ -23,14 +24,16 @@ const router = Router();
  */
 router.post("/signup", async (req: Request, res: Response) => {
   try {
-    const { email, companyName, plan } = req.body;
-
-    // Validate required fields
-    if (!email || !companyName) {
+    // Validate request body with Zod
+    const validationResult = signupSchema.safeParse(req.body);
+    if (!validationResult.success) {
       return res.status(400).json({
-        error: "Missing required fields: email, companyName",
+        error: "Invalid request data",
+        details: validationResult.error.issues,
       });
     }
+
+    const { email, companyName, plan } = validationResult.data;
 
     // Call onboarding service
     const result = await OnboardingService.signup({

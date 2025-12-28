@@ -30,24 +30,36 @@ export class OnboardingService {
       throw new Error("Invalid email format");
     }
 
-    // 2. Generate slug from company name
+    // 2. Validate company name
+    if (!data.companyName || !data.companyName.trim()) {
+      throw new Error("Company name cannot be empty");
+    }
+
+    // 3. Generate slug from company name
     const slug = this.generateSlug(data.companyName);
 
-    // 3. Create tenant
+    // Validate slug is not empty
+    if (!slug) {
+      throw new Error(
+        "Company name must contain at least one alphanumeric character"
+      );
+    }
+
+    // 4. Create tenant
     const tenant = await TenantService.createTenant({
       name: data.companyName,
       slug,
       plan: data.plan ?? "free",
     });
 
-    // 4. Create default project
+    // 5. Create default project
     const project = await TenantService.createProject({
       tenantId: tenant.id,
       name: "Production",
       environment: "prod",
     });
 
-    // 5. Automatically provision tokens
+    // 6. Automatically provision tokens
     // This will automatically create Tinybird token via TinybirdTokenService
     const { apiKey } = await TenantService.provisionTokens({
       tenantId: tenant.id,
@@ -85,4 +97,3 @@ export class OnboardingService {
       .replace(/^-+|-+$/g, ""); // Remove leading/trailing hyphens
   }
 }
-

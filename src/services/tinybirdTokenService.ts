@@ -1,7 +1,4 @@
-const TINYBIRD_HOST = process.env.TINYBIRD_HOST || "https://api.europe-west2.gcp.tinybird.co";
-const TINYBIRD_ADMIN_TOKEN = process.env.TINYBIRD_ADMIN_TOKEN;
-const TINYBIRD_DATASOURCE_NAME =
-  process.env.TINYBIRD_DATASOURCE_NAME || "traces";
+import { env } from "../config/env.js";
 
 /**
  * Response from Tinybird API when creating a token
@@ -28,27 +25,24 @@ export class TinybirdTokenService {
   static async createTokenForTenant(
     tenantId: string
   ): Promise<{ token: string; tokenId: string }> {
-    if (!TINYBIRD_ADMIN_TOKEN) {
-      throw new Error(
-        "TINYBIRD_ADMIN_TOKEN is not configured. Please set it in your environment variables."
-      );
-    }
-
     const tokenName = `tenant-${tenantId}`;
-    const url = `${TINYBIRD_HOST}/v0/tokens`;
+    // Tinybird scope format: DATASOURCES:APPEND:datasource_name
+    const scope = `DATASOURCES:APPEND:${env.TINYBIRD_DATASOURCE_NAME}`;
+    const url = `${env.TINYBIRD_HOST}/v0/tokens`;
 
     try {
+      // Tinybird API expects form data, not JSON
+      const formData = new URLSearchParams();
+      formData.append("name", tokenName);
+      formData.append("scope", scope);
+
       const response = await fetch(url, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${TINYBIRD_ADMIN_TOKEN}`,
-          "Content-Type": "application/json",
+          Authorization: `Bearer ${env.TINYBIRD_ADMIN_TOKEN}`,
+          "Content-Type": "application/x-www-form-urlencoded",
         },
-        body: JSON.stringify({
-          name: tokenName,
-          permissions: ["append"],
-          datasources: [TINYBIRD_DATASOURCE_NAME],
-        }),
+        body: formData.toString(),
       });
 
       if (!response.ok) {
@@ -78,19 +72,13 @@ export class TinybirdTokenService {
    * @throws Error if TINYBIRD_ADMIN_TOKEN is not configured or API call fails
    */
   static async revokeTokenForTenant(tokenId: string): Promise<void> {
-    if (!TINYBIRD_ADMIN_TOKEN) {
-      throw new Error(
-        "TINYBIRD_ADMIN_TOKEN is not configured. Please set it in your environment variables."
-      );
-    }
-
-    const url = `${TINYBIRD_HOST}/v0/tokens/${encodeURIComponent(tokenId)}`;
+    const url = `${env.TINYBIRD_HOST}/v0/tokens/${encodeURIComponent(tokenId)}`;
 
     try {
       const response = await fetch(url, {
         method: "DELETE",
         headers: {
-          Authorization: `Bearer ${TINYBIRD_ADMIN_TOKEN}`,
+          Authorization: `Bearer ${env.TINYBIRD_ADMIN_TOKEN}`,
         },
       });
 
@@ -112,4 +100,3 @@ export class TinybirdTokenService {
     }
   }
 }
-

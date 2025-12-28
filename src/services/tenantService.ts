@@ -1,4 +1,5 @@
 import { Tenant, Project, TenantToken } from "../types.js";
+import { env } from "../config/env.js";
 import { TokenService } from "./tokenService.js";
 import { TinybirdTokenService } from "./tinybirdTokenService.js";
 
@@ -113,7 +114,7 @@ export class TenantService {
     // Store Tinybird token mapping
     const tenantToken: TenantToken = {
       tenantId: data.tenantId,
-      jwtSecret: process.env.JWT_SECRET || "change-me", // In production, use per-tenant secrets
+      jwtSecret: env.JWT_SECRET, // In production, use per-tenant secrets
       tinybirdToken,
       tinybirdTokenId,
       createdAt: new Date(),
@@ -174,4 +175,3 @@ export class TenantService {
     tenantTokens.delete(tenantId);
   }
 }
-

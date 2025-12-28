@@ -1,8 +1,6 @@
 import jwt, { SignOptions } from "jsonwebtoken";
 import { JWTPayload } from "../types.js";
-
-const JWT_SECRET = process.env.JWT_SECRET || "change-me-in-production";
-const JWT_EXPIRES_IN: string | number = process.env.JWT_EXPIRES_IN || "90d";
+import { env } from "../config/env.js";
 
 /**
  * Token Service
@@ -23,8 +21,8 @@ export class TokenService {
       environment: payload.environment ?? "dev",
     };
 
-    return jwt.sign(jwtPayload, JWT_SECRET, {
-      expiresIn: JWT_EXPIRES_IN,
+    return jwt.sign(jwtPayload, env.JWT_SECRET, {
+      expiresIn: env.JWT_EXPIRES_IN,
     } as SignOptions);
   }
 
@@ -33,7 +31,7 @@ export class TokenService {
    */
   static validateToken(token: string): JWTPayload | null {
     try {
-      const decoded = jwt.verify(token, JWT_SECRET) as JWTPayload;
+      const decoded = jwt.verify(token, env.JWT_SECRET) as JWTPayload;
       return decoded;
     } catch (error) {
       // Token invalid, expired, or malformed
@@ -54,4 +52,3 @@ export class TokenService {
     }
   }
 }
-

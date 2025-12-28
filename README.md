@@ -68,6 +68,33 @@ Customer signup endpoint that automatically:
 }
 ```
 
+### DELETE /api/v1/tenants/:tenantId/tokens
+
+Revoke all tokens for a tenant (both JWT and Tinybird token). This is useful for:
+- Security incidents
+- Tenant deletion
+- Token rotation
+
+**Request:**
+```
+DELETE /api/v1/tenants/{tenantId}/tokens
+```
+
+**Response (200):**
+```json
+{
+  "message": "Tokens revoked successfully for tenant {tenantId}",
+  "tenantId": "abc-123-..."
+}
+```
+
+**Response (404):**
+```json
+{
+  "error": "No tokens found for tenant {tenantId}"
+}
+```
+
 ## Architecture
 
 This is part of a multi-repo architecture:
