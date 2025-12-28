@@ -59,6 +59,22 @@ app.use(
   })
 );
 
+// Root route - API information
+app.get("/", (req, res) => {
+  res.json({
+    name: "Observa API",
+    version: "0.0.1",
+    status: "ok",
+    endpoints: {
+      health: "/health",
+      onboarding: "/api/v1/onboarding",
+      tenants: "/api/v1/tenants",
+      traces: "/api/v1/traces",
+    },
+    documentation: "https://github.com/your-repo/observa-api",
+  });
+});
+
 // Health check
 app.get("/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
