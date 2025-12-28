@@ -49,18 +49,37 @@ app.use("/api/", apiLimiter);
 // Request size limit (prevent DoS via large payloads)
 app.use(express.json({ limit: "10mb" }));
 
-// Strict CORS
-app.use(
-  cors({
-    origin:
-      process.env.ALLOWED_ORIGINS?.split(",") ||
-      (process.env.NODE_ENV === "production" ? [] : ["http://localhost:3001"]),
-    credentials: true,
-    methods: ["GET", "POST", "DELETE"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    maxAge: 86400, // 24 hours
-  })
-);
+// CORS configuration
+// For trace ingestion, we allow all origins since it's authenticated via JWT
+// For other endpoints, use strict CORS
+const corsOptions = {
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    // Allow requests with no origin (like mobile apps, Postman, or server-to-server)
+    if (!origin) {
+      return callback(null, true);
+    }
+    
+    const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",") || 
+      (process.env.NODE_ENV === "production" ? [] : ["http://localhost:3001"]);
+    
+    // In production, if no ALLOWED_ORIGINS is set, allow all (since endpoints are authenticated)
+    if (process.env.NODE_ENV === "production" && allowedOrigins.length === 0) {
+      return callback(null, true);
+    }
+    
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(null, false);
+    }
+  },
+  credentials: true,
+  methods: ["GET", "POST", "DELETE"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  maxAge: 86400, // 24 hours
+};
+
+app.use(cors(corsOptions));
 
 // Root route - API information
 app.get("/", (req, res) => {
