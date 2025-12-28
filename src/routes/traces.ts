@@ -20,10 +20,12 @@ const router = Router();
  * Response: 200 OK on success
  */
 router.post("/ingest", async (req: Request, res: Response) => {
+  console.log(`[Observa API] Received trace ingestion request`);
   try {
     // Extract JWT token from Authorization header
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      console.error(`[Observa API] Missing or invalid Authorization header`);
       return res.status(401).json({
         error: "Missing or invalid Authorization header. Expected: Bearer <token>",
       });
@@ -34,6 +36,7 @@ router.post("/ingest", async (req: Request, res: Response) => {
     // Validate JWT token
     const payload = TokenService.validateToken(token);
     if (!payload) {
+      console.error(`[Observa API] Invalid or expired JWT token`);
       return res.status(401).json({
         error: "Invalid or expired JWT token",
       });
@@ -71,7 +74,9 @@ router.post("/ingest", async (req: Request, res: Response) => {
     };
 
     // Forward to Tinybird
+    console.log(`[Observa API] Forwarding trace to Tinybird - TraceID: ${trace.traceId}, Tenant: ${tenantId}, Project: ${projectId}`);
     await TraceService.forwardToTinybird(trace);
+    console.log(`[Observa API] Successfully forwarded trace to Tinybird - TraceID: ${trace.traceId}`);
 
     // Log success (in dev mode)
     if (process.env.NODE_ENV !== "production") {
