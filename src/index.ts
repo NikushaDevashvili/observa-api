@@ -71,7 +71,7 @@ app.get("/", (req, res) => {
       tenants: "/api/v1/tenants",
       traces: "/api/v1/traces",
     },
-    documentation: "https://github.com/your-repo/observa-api",
+    documentation: "https://github.com/NikushaDevashvili/observa-api",
   });
 });
 
