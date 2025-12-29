@@ -56,19 +56,29 @@ vercel --prod
 
 ## Step 4: Configure Environment Variables
 
+**📖 For detailed instructions on where to get each variable, see [ENV_SETUP_GUIDE.md](./ENV_SETUP_GUIDE.md)**
+
 In Vercel Dashboard → Project Settings → Environment Variables, add:
 
-- `TINYBIRD_ADMIN_TOKEN` - Your Tinybird admin token
+### Required Variables:
+- `DATABASE_URL` - PostgreSQL connection string (get from Vercel Postgres, Supabase, or Neon)
+- `TINYBIRD_ADMIN_TOKEN` - Your Tinybird admin token (from Tinybird dashboard)
 - `JWT_SECRET` - A secure random string (min 32 characters)
 - `TINYBIRD_HOST` - Your Tinybird API host (default: https://api.europe-west2.gcp.tinybird.co)
 - `TINYBIRD_DATASOURCE_NAME` - Name of your traces datasource (default: traces)
-- `ALLOWED_ORIGINS` - Comma-separated list of allowed CORS origins (optional)
+
+### Optional Variables:
+- `SENTRY_DSN` - Sentry error monitoring DSN (from Sentry.io)
+- `SENTRY_ENVIRONMENT` - Environment name (default: production)
+- `ANALYSIS_SERVICE_URL` - Python ML analysis service URL (after deployment)
 
 ### Generate JWT_SECRET
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
+
+**💡 Quick Reference:** See [ENV_QUICK_REFERENCE.md](./ENV_QUICK_REFERENCE.md) for a checklist.
 
 ## Step 5: Verify Deployment
 
