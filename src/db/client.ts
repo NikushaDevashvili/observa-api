@@ -12,12 +12,19 @@ let pool: Pool | null = null;
  */
 export function getPool(): Pool {
   if (!pool) {
+    // Detect if using Neon (has 'neon.tech' in URL) or pooler connection
+    const isNeon = env.DATABASE_URL.includes("neon.tech");
+    const isPooler = env.DATABASE_URL.includes("pooler");
+
     pool = new Pool({
       connectionString: env.DATABASE_URL,
       // Connection pool settings
       max: 20, // Maximum number of clients in the pool
       idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
-      connectionTimeoutMillis: 2000, // Return an error after 2 seconds if connection cannot be established
+      // Increase timeout for Neon databases (they can be slower on cold starts)
+      connectionTimeoutMillis: isNeon ? 10000 : 5000, // 10 seconds for Neon, 5 for others
+      // SSL configuration (required for Neon)
+      ssl: isNeon ? { rejectUnauthorized: false } : undefined,
     });
 
     // Handle pool errors
@@ -77,21 +84,36 @@ export async function testConnection(): Promise<boolean> {
     // Re-throw with more context
     const errorMessage = error?.message || "Unknown database error";
     const errorCode = error?.code || "UNKNOWN";
-    
+
     // Provide helpful error messages
     if (errorCode === "28P01") {
-      throw new Error(`Database authentication failed (${errorCode}): ${errorMessage}. Check DATABASE_URL credentials.`);
+      throw new Error(
+        `Database authentication failed (${errorCode}): ${errorMessage}. Check DATABASE_URL credentials.`
+      );
     } else if (errorCode === "ENOTFOUND" || errorCode === "ECONNREFUSED") {
-      throw new Error(`Cannot connect to database (${errorCode}): ${errorMessage}. Check DATABASE_URL host and port.`);
-    } else if (errorCode === "ETIMEDOUT") {
-      throw new Error(`Database connection timeout (${errorCode}): ${errorMessage}. Database may be unreachable.`);
+      throw new Error(
+        `Cannot connect to database (${errorCode}): ${errorMessage}. Check DATABASE_URL host and port.`
+      );
+    } else if (
+      errorCode === "ETIMEDOUT" ||
+      errorMessage?.includes("timeout") ||
+      errorMessage?.includes("Connection terminated")
+    ) {
+      throw new Error(
+        `Database connection timeout: ${errorMessage}. This can happen with Neon databases on cold starts. Try again in a moment.`
+      );
     } else if (error?.message?.includes("password")) {
-      throw new Error(`Database authentication failed: ${errorMessage}. Check DATABASE_URL password.`);
+      throw new Error(
+        `Database authentication failed: ${errorMessage}. Check DATABASE_URL password.`
+      );
     } else if (error?.message?.includes("does not exist")) {
-      throw new Error(`Database does not exist: ${errorMessage}. Check DATABASE_URL database name.`);
+      throw new Error(
+        `Database does not exist: ${errorMessage}. Check DATABASE_URL database name.`
+      );
     } else {
-      throw new Error(`Database connection failed (${errorCode}): ${errorMessage}`);
+      throw new Error(
+        `Database connection failed (${errorCode}): ${errorMessage}`
+      );
     }
   }
 }
-
