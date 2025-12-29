@@ -107,7 +107,20 @@ export async function initializeSchema(): Promise<void> {
       -- Metadata
       analysis_model VARCHAR(255),
       analysis_version VARCHAR(50),
-      processing_time_ms INTEGER
+      processing_time_ms INTEGER,
+      
+      -- Original trace data (for display)
+      query TEXT,
+      context TEXT,
+      response TEXT,
+      model VARCHAR(255),
+      tokens_prompt INTEGER,
+      tokens_completion INTEGER,
+      tokens_total INTEGER,
+      latency_ms INTEGER,
+      response_length INTEGER,
+      timestamp TIMESTAMP,
+      environment VARCHAR(10)
     );
   `);
 

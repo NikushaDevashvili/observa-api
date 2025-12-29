@@ -91,7 +91,9 @@ export class AnalysisService {
         has_latency_anomaly, has_quality_degradation,
         context_relevance_score, answer_faithfulness_score,
         drift_score, anomaly_score,
-        analysis_model, analysis_version, processing_time_ms
+        analysis_model, analysis_version, processing_time_ms,
+        query, context, response, model, tokens_prompt, tokens_completion,
+        tokens_total, latency_ms, response_length, timestamp, environment
       ) VALUES (
         $1, $2, $3, NOW(),
         $4, $5, $6,
@@ -101,7 +103,9 @@ export class AnalysisService {
         $17, $18,
         $19, $20,
         $21, $22,
-        $23, $24, $25
+        $23, $24, $25,
+        $26, $27, $28, $29, $30, $31,
+        $32, $33, $34, $35, $36
       )
       ON CONFLICT (trace_id) DO UPDATE SET
         analyzed_at = NOW(),
@@ -126,7 +130,18 @@ export class AnalysisService {
         anomaly_score = EXCLUDED.anomaly_score,
         analysis_model = EXCLUDED.analysis_model,
         analysis_version = EXCLUDED.analysis_version,
-        processing_time_ms = EXCLUDED.processing_time_ms`,
+        processing_time_ms = EXCLUDED.processing_time_ms,
+        query = EXCLUDED.query,
+        context = EXCLUDED.context,
+        response = EXCLUDED.response,
+        model = EXCLUDED.model,
+        tokens_prompt = EXCLUDED.tokens_prompt,
+        tokens_completion = EXCLUDED.tokens_completion,
+        tokens_total = EXCLUDED.tokens_total,
+        latency_ms = EXCLUDED.latency_ms,
+        response_length = EXCLUDED.response_length,
+        timestamp = EXCLUDED.timestamp,
+        environment = EXCLUDED.environment`,
       [
         trace.traceId,
         trace.tenantId,
@@ -153,6 +168,17 @@ export class AnalysisService {
         analysisResult.analysis_model || null,
         analysisResult.analysis_version || "0.1.0",
         analysisResult.processing_time_ms || null,
+        trace.query || null,
+        trace.context || null,
+        trace.response || null,
+        trace.model || null,
+        trace.tokensPrompt || null,
+        trace.tokensCompletion || null,
+        trace.tokensTotal || null,
+        trace.latencyMs || null,
+        trace.responseLength || null,
+        trace.timestamp ? new Date(trace.timestamp) : null,
+        trace.environment || null,
       ]
     );
   }

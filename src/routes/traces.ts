@@ -280,6 +280,19 @@ router.get("/:traceId", async (req: Request, res: Response) => {
         tenantId: analysisResult.tenant_id,
         projectId: analysisResult.project_id,
         analyzedAt: analysisResult.analyzed_at,
+        // Original trace data
+        query: analysisResult.query,
+        context: analysisResult.context,
+        response: analysisResult.response,
+        model: analysisResult.model,
+        tokensPrompt: analysisResult.tokens_prompt,
+        tokensCompletion: analysisResult.tokens_completion,
+        tokensTotal: analysisResult.tokens_total,
+        latencyMs: analysisResult.latency_ms,
+        responseLength: analysisResult.response_length,
+        timestamp: analysisResult.timestamp,
+        environment: analysisResult.environment,
+        // Analysis results
         analysis: {
           isHallucination: analysisResult.is_hallucination,
           hallucinationConfidence: analysisResult.hallucination_confidence,
