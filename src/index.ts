@@ -47,13 +47,13 @@ let schemaInitializationPromise: Promise<void> | null = null;
 
 async function ensureSchemaInitialized(): Promise<void> {
   if (schemaInitialized) return;
-  
+
   // If initialization is already in progress, wait for it
   if (schemaInitializationPromise) {
     await schemaInitializationPromise;
     return;
   }
-  
+
   // Start initialization
   schemaInitializationPromise = (async () => {
     try {
@@ -68,7 +68,10 @@ async function ensureSchemaInitialized(): Promise<void> {
         throw new Error("Database connection failed");
       }
     } catch (error: any) {
-      console.error("❌ Database initialization error:", error?.message || error);
+      console.error(
+        "❌ Database initialization error:",
+        error?.message || error
+      );
       if (error?.code === "ENOTFOUND" || error?.code === "ECONNREFUSED") {
         console.error("💡 Check your DATABASE_URL - connection refused");
       } else if (error?.code === "28P01") {
@@ -77,7 +80,7 @@ async function ensureSchemaInitialized(): Promise<void> {
       throw error;
     }
   })();
-  
+
   await schemaInitializationPromise;
 }
 
@@ -195,18 +198,43 @@ app.get("/health", (req, res) => {
 // Schema initialization endpoint (for manual trigger)
 app.get("/api/v1/admin/init-schema", async (req, res) => {
   try {
+    // Reset initialization state to force re-initialization
+    schemaInitialized = false;
+    schemaInitializationPromise = null;
+    
+    console.log("Manual schema initialization requested...");
     await ensureSchemaInitialized();
-    res.json({ 
-      success: true, 
+    
+    res.json({
+      success: true,
       message: "Database schema initialized successfully",
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   } catch (error: any) {
     console.error("Schema initialization error:", error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message,
-      details: "Check DATABASE_URL and database connectivity"
+    const errorMessage = error?.message || "Unknown error";
+    const errorCode = error?.code || "UNKNOWN";
+    
+    res.status(500).json({
+      success: false,
+      error: errorMessage,
+      code: errorCode,
+      details: {
+        message: "Schema initialization failed",
+        hint: errorCode === "42P01" 
+          ? "Table does not exist - this should be created by schema initialization"
+          : errorCode === "28P01"
+          ? "Database authentication failed - verify DATABASE_URL credentials"
+          : errorCode === "ENOTFOUND" || errorCode === "ECONNREFUSED"
+          ? "Cannot connect to database - verify DATABASE_URL is correct and database is accessible"
+          : "Check Vercel logs for full error details",
+        troubleshooting: [
+          "1. Verify DATABASE_URL is set correctly in Vercel environment variables",
+          "2. Check that the database is accessible from Vercel",
+          "3. Verify database credentials are correct",
+          "4. Check Vercel function logs for detailed error messages"
+        ]
+      }
     });
   }
 });
@@ -244,16 +272,31 @@ app.use(async (req, res, next) => {
   ) {
     return next();
   }
-  
+
   // For all other endpoints, ensure schema is initialized
   try {
     await ensureSchemaInitialized();
     next();
   } catch (error: any) {
     console.error("Schema not initialized, returning 503:", error);
-    res.status(503).json({ 
+    const errorMessage = error?.message || "Unknown error";
+    const errorCode = error?.code || "UNKNOWN";
+    
+    res.status(503).json({
       error: "Database not ready. Please try again in a moment.",
-      message: "If this persists, call /api/v1/admin/init-schema to initialize the database schema."
+      message:
+        "If this persists, call /api/v1/admin/init-schema to initialize the database schema.",
+      details: {
+        error: errorMessage,
+        code: errorCode,
+        hint: errorCode === "42P01" 
+          ? "Table does not exist - schema needs initialization"
+          : errorCode === "28P01"
+          ? "Database authentication failed - check DATABASE_URL"
+          : errorCode === "ENOTFOUND" || errorCode === "ECONNREFUSED"
+          ? "Cannot connect to database - check DATABASE_URL"
+          : "Check Vercel logs for more details"
+      }
     });
   }
 });
