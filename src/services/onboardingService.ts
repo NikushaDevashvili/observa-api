@@ -36,7 +36,7 @@ export class OnboardingService {
     }
 
     // 3. Generate slug from company name
-    const slug = this.generateSlug(data.companyName);
+    let slug = this.generateSlug(data.companyName);
 
     // Validate slug is not empty
     if (!slug) {
@@ -45,7 +45,10 @@ export class OnboardingService {
       );
     }
 
-    // 4. Create tenant
+    // 4. Handle duplicate slugs by appending a number
+    slug = await this.ensureUniqueSlug(slug);
+
+    // 5. Create tenant
     const tenant = await TenantService.createTenant({
       name: data.companyName,
       slug,
@@ -53,14 +56,14 @@ export class OnboardingService {
       email: data.email,
     });
 
-    // 5. Create default project
+    // 6. Create default project
     const project = await TenantService.createProject({
       tenantId: tenant.id,
       name: "Production",
       environment: "prod",
     });
 
-    // 6. Automatically provision tokens
+    // 7. Automatically provision tokens
     // This will automatically create Tinybird token via TinybirdTokenService
     const { apiKey } = await TenantService.provisionTokens({
       tenantId: tenant.id,
@@ -96,5 +99,42 @@ export class OnboardingService {
       .replace(/\s+/g, "-") // Replace spaces with hyphens
       .replace(/-+/g, "-") // Replace multiple hyphens with single hyphen
       .replace(/^-+|-+$/g, ""); // Remove leading/trailing hyphens
+  }
+
+  /**
+   * Ensure slug is unique by appending a number if needed
+   */
+  private static async ensureUniqueSlug(baseSlug: string): Promise<string> {
+    const { query } = await import("../db/client.js");
+    
+    let slug = baseSlug;
+    let counter = 1;
+    
+    // Check if slug exists
+    while (true) {
+      const existing = await query(
+        `SELECT id FROM tenants WHERE slug = $1`,
+        [slug]
+      );
+      
+      if (existing.length === 0) {
+        // Slug is available
+        return slug;
+      }
+      
+      // Slug exists, try with number suffix
+      slug = `${baseSlug}-${counter}`;
+      counter++;
+      
+      // Safety limit to prevent infinite loop
+      if (counter > 1000) {
+        // Fallback to UUID-based slug
+        const uuid = crypto.randomUUID().substring(0, 8);
+        slug = `${baseSlug}-${uuid}`;
+        break;
+      }
+    }
+    
+    return slug;
   }
 }
