@@ -59,11 +59,14 @@ async function ensureSchemaInitialized(): Promise<void> {
     try {
       console.log("🔌 Attempting database connection...");
       console.log("💡 DATABASE_URL is set:", !!process.env.DATABASE_URL);
-      console.log("💡 DATABASE_URL length:", process.env.DATABASE_URL?.length || 0);
-      
+      console.log(
+        "💡 DATABASE_URL length:",
+        process.env.DATABASE_URL?.length || 0
+      );
+
       // Test connection (will throw with detailed error if it fails)
       await testConnection();
-      
+
       // If we get here, connection succeeded
       console.log("✅ Database connection successful, initializing schema...");
       await initializeSchema();

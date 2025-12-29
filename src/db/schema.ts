@@ -109,7 +109,9 @@ export async function initializeSchema(): Promise<void> {
       analysis_version VARCHAR(50),
       processing_time_ms INTEGER,
       
-      -- Original trace data (for display)
+      -- Original trace data (for display) - ALL fields from TraceEvent
+      span_id VARCHAR(255),
+      parent_span_id VARCHAR(255),
       query TEXT,
       context TEXT,
       response TEXT,
@@ -118,7 +120,16 @@ export async function initializeSchema(): Promise<void> {
       tokens_completion INTEGER,
       tokens_total INTEGER,
       latency_ms INTEGER,
+      time_to_first_token_ms INTEGER,
+      streaming_duration_ms INTEGER,
       response_length INTEGER,
+      status INTEGER,
+      status_text VARCHAR(255),
+      finish_reason VARCHAR(255),
+      response_id VARCHAR(255),
+      system_fingerprint VARCHAR(255),
+      metadata_json TEXT,
+      headers_json TEXT,
       timestamp TIMESTAMP,
       environment VARCHAR(10)
     );
@@ -171,7 +182,7 @@ export async function initializeSchema(): Promise<void> {
   `);
 
   console.log("Database schema initialized successfully");
-  
+
   // Run migration to add new columns if needed
   try {
     const { migrateAnalysisResultsTable } = await import("./migrate.js");
@@ -181,4 +192,3 @@ export async function initializeSchema(): Promise<void> {
     console.log("Migration check completed (some columns may already exist)");
   }
 }
-

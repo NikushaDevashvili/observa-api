@@ -88,5 +88,83 @@ export class TraceService {
       throw new Error(`Failed to forward trace to Tinybird: ${errorMessage}`);
     }
   }
-}
 
+  /**
+   * Store trace data immediately in PostgreSQL (SOTA: HTAP pattern)
+   * This ensures trace data is available for operational queries
+   * while Tinybird handles analytical workloads
+   */
+  static async storeTraceData(trace: TraceEvent): Promise<void> {
+    const { query } = await import("../db/client.js");
+
+    await query(
+      `INSERT INTO analysis_results (
+        trace_id, tenant_id, project_id, analyzed_at,
+        span_id, parent_span_id, query, context, response, model,
+        tokens_prompt, tokens_completion, tokens_total,
+        latency_ms, time_to_first_token_ms, streaming_duration_ms,
+        response_length, status, status_text, finish_reason,
+        response_id, system_fingerprint, metadata_json, headers_json,
+        timestamp, environment
+      ) VALUES (
+        $1, $2, $3, NOW(),
+        $4, $5, $6, $7, $8, $9,
+        $10, $11, $12,
+        $13, $14, $15,
+        $16, $17, $18, $19,
+        $20, $21, $22, $23,
+        $24, $25
+      )
+      ON CONFLICT (trace_id) DO UPDATE SET
+        span_id = EXCLUDED.span_id,
+        parent_span_id = EXCLUDED.parent_span_id,
+        query = EXCLUDED.query,
+        context = EXCLUDED.context,
+        response = EXCLUDED.response,
+        model = EXCLUDED.model,
+        tokens_prompt = EXCLUDED.tokens_prompt,
+        tokens_completion = EXCLUDED.tokens_completion,
+        tokens_total = EXCLUDED.tokens_total,
+        latency_ms = EXCLUDED.latency_ms,
+        time_to_first_token_ms = EXCLUDED.time_to_first_token_ms,
+        streaming_duration_ms = EXCLUDED.streaming_duration_ms,
+        response_length = EXCLUDED.response_length,
+        status = EXCLUDED.status,
+        status_text = EXCLUDED.status_text,
+        finish_reason = EXCLUDED.finish_reason,
+        response_id = EXCLUDED.response_id,
+        system_fingerprint = EXCLUDED.system_fingerprint,
+        metadata_json = EXCLUDED.metadata_json,
+        headers_json = EXCLUDED.headers_json,
+        timestamp = EXCLUDED.timestamp,
+        environment = EXCLUDED.environment`,
+      [
+        trace.traceId,
+        trace.tenantId,
+        trace.projectId,
+        trace.spanId || null,
+        trace.parentSpanId || null,
+        trace.query || null,
+        trace.context || null,
+        trace.response || null,
+        trace.model || null,
+        trace.tokensPrompt || null,
+        trace.tokensCompletion || null,
+        trace.tokensTotal || null,
+        trace.latencyMs || null,
+        trace.timeToFirstTokenMs || null,
+        trace.streamingDurationMs || null,
+        trace.responseLength || null,
+        trace.status || null,
+        trace.statusText || null,
+        trace.finishReason || null,
+        trace.responseId || null,
+        trace.systemFingerprint || null,
+        trace.metadata ? JSON.stringify(trace.metadata) : null,
+        trace.headers ? JSON.stringify(trace.headers) : null,
+        trace.timestamp ? new Date(trace.timestamp) : null,
+        trace.environment || null,
+      ]
+    );
+  }
+}

@@ -77,14 +77,27 @@ router.post("/ingest", async (req: Request, res: Response) => {
       headers: validatedData.headers as Record<string, string> | undefined,
     };
 
-    // Forward to Tinybird
+    // SOTA Architecture: Store trace data immediately in PostgreSQL (HTAP pattern)
+    // This ensures data is available for operational queries while Tinybird handles analytics
+    console.log(
+      `[Observa API] Storing trace data in PostgreSQL - TraceID: ${trace.traceId}`
+    );
+    await TraceService.storeTraceData(trace);
+    console.log(
+      `[Observa API] Successfully stored trace data in PostgreSQL - TraceID: ${trace.traceId}`
+    );
+
+    // Forward to Tinybird for analytical workloads (async, can retry if fails)
     console.log(
       `[Observa API] Forwarding trace to Tinybird - TraceID: ${trace.traceId}, Tenant: ${tenantId}, Project: ${projectId}`
     );
-    await TraceService.forwardToTinybird(trace);
-    console.log(
-      `[Observa API] Successfully forwarded trace to Tinybird - TraceID: ${trace.traceId}`
-    );
+    TraceService.forwardToTinybird(trace).catch((error) => {
+      console.error(
+        `[Observa API] Failed to forward trace to Tinybird (non-fatal):`,
+        error
+      );
+      // Don't throw - Tinybird failure shouldn't break trace ingestion
+    });
 
     // Trigger ML analysis asynchronously (don't block response)
     AnalysisService.analyzeTrace(trace).catch((error) => {
@@ -280,7 +293,9 @@ router.get("/:traceId", async (req: Request, res: Response) => {
         tenantId: analysisResult.tenant_id,
         projectId: analysisResult.project_id,
         analyzedAt: analysisResult.analyzed_at,
-        // Original trace data
+        // ALL original trace data - every field
+        spanId: analysisResult.span_id,
+        parentSpanId: analysisResult.parent_span_id,
         query: analysisResult.query,
         context: analysisResult.context,
         response: analysisResult.response,
@@ -289,7 +304,20 @@ router.get("/:traceId", async (req: Request, res: Response) => {
         tokensCompletion: analysisResult.tokens_completion,
         tokensTotal: analysisResult.tokens_total,
         latencyMs: analysisResult.latency_ms,
+        timeToFirstTokenMs: analysisResult.time_to_first_token_ms,
+        streamingDurationMs: analysisResult.streaming_duration_ms,
         responseLength: analysisResult.response_length,
+        status: analysisResult.status,
+        statusText: analysisResult.status_text,
+        finishReason: analysisResult.finish_reason,
+        responseId: analysisResult.response_id,
+        systemFingerprint: analysisResult.system_fingerprint,
+        metadata: analysisResult.metadata_json
+          ? JSON.parse(analysisResult.metadata_json)
+          : null,
+        headers: analysisResult.headers_json
+          ? JSON.parse(analysisResult.headers_json)
+          : null,
         timestamp: analysisResult.timestamp,
         environment: analysisResult.environment,
         // Analysis results

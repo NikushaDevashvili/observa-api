@@ -26,10 +26,12 @@ export function getPool(): Pool {
       // SSL configuration (required for Neon)
       ssl: isNeon ? { rejectUnauthorized: false } : undefined,
       // Additional settings for Neon pooler connections
-      ...(isPooler ? {
-        // For pooler connections, use connection string as-is
-        // Neon pooler handles connection management
-      } : {}),
+      ...(isPooler
+        ? {
+            // For pooler connections, use connection string as-is
+            // Neon pooler handles connection management
+          }
+        : {}),
     });
 
     // Handle pool errors
@@ -87,13 +89,13 @@ export async function testConnection(retries: number = 3): Promise<boolean> {
       throw new Error("Database query returned no results");
     } catch (error: any) {
       const isLastAttempt = attempt === retries;
-      
+
       // If it's a timeout and not the last attempt, retry
       if (
         !isLastAttempt &&
         (error?.message?.includes("timeout") ||
-         error?.message?.includes("Connection terminated") ||
-         error?.code === "ETIMEDOUT")
+          error?.message?.includes("Connection terminated") ||
+          error?.code === "ETIMEDOUT")
       ) {
         const waitTime = attempt * 2000; // Exponential backoff: 2s, 4s, 6s
         console.log(
@@ -102,9 +104,12 @@ export async function testConnection(retries: number = 3): Promise<boolean> {
         await new Promise((resolve) => setTimeout(resolve, waitTime));
         continue;
       }
-      
+
       // If last attempt or non-timeout error, throw with details
-      console.error(`❌ Database connection test failed (attempt ${attempt}/${retries}):`, error);
+      console.error(
+        `❌ Database connection test failed (attempt ${attempt}/${retries}):`,
+        error
+      );
       const errorMessage = error?.message || "Unknown database error";
       const errorCode = error?.code || "UNKNOWN";
 
@@ -144,7 +149,7 @@ export async function testConnection(retries: number = 3): Promise<boolean> {
       }
     }
   }
-  
+
   // Should never reach here, but TypeScript needs it
   throw new Error("Database connection failed after all retries");
 }

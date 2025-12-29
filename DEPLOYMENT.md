@@ -61,6 +61,7 @@ vercel --prod
 In Vercel Dashboard → Project Settings → Environment Variables, add:
 
 ### Required Variables:
+
 - `DATABASE_URL` - PostgreSQL connection string (get from Vercel Postgres, Supabase, or Neon)
 - `TINYBIRD_ADMIN_TOKEN` - Your Tinybird admin token (from Tinybird dashboard)
 - `JWT_SECRET` - A secure random string (min 32 characters)
@@ -68,6 +69,7 @@ In Vercel Dashboard → Project Settings → Environment Variables, add:
 - `TINYBIRD_DATASOURCE_NAME` - Name of your traces datasource (default: traces)
 
 ### Optional Variables:
+
 - `SENTRY_DSN` - Sentry error monitoring DSN (from Sentry.io)
 - `SENTRY_ENVIRONMENT` - Environment name (default: production)
 - `ANALYSIS_SERVICE_URL` - Python ML analysis service URL (after deployment)

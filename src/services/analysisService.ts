@@ -92,8 +92,12 @@ export class AnalysisService {
         context_relevance_score, answer_faithfulness_score,
         drift_score, anomaly_score,
         analysis_model, analysis_version, processing_time_ms,
-        query, context, response, model, tokens_prompt, tokens_completion,
-        tokens_total, latency_ms, response_length, timestamp, environment
+        span_id, parent_span_id, query, context, response, model,
+        tokens_prompt, tokens_completion, tokens_total,
+        latency_ms, time_to_first_token_ms, streaming_duration_ms,
+        response_length, status, status_text, finish_reason,
+        response_id, system_fingerprint, metadata_json, headers_json,
+        timestamp, environment
       ) VALUES (
         $1, $2, $3, NOW(),
         $4, $5, $6,
@@ -105,7 +109,11 @@ export class AnalysisService {
         $21, $22,
         $23, $24, $25,
         $26, $27, $28, $29, $30, $31,
-        $32, $33, $34, $35, $36
+        $32, $33, $34,
+        $35, $36, $37,
+        $38, $39, $40, $41,
+        $42, $43, $44, $45,
+        $46, $47
       )
       ON CONFLICT (trace_id) DO UPDATE SET
         analyzed_at = NOW(),
@@ -130,18 +138,7 @@ export class AnalysisService {
         anomaly_score = EXCLUDED.anomaly_score,
         analysis_model = EXCLUDED.analysis_model,
         analysis_version = EXCLUDED.analysis_version,
-        processing_time_ms = EXCLUDED.processing_time_ms,
-        query = EXCLUDED.query,
-        context = EXCLUDED.context,
-        response = EXCLUDED.response,
-        model = EXCLUDED.model,
-        tokens_prompt = EXCLUDED.tokens_prompt,
-        tokens_completion = EXCLUDED.tokens_completion,
-        tokens_total = EXCLUDED.tokens_total,
-        latency_ms = EXCLUDED.latency_ms,
-        response_length = EXCLUDED.response_length,
-        timestamp = EXCLUDED.timestamp,
-        environment = EXCLUDED.environment`,
+        processing_time_ms = EXCLUDED.processing_time_ms`,
       [
         trace.traceId,
         trace.tenantId,
@@ -168,6 +165,9 @@ export class AnalysisService {
         analysisResult.analysis_model || null,
         analysisResult.analysis_version || "0.1.0",
         analysisResult.processing_time_ms || null,
+        // Trace data (already stored, but update if needed)
+        trace.spanId || null,
+        trace.parentSpanId || null,
         trace.query || null,
         trace.context || null,
         trace.response || null,
@@ -176,7 +176,16 @@ export class AnalysisService {
         trace.tokensCompletion || null,
         trace.tokensTotal || null,
         trace.latencyMs || null,
+        trace.timeToFirstTokenMs || null,
+        trace.streamingDurationMs || null,
         trace.responseLength || null,
+        trace.status || null,
+        trace.statusText || null,
+        trace.finishReason || null,
+        trace.responseId || null,
+        trace.systemFingerprint || null,
+        trace.metadata ? JSON.stringify(trace.metadata) : null,
+        trace.headers ? JSON.stringify(trace.headers) : null,
         trace.timestamp ? new Date(trace.timestamp) : null,
         trace.environment || null,
       ]
@@ -223,4 +232,3 @@ export class AnalysisService {
     return results;
   }
 }
-
