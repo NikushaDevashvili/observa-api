@@ -40,22 +40,30 @@ const app = express();
 
 // Sentry will automatically capture errors via the error handler below
 
-// Initialize database schema on startup
+// Initialize database schema on startup (non-blocking)
+// This runs asynchronously so the server can start even if DB is slow to connect
 (async () => {
   try {
+    console.log("🔌 Attempting database connection...");
     const connected = await testConnection();
     if (connected) {
       await initializeSchema();
       console.log("✅ Database connected and schema initialized");
     } else {
-      console.error("❌ Database connection failed");
+      console.error("❌ Database connection failed - check DATABASE_URL");
+      console.error("💡 The API will still start but database operations will fail");
     }
-  } catch (error) {
-    console.error("❌ Database initialization error:", error);
-    // Don't exit in serverless environments
-    if (process.env.VERCEL !== "1" && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
-      process.exit(1);
+  } catch (error: any) {
+    console.error("❌ Database initialization error:", error?.message || error);
+    if (error?.code === "ENOTFOUND" || error?.code === "ECONNREFUSED") {
+      console.error("💡 Check your DATABASE_URL - connection refused");
+    } else if (error?.code === "28P01") {
+      console.error("💡 Check your DATABASE_URL - authentication failed");
+    } else {
+      console.error("💡 Error details:", error);
     }
+    console.error("⚠️  The API will continue but database features won't work");
+    // Don't exit - let the API start so we can see health endpoint
   }
 })();
 
@@ -153,6 +161,27 @@ app.get("/", (req, res) => {
 // Health check
 app.get("/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+// Startup diagnostics endpoint (for debugging)
+app.get("/diagnostics", (req, res) => {
+  const diagnostics = {
+    timestamp: new Date().toISOString(),
+    environment: {
+      nodeEnv: process.env.NODE_ENV,
+      vercel: process.env.VERCEL === "1",
+    },
+    environmentVariables: {
+      hasDatabaseUrl: !!process.env.DATABASE_URL,
+      hasTinybirdToken: !!process.env.TINYBIRD_ADMIN_TOKEN,
+      hasJwtSecret: !!process.env.JWT_SECRET,
+      hasSentryDsn: !!process.env.SENTRY_DSN,
+      databaseUrlLength: process.env.DATABASE_URL?.length || 0,
+      jwtSecretLength: process.env.JWT_SECRET?.length || 0,
+    },
+    status: "ok",
+  };
+  res.json(diagnostics);
 });
 
 // API Routes

@@ -49,22 +49,30 @@ try {
   env = envSchema.parse(process.env);
 } catch (error) {
   if (error instanceof z.ZodError) {
-    console.error("❌ Invalid environment variables:");
-    error.issues.forEach((issue) => {
+    const missingVars = error.issues.map((issue) => {
       const path = issue.path.join(".");
-      console.error(`  - ${path}: ${issue.message}`);
+      return `  - ${path}: ${issue.message}`;
     });
-    console.error(
-      "\n💡 Please check your .env file and ensure all required variables are set."
-    );
-    // Don't exit in serverless environments (Vercel)
-    if (process.env.VERCEL !== "1" && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
-      process.exit(1);
+    
+    const errorMessage = `❌ Missing or invalid environment variables:\n${missingVars.join("\n")}\n\n💡 Please add these in Vercel Dashboard → Settings → Environment Variables`;
+    
+    console.error(errorMessage);
+    
+    // In Vercel/serverless, we need to throw but make it clear
+    // The function will fail but at least we'll see the error in logs
+    if (process.env.VERCEL === "1" || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+      // Log to console for Vercel logs
+      console.error("\n🔧 To fix this:");
+      console.error("1. Go to Vercel Dashboard → Your Project → Settings → Environment Variables");
+      console.error("2. Add the missing variables listed above");
+      console.error("3. Redeploy the project");
     }
-    // In serverless, throw the error so it can be caught
+    
+    // Don't exit in serverless - let Vercel handle it
+    // But throw so the error is visible in logs
     throw new Error(
-      `Environment validation failed: ${error.issues
-        .map((i) => `${i.path.join(".")}: ${i.message}`)
+      `Environment validation failed. Missing: ${error.issues
+        .map((i) => i.path.join("."))
         .join(", ")}`
     );
   }
