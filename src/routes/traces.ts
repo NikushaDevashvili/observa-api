@@ -1,8 +1,11 @@
 import { Router, Request, Response } from "express";
 import { TokenService } from "../services/tokenService.js";
 import { TraceService } from "../services/traceService.js";
+import { AnalysisService } from "../services/analysisService.js";
+import { AuthService } from "../services/authService.js";
 import { TraceEvent } from "../types.js";
 import { traceEventSchema } from "../validation/schemas.js";
+import { query } from "../db/client.js";
 
 const router = Router();
 
@@ -27,7 +30,8 @@ router.post("/ingest", async (req: Request, res: Response) => {
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       console.error(`[Observa API] Missing or invalid Authorization header`);
       return res.status(401).json({
-        error: "Missing or invalid Authorization header. Expected: Bearer <token>",
+        error:
+          "Missing or invalid Authorization header. Expected: Bearer <token>",
       });
     }
 
@@ -74,9 +78,21 @@ router.post("/ingest", async (req: Request, res: Response) => {
     };
 
     // Forward to Tinybird
-    console.log(`[Observa API] Forwarding trace to Tinybird - TraceID: ${trace.traceId}, Tenant: ${tenantId}, Project: ${projectId}`);
+    console.log(
+      `[Observa API] Forwarding trace to Tinybird - TraceID: ${trace.traceId}, Tenant: ${tenantId}, Project: ${projectId}`
+    );
     await TraceService.forwardToTinybird(trace);
-    console.log(`[Observa API] Successfully forwarded trace to Tinybird - TraceID: ${trace.traceId}`);
+    console.log(
+      `[Observa API] Successfully forwarded trace to Tinybird - TraceID: ${trace.traceId}`
+    );
+
+    // Trigger ML analysis asynchronously (don't block response)
+    AnalysisService.analyzeTrace(trace).catch((error) => {
+      console.error(
+        `[Analysis] Failed to analyze trace ${trace.traceId}:`,
+        error
+      );
+    });
 
     // Log success (in dev mode)
     if (process.env.NODE_ENV !== "production") {
@@ -102,5 +118,200 @@ router.post("/ingest", async (req: Request, res: Response) => {
   }
 });
 
-export default router;
+/**
+ * GET /api/v1/traces
+ * Get traces for the authenticated user
+ * Includes analysis results if available
+ */
+router.get("/", async (req: Request, res: Response) => {
+  try {
+    // Get user from session
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({
+        error: "Missing or invalid Authorization header",
+      });
+    }
 
+    const sessionToken = authHeader.substring(7);
+    const user = await AuthService.validateSession(sessionToken);
+
+    if (!user) {
+      return res.status(401).json({
+        error: "Invalid or expired session",
+      });
+    }
+
+    // Get query parameters
+    const limit = parseInt(req.query.limit as string) || 50;
+    const offset = parseInt(req.query.offset as string) || 0;
+    const issueType = req.query.issueType as string | undefined;
+    const projectId = req.query.projectId as string | undefined;
+
+    // Build query
+    let whereClause = `WHERE ar.tenant_id = $1`;
+    const params: any[] = [user.tenantId];
+    let paramIndex = 2;
+
+    if (projectId) {
+      whereClause += ` AND ar.project_id = $${paramIndex}`;
+      params.push(projectId);
+      paramIndex++;
+    }
+
+    // Filter by issue type
+    if (issueType) {
+      switch (issueType) {
+        case "hallucination":
+          whereClause += ` AND ar.is_hallucination = true`;
+          break;
+        case "context_drop":
+          whereClause += ` AND ar.has_context_drop = true`;
+          break;
+        case "faithfulness":
+          whereClause += ` AND ar.has_faithfulness_issue = true`;
+          break;
+        case "drift":
+          whereClause += ` AND ar.has_model_drift = true`;
+          break;
+        case "cost_anomaly":
+          whereClause += ` AND ar.has_cost_anomaly = true`;
+          break;
+      }
+    }
+
+    // Get traces with analysis results from Tinybird (via analysis_results table)
+    // Note: In production, you'd join with actual traces from Tinybird
+    // For now, we'll return analysis results which reference trace_ids
+    const traces = await query(
+      `SELECT 
+        ar.trace_id,
+        ar.tenant_id,
+        ar.project_id,
+        ar.analyzed_at,
+        ar.is_hallucination,
+        ar.hallucination_confidence,
+        ar.quality_score,
+        ar.has_context_drop,
+        ar.has_model_drift,
+        ar.has_faithfulness_issue,
+        ar.has_cost_anomaly,
+        ar.context_relevance_score,
+        ar.answer_faithfulness_score,
+        ar.drift_score,
+        ar.anomaly_score
+       FROM analysis_results ar
+       ${whereClause}
+       ORDER BY ar.analyzed_at DESC
+       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+      [...params, limit, offset]
+    );
+
+    // Get total count
+    const countResult = await query<{ count: string }>(
+      `SELECT COUNT(*) as count FROM analysis_results ar ${whereClause}`,
+      params
+    );
+    const total = parseInt(countResult[0]?.count || "0", 10);
+
+    res.json({
+      success: true,
+      traces,
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore: offset + limit < total,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching traces:", error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Internal server error",
+    });
+  }
+});
+
+/**
+ * GET /api/v1/traces/:traceId
+ * Get a specific trace with full analysis results
+ */
+router.get("/:traceId", async (req: Request, res: Response) => {
+  try {
+    const { traceId } = req.params;
+
+    // Get user from session
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({
+        error: "Missing or invalid Authorization header",
+      });
+    }
+
+    const sessionToken = authHeader.substring(7);
+    const user = await AuthService.validateSession(sessionToken);
+
+    if (!user) {
+      return res.status(401).json({
+        error: "Invalid or expired session",
+      });
+    }
+
+    // Get analysis results
+    const analysisResult = await AnalysisService.getAnalysisResults(traceId);
+
+    if (!analysisResult) {
+      return res.status(404).json({
+        error: "Trace not found",
+      });
+    }
+
+    // Verify tenant ownership
+    if (analysisResult.tenant_id !== user.tenantId) {
+      return res.status(403).json({
+        error: "Access denied",
+      });
+    }
+
+    res.json({
+      success: true,
+      trace: {
+        traceId: analysisResult.trace_id,
+        tenantId: analysisResult.tenant_id,
+        projectId: analysisResult.project_id,
+        analyzedAt: analysisResult.analyzed_at,
+        analysis: {
+          isHallucination: analysisResult.is_hallucination,
+          hallucinationConfidence: analysisResult.hallucination_confidence,
+          hallucinationReasoning: analysisResult.hallucination_reasoning,
+          qualityScore: analysisResult.quality_score,
+          coherenceScore: analysisResult.coherence_score,
+          relevanceScore: analysisResult.relevance_score,
+          helpfulnessScore: analysisResult.helpfulness_score,
+          hasContextDrop: analysisResult.has_context_drop,
+          hasModelDrift: analysisResult.has_model_drift,
+          hasPromptInjection: analysisResult.has_prompt_injection,
+          hasContextOverflow: analysisResult.has_context_overflow,
+          hasFaithfulnessIssue: analysisResult.has_faithfulness_issue,
+          hasCostAnomaly: analysisResult.has_cost_anomaly,
+          hasLatencyAnomaly: analysisResult.has_latency_anomaly,
+          hasQualityDegradation: analysisResult.has_quality_degradation,
+          contextRelevanceScore: analysisResult.context_relevance_score,
+          answerFaithfulnessScore: analysisResult.answer_faithfulness_score,
+          driftScore: analysisResult.drift_score,
+          anomalyScore: analysisResult.anomaly_score,
+          analysisModel: analysisResult.analysis_model,
+          analysisVersion: analysisResult.analysis_version,
+          processingTimeMs: analysisResult.processing_time_ms,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching trace:", error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Internal server error",
+    });
+  }
+});
+
+export default router;

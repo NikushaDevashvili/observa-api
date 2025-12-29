@@ -29,6 +29,16 @@ const envSchema = z.object({
     message: "JWT_SECRET must be at least 32 characters for security",
   }),
   JWT_EXPIRES_IN: z.string().default("90d"),
+  DATABASE_URL: z.string().url({
+    message: "DATABASE_URL must be a valid PostgreSQL connection string",
+  }),
+  SENTRY_DSN: z
+    .string()
+    .url({
+      message: "SENTRY_DSN must be a valid Sentry DSN URL",
+    })
+    .optional(),
+  SENTRY_ENVIRONMENT: z.string().default("production"),
 });
 
 export type Env = z.infer<typeof envSchema>;

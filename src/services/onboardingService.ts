@@ -50,6 +50,7 @@ export class OnboardingService {
       name: data.companyName,
       slug,
       plan: data.plan ?? "free",
+      email: data.email,
     });
 
     // 5. Create default project

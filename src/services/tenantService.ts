@@ -2,17 +2,12 @@ import { Tenant, Project, TenantToken } from "../types.js";
 import { env } from "../config/env.js";
 import { TokenService } from "./tokenService.js";
 import { TinybirdTokenService } from "./tinybirdTokenService.js";
-
-// In-memory storage for MVP (replace with database in production)
-const tenants: Map<string, Tenant> = new Map();
-const projects: Map<string, Project> = new Map();
-const tenantTokens: Map<string, TenantToken> = new Map();
+import { query, getClient } from "../db/client.js";
 
 /**
  * Tenant Service
  * Manages tenants, projects, and token provisioning
- *
- * TODO: Replace in-memory storage with database (PostgreSQL)
+ * Uses PostgreSQL database for persistent storage
  */
 export class TenantService {
   /**
@@ -22,25 +17,58 @@ export class TenantService {
     name: string;
     slug: string;
     plan?: string;
+    email?: string;
   }): Promise<Tenant> {
-    const tenant: Tenant = {
-      id: crypto.randomUUID(),
+    const id = crypto.randomUUID();
+    const now = new Date();
+
+    await query(
+      `INSERT INTO tenants (id, name, slug, plan, email, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        id,
+        data.name,
+        data.slug,
+        data.plan ?? "free",
+        data.email ?? null,
+        now,
+        now,
+      ]
+    );
+
+    return {
+      id,
       name: data.name,
       slug: data.slug,
       plan: data.plan ?? "free",
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      createdAt: now,
+      updatedAt: now,
     };
-
-    tenants.set(tenant.id, tenant);
-    return tenant;
   }
 
   /**
    * Get tenant by ID
    */
   static async getTenant(tenantId: string): Promise<Tenant | null> {
-    return tenants.get(tenantId) ?? null;
+    const rows = await query<Tenant>(
+      `SELECT id, name, slug, plan, created_at as "createdAt", updated_at as "updatedAt"
+       FROM tenants WHERE id = $1`,
+      [tenantId]
+    );
+
+    if (rows.length === 0) {
+      return null;
+    }
+
+    const row = rows[0];
+    return {
+      id: row.id,
+      name: row.name,
+      slug: row.slug,
+      plan: row.plan,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
   }
 
   /**
@@ -57,23 +85,46 @@ export class TenantService {
       throw new Error(`Tenant ${data.tenantId} not found`);
     }
 
-    const project: Project = {
-      id: crypto.randomUUID(),
+    const id = crypto.randomUUID();
+    const now = new Date();
+
+    await query(
+      `INSERT INTO projects (id, tenant_id, name, environment, created_at)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [id, data.tenantId, data.name, data.environment, now]
+    );
+
+    return {
+      id,
       tenantId: data.tenantId,
       name: data.name,
       environment: data.environment,
-      createdAt: new Date(),
+      createdAt: now,
     };
-
-    projects.set(project.id, project);
-    return project;
   }
 
   /**
    * Get project by ID
    */
   static async getProject(projectId: string): Promise<Project | null> {
-    return projects.get(projectId) ?? null;
+    const rows = await query<Project>(
+      `SELECT id, tenant_id as "tenantId", name, environment, created_at as "createdAt"
+       FROM projects WHERE id = $1`,
+      [projectId]
+    );
+
+    if (rows.length === 0) {
+      return null;
+    }
+
+    const row = rows[0];
+    return {
+      id: row.id,
+      tenantId: row.tenantId,
+      name: row.name,
+      environment: row.environment as "dev" | "prod",
+      createdAt: row.createdAt,
+    };
   }
 
   /**
@@ -111,16 +162,23 @@ export class TenantService {
       environment: data.environment ?? project.environment,
     });
 
-    // Store Tinybird token mapping
-    const tenantToken: TenantToken = {
-      tenantId: data.tenantId,
-      jwtSecret: env.JWT_SECRET, // In production, use per-tenant secrets
-      tinybirdToken,
-      tinybirdTokenId,
-      createdAt: new Date(),
-    };
-
-    tenantTokens.set(data.tenantId, tenantToken);
+    // Store Tinybird token mapping in database
+    await query(
+      `INSERT INTO tenant_tokens (tenant_id, tinybird_token, tinybird_token_id, jwt_secret, created_at)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (tenant_id) 
+       DO UPDATE SET 
+         tinybird_token = EXCLUDED.tinybird_token,
+         tinybird_token_id = EXCLUDED.tinybird_token_id,
+         jwt_secret = EXCLUDED.jwt_secret`,
+      [
+        data.tenantId,
+        tinybirdToken,
+        tinybirdTokenId ?? null,
+        env.JWT_SECRET, // In production, use per-tenant secrets
+        new Date(),
+      ]
+    );
 
     return {
       apiKey,
@@ -133,15 +191,35 @@ export class TenantService {
    * Get Tinybird token for a tenant
    */
   static async getTinybirdToken(tenantId: string): Promise<string | null> {
-    const token = tenantTokens.get(tenantId);
-    return token?.tinybirdToken ?? null;
+    const rows = await query<{ tinybird_token: string }>(
+      `SELECT tinybird_token FROM tenant_tokens WHERE tenant_id = $1`,
+      [tenantId]
+    );
+
+    if (rows.length === 0) {
+      return null;
+    }
+
+    return rows[0].tinybird_token;
   }
 
   /**
    * Get all tenants (for admin/debugging)
    */
   static async listTenants(): Promise<Tenant[]> {
-    return Array.from(tenants.values());
+    const rows = await query<Tenant>(
+      `SELECT id, name, slug, plan, created_at as "createdAt", updated_at as "updatedAt"
+       FROM tenants ORDER BY created_at DESC`
+    );
+
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      slug: row.slug,
+      plan: row.plan,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    }));
   }
 
   /**
@@ -151,16 +229,23 @@ export class TenantService {
    * @param tenantId - The tenant ID
    */
   static async revokeTenantTokens(tenantId: string): Promise<void> {
-    const tenantToken = tenantTokens.get(tenantId);
-    if (!tenantToken) {
+    // Get tenant token from database
+    const rows = await query<{ tinybird_token_id: string | null }>(
+      `SELECT tinybird_token_id FROM tenant_tokens WHERE tenant_id = $1`,
+      [tenantId]
+    );
+
+    if (rows.length === 0) {
       throw new Error(`No tokens found for tenant ${tenantId}`);
     }
 
+    const tenantToken = rows[0];
+
     // Revoke Tinybird token if token ID is available
-    if (tenantToken.tinybirdTokenId) {
+    if (tenantToken.tinybird_token_id) {
       try {
         await TinybirdTokenService.revokeTokenForTenant(
-          tenantToken.tinybirdTokenId
+          tenantToken.tinybird_token_id
         );
       } catch (error) {
         // Log error but continue with cleanup
@@ -171,7 +256,7 @@ export class TenantService {
       }
     }
 
-    // Remove from storage (this effectively revokes the JWT since it can't be validated without the stored mapping)
-    tenantTokens.delete(tenantId);
+    // Remove from database (this effectively revokes the JWT since it can't be validated without the stored mapping)
+    await query(`DELETE FROM tenant_tokens WHERE tenant_id = $1`, [tenantId]);
   }
 }
