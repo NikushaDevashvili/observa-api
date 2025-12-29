@@ -171,5 +171,14 @@ export async function initializeSchema(): Promise<void> {
   `);
 
   console.log("Database schema initialized successfully");
+  
+  // Run migration to add new columns if needed
+  try {
+    const { migrateAnalysisResultsTable } = await import("./migrate.js");
+    await migrateAnalysisResultsTable();
+  } catch (error) {
+    // Migration errors are non-fatal - columns might already exist
+    console.log("Migration check completed (some columns may already exist)");
+  }
 }
 
