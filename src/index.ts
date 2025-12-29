@@ -40,32 +40,61 @@ const app = express();
 
 // Sentry will automatically capture errors via the error handler below
 
-// Initialize database schema on startup (non-blocking)
-// This runs asynchronously so the server can start even if DB is slow to connect
-(async () => {
-  try {
-    console.log("🔌 Attempting database connection...");
-    const connected = await testConnection();
-    if (connected) {
-      await initializeSchema();
-      console.log("✅ Database connected and schema initialized");
-    } else {
-      console.error("❌ Database connection failed - check DATABASE_URL");
-      console.error("💡 The API will still start but database operations will fail");
-    }
-  } catch (error: any) {
-    console.error("❌ Database initialization error:", error?.message || error);
-    if (error?.code === "ENOTFOUND" || error?.code === "ECONNREFUSED") {
-      console.error("💡 Check your DATABASE_URL - connection refused");
-    } else if (error?.code === "28P01") {
-      console.error("💡 Check your DATABASE_URL - authentication failed");
-    } else {
-      console.error("💡 Error details:", error);
-    }
-    console.error("⚠️  The API will continue but database features won't work");
-    // Don't exit - let the API start so we can see health endpoint
+// Initialize database schema on startup
+// In serverless, this runs on cold start, so we need to ensure it completes
+let schemaInitialized = false;
+let schemaInitializationPromise: Promise<void> | null = null;
+
+async function ensureSchemaInitialized(): Promise<void> {
+  if (schemaInitialized) return;
+  
+  // If initialization is already in progress, wait for it
+  if (schemaInitializationPromise) {
+    await schemaInitializationPromise;
+    return;
   }
-})();
+  
+  // Start initialization
+  schemaInitializationPromise = (async () => {
+    try {
+      console.log("🔌 Attempting database connection...");
+      const connected = await testConnection();
+      if (connected) {
+        await initializeSchema();
+        schemaInitialized = true;
+        console.log("✅ Database connected and schema initialized");
+      } else {
+        console.error("❌ Database connection failed - check DATABASE_URL");
+        throw new Error("Database connection failed");
+      }
+    } catch (error: any) {
+      console.error("❌ Database initialization error:", error?.message || error);
+      if (error?.code === "ENOTFOUND" || error?.code === "ECONNREFUSED") {
+        console.error("💡 Check your DATABASE_URL - connection refused");
+      } else if (error?.code === "28P01") {
+        console.error("💡 Check your DATABASE_URL - authentication failed");
+      }
+      throw error;
+    }
+  })();
+  
+  await schemaInitializationPromise;
+}
+
+// Initialize on module load (for serverless cold starts)
+// In Vercel, this runs when the function is first invoked
+if (process.env.VERCEL === "1") {
+  // In Vercel, initialize in background but don't block
+  ensureSchemaInitialized().catch((err) => {
+    console.error("Failed to initialize schema on startup:", err);
+  });
+} else {
+  // In non-serverless, wait for initialization
+  ensureSchemaInitialized().catch((err) => {
+    console.error("Failed to initialize schema:", err);
+    process.exit(1);
+  });
+}
 
 // Trust proxy for Vercel (required for rate limiting to work correctly)
 app.set("trust proxy", true);
@@ -163,6 +192,25 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
+// Schema initialization endpoint (for manual trigger)
+app.get("/api/v1/admin/init-schema", async (req, res) => {
+  try {
+    await ensureSchemaInitialized();
+    res.json({ 
+      success: true, 
+      message: "Database schema initialized successfully",
+      timestamp: new Date().toISOString()
+    });
+  } catch (error: any) {
+    console.error("Schema initialization error:", error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message,
+      details: "Check DATABASE_URL and database connectivity"
+    });
+  }
+});
+
 // Startup diagnostics endpoint (for debugging)
 app.get("/diagnostics", (req, res) => {
   const diagnostics = {
@@ -182,6 +230,32 @@ app.get("/diagnostics", (req, res) => {
     status: "ok",
   };
   res.json(diagnostics);
+});
+
+// Middleware to ensure schema is initialized before handling database requests
+// Skip for health check and schema init endpoint
+app.use(async (req, res, next) => {
+  // Skip schema check for these endpoints
+  if (
+    req.path === "/health" ||
+    req.path === "/" ||
+    req.path === "/api/v1/admin/init-schema" ||
+    req.path.startsWith("/diagnostics")
+  ) {
+    return next();
+  }
+  
+  // For all other endpoints, ensure schema is initialized
+  try {
+    await ensureSchemaInitialized();
+    next();
+  } catch (error: any) {
+    console.error("Schema not initialized, returning 503:", error);
+    res.status(503).json({ 
+      error: "Database not ready. Please try again in a moment.",
+      message: "If this persists, call /api/v1/admin/init-schema to initialize the database schema."
+    });
+  }
 });
 
 // API Routes
