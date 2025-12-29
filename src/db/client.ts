@@ -62,14 +62,36 @@ export async function closePool(): Promise<void> {
 
 /**
  * Test database connection
+ * Returns true if connection succeeds, throws error if it fails (with details)
  */
 export async function testConnection(): Promise<boolean> {
   try {
     const result = await query("SELECT NOW()");
-    return result.length > 0;
-  } catch (error) {
-    console.error("Database connection test failed:", error);
-    return false;
+    if (result.length > 0) {
+      console.log("✅ Database connection test successful");
+      return true;
+    }
+    throw new Error("Database query returned no results");
+  } catch (error: any) {
+    console.error("❌ Database connection test failed:", error);
+    // Re-throw with more context
+    const errorMessage = error?.message || "Unknown database error";
+    const errorCode = error?.code || "UNKNOWN";
+    
+    // Provide helpful error messages
+    if (errorCode === "28P01") {
+      throw new Error(`Database authentication failed (${errorCode}): ${errorMessage}. Check DATABASE_URL credentials.`);
+    } else if (errorCode === "ENOTFOUND" || errorCode === "ECONNREFUSED") {
+      throw new Error(`Cannot connect to database (${errorCode}): ${errorMessage}. Check DATABASE_URL host and port.`);
+    } else if (errorCode === "ETIMEDOUT") {
+      throw new Error(`Database connection timeout (${errorCode}): ${errorMessage}. Database may be unreachable.`);
+    } else if (error?.message?.includes("password")) {
+      throw new Error(`Database authentication failed: ${errorMessage}. Check DATABASE_URL password.`);
+    } else if (error?.message?.includes("does not exist")) {
+      throw new Error(`Database does not exist: ${errorMessage}. Check DATABASE_URL database name.`);
+    } else {
+      throw new Error(`Database connection failed (${errorCode}): ${errorMessage}`);
+    }
   }
 }
 
