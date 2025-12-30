@@ -95,14 +95,14 @@ router.post("/ingest", async (req: Request, res: Response) => {
     console.log(
       `[Observa API] Received trace data - traceId: ${
         traceData?.traceId
-      }, query length: ${traceData?.query?.length || 0}`
+      }, query length: ${traceData?.query?.length || 0}, conversationId: ${traceData?.conversationId?.substring(0, 20) || "none"}, messageIndex: ${traceData?.messageIndex || "none"}`
     );
     console.log(
       `[Observa API] Trace data keys:`,
       traceData ? Object.keys(traceData) : "null"
     );
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/431a9fa4-96bd-46c7-8321-5ccac542c2c3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'traces.ts:100',message:'Trace ingestion received',data:{traceId:traceData?.traceId,conversationId:traceData?.conversationId,messageIndex:traceData?.messageIndex,queryLength:traceData?.query?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,B,C'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/431a9fa4-96bd-46c7-8321-5ccac542c2c3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'traces.ts:100',message:'Trace ingestion received',data:{traceId:traceData?.traceId?.substring(0,20),conversationId:traceData?.conversationId?.substring(0,20),messageIndex:traceData?.messageIndex,queryLength:traceData?.query?.length,query:traceData?.query?.substring(0,30)},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'A,B,C'})}).catch(()=>{});
     // #endregion
 
     const validationResult = traceEventSchema.safeParse(traceData);
