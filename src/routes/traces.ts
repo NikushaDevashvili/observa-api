@@ -101,6 +101,9 @@ router.post("/ingest", async (req: Request, res: Response) => {
       `[Observa API] Trace data keys:`,
       traceData ? Object.keys(traceData) : "null"
     );
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/431a9fa4-96bd-46c7-8321-5ccac542c2c3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'traces.ts:100',message:'Trace ingestion received',data:{traceId:traceData?.traceId,conversationId:traceData?.conversationId,messageIndex:traceData?.messageIndex,queryLength:traceData?.query?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,B,C'})}).catch(()=>{});
+    // #endregion
 
     const validationResult = traceEventSchema.safeParse(traceData);
     if (!validationResult.success) {
@@ -115,6 +118,9 @@ router.post("/ingest", async (req: Request, res: Response) => {
     }
 
     console.log(`[Observa API] Trace data validation passed`);
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/431a9fa4-96bd-46c7-8321-5ccac542c2c3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'traces.ts:118',message:'Trace validated, creating TraceEvent',data:{traceId:validationResult.data?.traceId,conversationId:validationResult.data?.conversationId,messageIndex:validationResult.data?.messageIndex,tenantId,projectId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,B,C'})}).catch(()=>{});
+    // #endregion
 
     // Override tenant/project from JWT (security: prevent token spoofing)
     const validatedData = validationResult.data;
@@ -343,6 +349,9 @@ router.get("/", async (req: Request, res: Response) => {
     console.log(
       `[Traces API] Fetching traces for tenant ${user.tenantId}, limit: ${limit}, offset: ${offset}`
     );
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/431a9fa4-96bd-46c7-8321-5ccac542c2c3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'traces.ts:346',message:'Before querying traces',data:{tenantId:user.tenantId,limit,offset,whereClause,paramCount:params.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
     const traces = await query(
       `SELECT 
         ar.trace_id,
@@ -378,6 +387,19 @@ router.get("/", async (req: Request, res: Response) => {
     console.log(
       `[Traces API] Found ${traces.length} traces for tenant ${user.tenantId}`
     );
+    // Log detailed trace information for debugging
+    if (traces.length > 0) {
+      console.log(`[Traces API] Sample traces:`, traces.slice(0, 5).map((t: any) => ({
+        traceId: t.trace_id?.substring(0, 20),
+        conversationId: t.conversation_id?.substring(0, 20),
+        messageIndex: t.message_index,
+        query: t.query?.substring(0, 50),
+        timestamp: t.timestamp
+      })));
+    }
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/431a9fa4-96bd-46c7-8321-5ccac542c2c3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'traces.ts:390',message:'After query, traces returned',data:{traceCount:traces.length,traceIds:traces.map((t:any)=>t.trace_id),conversationIds:traces.map((t:any)=>t.conversation_id),messageIndexes:traces.map((t:any)=>t.message_index),queries:traces.map((t:any)=>t.query?.substring(0,30))},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
 
     // Get total count
     const countResult = await query<{ count: string }>(

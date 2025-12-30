@@ -159,6 +159,9 @@ export class TraceService {
           trace.messageIndex || "none"
         }`
       );
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/431a9fa4-96bd-46c7-8321-5ccac542c2c3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'traceService.ts:162',message:'Before INSERT with ON CONFLICT',data:{traceId:trace.traceId,conversationId:trace.conversationId,messageIndex:trace.messageIndex,willOverwrite:'ON CONFLICT will update if trace_id exists'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
       await query(
         `INSERT INTO analysis_results (
           trace_id, tenant_id, project_id, analyzed_at,
@@ -238,6 +241,9 @@ export class TraceService {
           trace.messageIndex || null,
         ]
       );
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/431a9fa4-96bd-46c7-8321-5ccac542c2c3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'traceService.ts:244',message:'After INSERT completed',data:{traceId:trace.traceId?.substring(0,20),conversationId:trace.conversationId?.substring(0,20),messageIndex:trace.messageIndex,query:trace.query?.substring(0,30),inserted:'Row inserted or updated'},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
     } else {
       // Fallback query without conversation columns (for databases that haven't migrated yet)
       console.warn(
