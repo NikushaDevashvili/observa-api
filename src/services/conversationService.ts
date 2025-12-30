@@ -189,6 +189,9 @@ export class ConversationService {
     limit: number = 100,
     offset: number = 0
   ): Promise<any[]> {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/431a9fa4-96bd-46c7-8321-5ccac542c2c3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'conversationService.ts:192',message:'Before querying conversation messages',data:{conversationId:conversationId?.substring(0,20),tenantId,limit,offset},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
     const result = await query(
       `SELECT * FROM analysis_results 
        WHERE conversation_id = $1 AND tenant_id = $2
@@ -196,6 +199,18 @@ export class ConversationService {
        LIMIT $3 OFFSET $4`,
       [conversationId, tenantId, limit, offset]
     );
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/431a9fa4-96bd-46c7-8321-5ccac542c2c3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'conversationService.ts:200',message:'After querying conversation messages',data:{conversationId:conversationId?.substring(0,20),messageCount:result.length,traceIds:result.map((r:any)=>r.trace_id?.substring(0,20)),messageIndexes:result.map((r:any)=>r.message_index),queries:result.map((r:any)=>r.query?.substring(0,30))},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
+    console.log(
+      `[ConversationService] Found ${result.length} messages for conversation ${conversationId?.substring(0, 20)}...`
+    );
+    if (result.length > 0) {
+      console.log(
+        `[ConversationService] Message indexes:`,
+        result.map((r: any) => r.message_index)
+      );
+    }
 
     return result;
   }

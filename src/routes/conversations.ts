@@ -173,6 +173,10 @@ router.get("/:conversationId/messages", async (req: Request, res: Response) => {
       [conversationId, user.tenantId]
     );
     const total = parseInt(countResult[0].total, 10);
+    
+    console.log(
+      `[Conversations API] Returning ${messages.length} messages for conversation ${conversationId?.substring(0, 20)}... (total in DB: ${total})`
+    );
 
     return res.status(200).json({
       success: true,
