@@ -254,40 +254,35 @@ export async function initializeSchema(): Promise<void> {
     ON user_sessions(tenant_id, user_id, started_at DESC);
   `);
 
-  console.log("Database schema initialized successfully");
+  console.log("✅ Core database schema initialized successfully");
 
   // Run migration to add new columns if needed
   // These are non-blocking - app can function even if migration fails
-  try {
-    const { migrateAnalysisResultsTable, migrateConversationColumns } = await import("./migrate.js");
-    
-    // Run migrations with timeout to prevent hanging
-    const migrationPromise = Promise.all([
-      migrateAnalysisResultsTable().catch((err) => {
+  // Run migrations in background without blocking schema initialization
+  Promise.all([
+    (async () => {
+      try {
+        const { migrateAnalysisResultsTable } = await import("./migrate.js");
+        await migrateAnalysisResultsTable();
+        console.log("✅ migrateAnalysisResultsTable completed");
+      } catch (err: any) {
         console.warn("⚠️ migrateAnalysisResultsTable failed (non-fatal):", err?.message || err);
-        return null; // Continue even if this fails
-      }),
-      migrateConversationColumns().catch((err) => {
+      }
+    })(),
+    (async () => {
+      try {
+        const { migrateConversationColumns } = await import("./migrate.js");
+        await migrateConversationColumns();
+        console.log("✅ migrateConversationColumns completed");
+      } catch (err: any) {
         console.warn("⚠️ migrateConversationColumns failed (non-fatal):", err?.message || err);
-        return null; // Continue even if this fails
-      }),
-    ]);
-    
-    // Add timeout to prevent hanging
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error("Migration timeout after 30 seconds")), 30000);
-    });
-    
-    await Promise.race([migrationPromise, timeoutPromise]);
-    console.log("✅ All migrations completed successfully");
-  } catch (error: any) {
-    // Log migration errors but don't fail schema initialization
-    // The migration might have partially succeeded, and we can continue
-    console.error("⚠️ Migration error (non-fatal, app will continue):", error?.message || error);
-    console.error("⚠️ Some features may not work until migration completes, but basic functionality should work");
-    // Don't throw - allow schema initialization to succeed even if migration fails
-    // The migration will be retried on next request or deployment
-  }
+      }
+    })(),
+  ]).catch((err) => {
+    console.warn("⚠️ Migration background task error (non-fatal):", err?.message || err);
+  });
   
-  console.log("✅ Schema initialization complete");
+  // Don't wait for migrations - schema initialization is complete
+  // Migrations will run in background and won't block the app
+  console.log("✅ Schema initialization complete (migrations running in background)");
 }

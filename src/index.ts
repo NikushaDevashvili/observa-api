@@ -51,8 +51,14 @@ async function ensureSchemaInitialized(): Promise<void> {
 
   // If initialization is already in progress, wait for it
   if (schemaInitializationPromise) {
-    await schemaInitializationPromise;
-    return;
+    try {
+      await schemaInitializationPromise;
+      return;
+    } catch (error) {
+      // If previous initialization failed, try again
+      console.warn("Previous schema initialization failed, retrying...");
+      schemaInitializationPromise = null;
+    }
   }
 
   // Start initialization
@@ -65,25 +71,33 @@ async function ensureSchemaInitialized(): Promise<void> {
         process.env.DATABASE_URL?.length || 0
       );
 
-      // Test connection with timeout
+      // Test connection with timeout (longer timeout for Neon cold starts)
       const connectionPromise = testConnection();
       const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error("Database connection timeout after 10 seconds")), 10000);
+        setTimeout(
+          () =>
+            reject(new Error("Database connection timeout after 15 seconds")),
+          15000
+        );
       });
-      
+
       await Promise.race([connectionPromise, timeoutPromise]);
 
       // If we get here, connection succeeded
       console.log("✅ Database connection successful, initializing schema...");
-      
-      // Initialize schema with timeout
+
+      // Initialize schema with timeout (longer for migrations)
       const schemaPromise = initializeSchema();
       const schemaTimeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error("Schema initialization timeout after 30 seconds")), 30000);
+        setTimeout(
+          () =>
+            reject(new Error("Schema initialization timeout after 45 seconds")),
+          45000
+        );
       });
-      
+
       await Promise.race([schemaPromise, schemaTimeoutPromise]);
-      
+
       schemaInitialized = true;
       console.log("✅ Database connected and schema initialized");
     } catch (error: any) {
@@ -290,13 +304,35 @@ app.use(async (req, res, next) => {
   }
 
   // For all other endpoints, ensure schema is initialized
+  // Use a shorter timeout for the middleware check to prevent hanging
   try {
-    await ensureSchemaInitialized();
+    const initPromise = ensureSchemaInitialized();
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(
+        () => reject(new Error("Schema initialization check timeout")),
+        5000 // 5 second timeout for middleware check
+      );
+    });
+
+    await Promise.race([initPromise, timeoutPromise]);
     next();
   } catch (error: any) {
     console.error("Schema not initialized, returning 503:", error);
     const errorMessage = error?.message || "Unknown error";
     const errorCode = error?.code || "UNKNOWN";
+
+    // If it's a timeout, provide helpful message
+    if (errorMessage.includes("timeout")) {
+      return res.status(503).json({
+        error: "Database initialization is taking longer than expected. Please try again in a moment.",
+        message:
+          "The database is being initialized. This usually takes a few seconds. Please retry your request.",
+        details: {
+          hint: "If this persists, the database connection may be slow. Check Vercel logs for details.",
+          retryAfter: "5 seconds",
+        },
+      });
+    }
 
     res.status(503).json({
       error: "Database not ready. Please try again in a moment.",
