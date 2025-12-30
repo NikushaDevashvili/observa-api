@@ -128,6 +128,26 @@ export class TenantService {
   }
 
   /**
+   * Get all projects for a tenant
+   */
+  static async getProjectsByTenant(tenantId: string): Promise<Project[]> {
+    const rows = await query<Project>(
+      `SELECT id, tenant_id as "tenantId", name, environment, created_at as "createdAt"
+       FROM projects WHERE tenant_id = $1
+       ORDER BY environment DESC, created_at ASC`,
+      [tenantId]
+    );
+
+    return rows.map((row) => ({
+      id: row.id,
+      tenantId: row.tenantId,
+      name: row.name,
+      environment: row.environment as "dev" | "prod",
+      createdAt: row.createdAt,
+    }));
+  }
+
+  /**
    * Provision tokens for a tenant/project
    *
    * This creates:

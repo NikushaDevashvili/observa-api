@@ -1,5 +1,7 @@
 import { Router, Request, Response } from "express";
 import { AuthService } from "../services/authService.js";
+import { TenantService } from "../services/tenantService.js";
+import { TokenService } from "../services/tokenService.js";
 import { z } from "zod";
 
 const router = Router();
@@ -169,6 +171,97 @@ router.get("/me", async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error("Get user error:", error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Internal server error",
+    });
+  }
+});
+
+/**
+ * GET /api/v1/auth/account
+ * Get full account information including tenant, projects, and API key
+ */
+router.get("/account", async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({
+        error: "Missing or invalid Authorization header",
+      });
+    }
+
+    const sessionToken = authHeader.substring(7);
+    const user = await AuthService.validateSession(sessionToken);
+
+    if (!user) {
+      return res.status(401).json({
+        error: "Invalid or expired session",
+      });
+    }
+
+    // Get tenant information
+    const tenant = await TenantService.getTenant(user.tenantId);
+    if (!tenant) {
+      return res.status(404).json({
+        error: "Tenant not found",
+      });
+    }
+
+    // Get all projects for this tenant
+    const projects = await TenantService.getProjectsByTenant(user.tenantId);
+
+    // Get default project (first prod project, or first project)
+    const defaultProject = projects.find((p) => p.environment === "prod") || projects[0];
+
+    // Generate API key (JWT token) for default project
+    let apiKey: string | null = null;
+    if (defaultProject) {
+      apiKey = TokenService.generateToken({
+        tenantId: user.tenantId,
+        projectId: defaultProject.id,
+        environment: defaultProject.environment,
+      });
+    }
+
+    // Get tenant token info (for Tinybird)
+    const tenantToken = await TenantService.getTinybirdToken(user.tenantId);
+
+    res.json({
+      success: true,
+      account: {
+        user: {
+          id: user.id,
+          email: user.email,
+          createdAt: user.createdAt,
+          lastLoginAt: user.lastLoginAt,
+        },
+        tenant: {
+          id: tenant.id,
+          name: tenant.name,
+          slug: tenant.slug,
+          plan: tenant.plan,
+          createdAt: tenant.createdAt,
+        },
+        projects: projects.map((p) => ({
+          id: p.id,
+          name: p.name,
+          environment: p.environment,
+          createdAt: p.createdAt,
+        })),
+        apiKey: apiKey,
+        defaultProject: defaultProject
+          ? {
+              id: defaultProject.id,
+              name: defaultProject.name,
+              environment: defaultProject.environment,
+            }
+          : null,
+        observaApiUrl: process.env.OBSERVA_API_URL || "https://observa-api.vercel.app",
+        hasTinybirdToken: !!tenantToken,
+      },
+    });
+  } catch (error) {
+    console.error("Get account error:", error);
     res.status(500).json({
       error: error instanceof Error ? error.message : "Internal server error",
     });
