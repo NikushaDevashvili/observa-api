@@ -108,7 +108,10 @@ export class TraceService {
       `);
       hasConversationColumns = columnCheck.length > 0;
     } catch (err) {
-      console.warn("[TraceService] Could not check for conversation columns, assuming they don't exist:", err);
+      console.warn(
+        "[TraceService] Could not check for conversation columns, assuming they don't exist:",
+        err
+      );
     }
 
     if (hasConversationColumns) {
@@ -160,41 +163,43 @@ export class TraceService {
           session_id = EXCLUDED.session_id,
           user_id = EXCLUDED.user_id,
           message_index = EXCLUDED.message_index`,
-      [
-        trace.traceId,
-        trace.tenantId,
-        trace.projectId,
-        trace.spanId || null,
-        trace.parentSpanId || null,
-        trace.query || null,
-        trace.context || null,
-        trace.response || null,
-        trace.model || null,
-        trace.tokensPrompt || null,
-        trace.tokensCompletion || null,
-        trace.tokensTotal || null,
-        trace.latencyMs || null,
-        trace.timeToFirstTokenMs || null,
-        trace.streamingDurationMs || null,
-        trace.responseLength || null,
-        trace.status || null,
-        trace.statusText || null,
-        trace.finishReason || null,
-        trace.responseId || null,
-        trace.systemFingerprint || null,
-        trace.metadata ? JSON.stringify(trace.metadata) : null,
-        trace.headers ? JSON.stringify(trace.headers) : null,
-        trace.timestamp ? new Date(trace.timestamp) : null,
-        trace.environment || null,
-        trace.conversationId || null,
-        trace.sessionId || null,
-        trace.userId || null,
-        trace.messageIndex || null,
-      ]
-    );
+        [
+          trace.traceId,
+          trace.tenantId,
+          trace.projectId,
+          trace.spanId || null,
+          trace.parentSpanId || null,
+          trace.query || null,
+          trace.context || null,
+          trace.response || null,
+          trace.model || null,
+          trace.tokensPrompt || null,
+          trace.tokensCompletion || null,
+          trace.tokensTotal || null,
+          trace.latencyMs || null,
+          trace.timeToFirstTokenMs || null,
+          trace.streamingDurationMs || null,
+          trace.responseLength || null,
+          trace.status || null,
+          trace.statusText || null,
+          trace.finishReason || null,
+          trace.responseId || null,
+          trace.systemFingerprint || null,
+          trace.metadata ? JSON.stringify(trace.metadata) : null,
+          trace.headers ? JSON.stringify(trace.headers) : null,
+          trace.timestamp ? new Date(trace.timestamp) : null,
+          trace.environment || null,
+          trace.conversationId || null,
+          trace.sessionId || null,
+          trace.userId || null,
+          trace.messageIndex || null,
+        ]
+      );
     } else {
       // Fallback query without conversation columns (for databases that haven't migrated yet)
-      console.warn("[TraceService] Conversation columns not found, using fallback INSERT (without conversation tracking)");
+      console.warn(
+        "[TraceService] Conversation columns not found, using fallback INSERT (without conversation tracking)"
+      );
       await query(
         `INSERT INTO analysis_results (
           trace_id, tenant_id, project_id, analyzed_at,

@@ -65,12 +65,25 @@ async function ensureSchemaInitialized(): Promise<void> {
         process.env.DATABASE_URL?.length || 0
       );
 
-      // Test connection (will throw with detailed error if it fails)
-      await testConnection();
+      // Test connection with timeout
+      const connectionPromise = testConnection();
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error("Database connection timeout after 10 seconds")), 10000);
+      });
+      
+      await Promise.race([connectionPromise, timeoutPromise]);
 
       // If we get here, connection succeeded
       console.log("✅ Database connection successful, initializing schema...");
-      await initializeSchema();
+      
+      // Initialize schema with timeout
+      const schemaPromise = initializeSchema();
+      const schemaTimeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error("Schema initialization timeout after 30 seconds")), 30000);
+      });
+      
+      await Promise.race([schemaPromise, schemaTimeoutPromise]);
+      
       schemaInitialized = true;
       console.log("✅ Database connected and schema initialized");
     } catch (error: any) {
@@ -78,7 +91,7 @@ async function ensureSchemaInitialized(): Promise<void> {
         "❌ Database initialization error:",
         error?.message || error
       );
-      // testConnection now throws detailed errors, so just re-throw
+      // Re-throw to trigger 503 response
       throw error;
     }
   })();

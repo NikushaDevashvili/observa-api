@@ -102,7 +102,9 @@ export async function migrateConversationColumns(): Promise<void> {
         } catch (err: any) {
           // Column might have been added by another process
           if (err.message?.includes("already exists") || err.code === "42701") {
-            console.log(`  Column ${col.name} already exists (race condition), skipping`);
+            console.log(
+              `  Column ${col.name} already exists (race condition), skipping`
+            );
           } else {
             throw err;
           }
@@ -124,7 +126,10 @@ export async function migrateConversationColumns(): Promise<void> {
       `);
       console.log("  ✅ Created conversation index");
     } catch (err) {
-      console.warn("  ⚠️ Could not create conversation index (columns may not exist yet):", err);
+      console.warn(
+        "  ⚠️ Could not create conversation index (columns may not exist yet):",
+        err
+      );
     }
 
     try {
@@ -152,7 +157,9 @@ export async function migrateConversationColumns(): Promise<void> {
     console.error("❌ Conversation columns migration failed:", error);
     // Don't throw - allow the app to continue even if migration fails
     // The columns might already exist or will be added on next deployment
-    console.error("⚠️ Continuing despite migration error - app will still function");
+    console.error(
+      "⚠️ Continuing despite migration error - app will still function"
+    );
   }
 }
 

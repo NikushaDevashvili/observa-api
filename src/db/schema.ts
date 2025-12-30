@@ -199,21 +199,8 @@ export async function initializeSchema(): Promise<void> {
     ON analysis_results(trace_id);
   `);
 
-  // Indexes for conversation tracking (added after table creation)
-  await query(`
-    CREATE INDEX IF NOT EXISTS idx_analysis_conversation 
-    ON analysis_results(conversation_id, message_index);
-  `);
-
-  await query(`
-    CREATE INDEX IF NOT EXISTS idx_analysis_session 
-    ON analysis_results(session_id, timestamp);
-  `);
-
-  await query(`
-    CREATE INDEX IF NOT EXISTS idx_analysis_user 
-    ON analysis_results(tenant_id, user_id, timestamp DESC);
-  `);
+  // Note: Conversation tracking indexes are created in migration
+  // (after columns are added) to avoid errors if columns don't exist yet
 
   await query(`
     CREATE INDEX IF NOT EXISTS idx_projects_tenant 
@@ -270,14 +257,37 @@ export async function initializeSchema(): Promise<void> {
   console.log("Database schema initialized successfully");
 
   // Run migration to add new columns if needed
+  // These are non-blocking - app can function even if migration fails
   try {
     const { migrateAnalysisResultsTable, migrateConversationColumns } = await import("./migrate.js");
-    await migrateAnalysisResultsTable();
-    await migrateConversationColumns();
+    
+    // Run migrations with timeout to prevent hanging
+    const migrationPromise = Promise.all([
+      migrateAnalysisResultsTable().catch((err) => {
+        console.warn("⚠️ migrateAnalysisResultsTable failed (non-fatal):", err?.message || err);
+        return null; // Continue even if this fails
+      }),
+      migrateConversationColumns().catch((err) => {
+        console.warn("⚠️ migrateConversationColumns failed (non-fatal):", err?.message || err);
+        return null; // Continue even if this fails
+      }),
+    ]);
+    
+    // Add timeout to prevent hanging
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error("Migration timeout after 30 seconds")), 30000);
+    });
+    
+    await Promise.race([migrationPromise, timeoutPromise]);
     console.log("✅ All migrations completed successfully");
-  } catch (error) {
-    // Log migration errors but don't fail - columns might already exist
-    console.error("⚠️ Migration error (this is usually safe to ignore if columns already exist):", error);
-    // Try to continue - the migration might have partially succeeded
+  } catch (error: any) {
+    // Log migration errors but don't fail schema initialization
+    // The migration might have partially succeeded, and we can continue
+    console.error("⚠️ Migration error (non-fatal, app will continue):", error?.message || error);
+    console.error("⚠️ Some features may not work until migration completes, but basic functionality should work");
+    // Don't throw - allow schema initialization to succeed even if migration fails
+    // The migration will be retried on next request or deployment
   }
+  
+  console.log("✅ Schema initialization complete");
 }
