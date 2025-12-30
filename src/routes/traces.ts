@@ -407,6 +407,21 @@ router.get("/", async (req: Request, res: Response) => {
       params
     );
     const total = parseInt(countResult[0]?.count || "0", 10);
+    
+    // Debug: Count traces per conversation to see if multiple traces exist
+    const conversationCounts = await query<{ conversation_id: string; count: string }>(
+      `SELECT conversation_id, COUNT(*) as count 
+       FROM analysis_results ar 
+       ${whereClause} 
+       GROUP BY conversation_id 
+       ORDER BY count DESC 
+       LIMIT 10`,
+      params
+    );
+    console.log(`[Traces API] Traces per conversation:`, conversationCounts.map((c: any) => ({
+      conversationId: c.conversation_id?.substring(0, 20),
+      count: c.count
+    })));
 
     res.json({
       success: true,
