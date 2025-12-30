@@ -151,12 +151,29 @@ app.use(
 );
 
 // Rate limiting
+// For Vercel, we need to configure trust proxy properly
+// Vercel uses X-Forwarded-For header, so we trust the first proxy
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // Limit each IP to 100 requests per windowMs
   message: "Too many requests from this IP, please try again later.",
   standardHeaders: true,
   legacyHeaders: false,
+  // Trust only the first proxy (Vercel) to prevent IP spoofing
+  validate: {
+    trustProxy: false, // Disable trust proxy validation warning
+  },
+  // Use X-Forwarded-For header for IP detection (Vercel provides this)
+  keyGenerator: (req) => {
+    // Get IP from X-Forwarded-For header (Vercel sets this)
+    const forwarded = req.headers["x-forwarded-for"];
+    if (forwarded) {
+      // X-Forwarded-For can contain multiple IPs, take the first one
+      const ip = Array.isArray(forwarded) ? forwarded[0] : forwarded.split(",")[0].trim();
+      return ip || req.ip || "unknown";
+    }
+    return req.ip || "unknown";
+  },
 });
 
 app.use("/api/", apiLimiter);

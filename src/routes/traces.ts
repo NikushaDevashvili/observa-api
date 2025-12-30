@@ -93,7 +93,9 @@ router.post("/ingest", async (req: Request, res: Response) => {
     // Validate trace data structure with Zod
     const traceData = req.body;
     console.log(
-      `[Observa API] Received trace data - traceId: ${traceData?.traceId}, query length: ${traceData?.query?.length || 0}`
+      `[Observa API] Received trace data - traceId: ${
+        traceData?.traceId
+      }, query length: ${traceData?.query?.length || 0}`
     );
     console.log(
       `[Observa API] Trace data keys:`,
@@ -199,7 +201,9 @@ router.post("/ingest", async (req: Request, res: Response) => {
     // SOTA Architecture: Store trace data immediately in PostgreSQL (HTAP pattern)
     // This ensures data is available for operational queries while Tinybird handles analytics
     console.log(
-      `[Observa API] Storing trace data in PostgreSQL - TraceID: ${trace.traceId}, Query: ${trace.query?.substring(0, 50)}...`
+      `[Observa API] Storing trace data in PostgreSQL - TraceID: ${
+        trace.traceId
+      }, Query: ${trace.query?.substring(0, 50)}...`
     );
     try {
       await TraceService.storeTraceData(trace);
