@@ -36,6 +36,11 @@ export class TraceService {
       system_fingerprint: trace.systemFingerprint ?? null,
       metadata_json: trace.metadata ? JSON.stringify(trace.metadata) : "",
       headers_json: trace.headers ? JSON.stringify(trace.headers) : "",
+      // Conversation tracking fields
+      conversation_id: trace.conversationId ?? null,
+      session_id: trace.sessionId ?? null,
+      user_id: trace.userId ?? null,
+      message_index: trace.messageIndex ?? null,
     };
   }
 
@@ -66,7 +71,18 @@ export class TraceService {
     // Use provided token or fall back to admin token
     const token = tinybirdToken || env.TINYBIRD_ADMIN_TOKEN;
 
+    if (!token) {
+      throw new Error("Tinybird token is required but not configured");
+    }
+
     try {
+      console.log(
+        `[TraceService] Forwarding to Tinybird - TraceID: ${trace.traceId}, Conversation: ${trace.conversationId || "none"}`
+      );
+      console.log(
+        `[TraceService] Tinybird URL: ${url}, Token present: ${!!token}`
+      );
+
       const response = await fetch(url, {
         method: "POST",
         headers: {
@@ -78,13 +94,24 @@ export class TraceService {
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => "Unknown error");
+        console.error(
+          `[TraceService] Tinybird API error: ${response.status} ${response.statusText} - ${errorText}`
+        );
         throw new Error(
           `Tinybird API error: ${response.status} ${response.statusText} - ${errorText}`
         );
       }
+
+      const responseText = await response.text().catch(() => "");
+      console.log(
+        `[TraceService] Successfully forwarded to Tinybird - TraceID: ${trace.traceId}, Response: ${responseText}`
+      );
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
+      console.error(
+        `[TraceService] Failed to forward trace to Tinybird - TraceID: ${trace.traceId}, Error: ${errorMessage}`
+      );
       throw new Error(`Failed to forward trace to Tinybird: ${errorMessage}`);
     }
   }
@@ -107,15 +134,23 @@ export class TraceService {
         AND column_name = 'conversation_id'
       `);
       hasConversationColumns = columnCheck.length > 0;
+      console.log(
+        `[TraceService] Conversation columns check: ${hasConversationColumns ? "found" : "not found"}`
+      );
     } catch (err) {
-      console.warn(
-        "[TraceService] Could not check for conversation columns, assuming they don't exist:",
+      console.error(
+        "[TraceService] Error checking for conversation columns:",
         err
       );
+      // Assume columns exist if check fails (safer default)
+      hasConversationColumns = true;
     }
 
     if (hasConversationColumns) {
       // Full query with conversation tracking
+      console.log(
+        `[TraceService] Storing trace with conversation tracking - TraceID: ${trace.traceId}, ConversationID: ${trace.conversationId || "none"}, MessageIndex: ${trace.messageIndex || "none"}`
+      );
       await query(
         `INSERT INTO analysis_results (
           trace_id, tenant_id, project_id, analyzed_at,

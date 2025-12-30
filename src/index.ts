@@ -324,7 +324,8 @@ app.use(async (req, res, next) => {
     // If it's a timeout, provide helpful message
     if (errorMessage.includes("timeout")) {
       return res.status(503).json({
-        error: "Database initialization is taking longer than expected. Please try again in a moment.",
+        error:
+          "Database initialization is taking longer than expected. Please try again in a moment.",
         message:
           "The database is being initialized. This usually takes a few seconds. Please retry your request.",
         details: {

@@ -93,5 +93,10 @@ export interface TinybirdEvent {
   system_fingerprint: string | null;
   metadata_json: string;
   headers_json: string;
+  // Conversation tracking fields
+  conversation_id: string | null;
+  session_id: string | null;
+  user_id: string | null;
+  message_index: number | null;
 }
 
