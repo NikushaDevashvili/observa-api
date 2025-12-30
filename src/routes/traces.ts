@@ -42,11 +42,18 @@ const router = Router();
  */
 router.post("/ingest", async (req: Request, res: Response) => {
   console.log(`[Observa API] Received trace ingestion request`);
+  console.log(`[Observa API] Request method: ${req.method}, URL: ${req.url}`);
+  console.log(`[Observa API] Request headers:`, {
+    authorization: req.headers.authorization ? "present" : "missing",
+    contentType: req.headers["content-type"],
+  });
+
   try {
     // Extract JWT token from Authorization header
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       console.error(`[Observa API] Missing or invalid Authorization header`);
+      console.error(`[Observa API] Auth header value:`, authHeader);
       return res.status(401).json({
         error:
           "Missing or invalid Authorization header. Expected: Bearer <token>",
@@ -54,6 +61,7 @@ router.post("/ingest", async (req: Request, res: Response) => {
     }
 
     const token = authHeader.substring(7); // Remove "Bearer " prefix
+    console.log(`[Observa API] Extracted token (length: ${token.length})`);
 
     // Validate JWT token
     const payload = TokenService.validateToken(token);
@@ -64,12 +72,19 @@ router.post("/ingest", async (req: Request, res: Response) => {
       });
     }
 
+    console.log(
+      `[Observa API] JWT validated - Tenant: ${payload.tenantId}, Project: ${payload.projectId}`
+    );
+
     // Extract tenant context from JWT
     const tenantId = payload.tenantId;
     const projectId = payload.projectId;
     const environment = payload.environment ?? "dev";
 
     if (!tenantId || !projectId) {
+      console.error(
+        `[Observa API] JWT missing tenantId or projectId - tenantId: ${tenantId}, projectId: ${projectId}`
+      );
       return res.status(401).json({
         error: "JWT token missing tenantId or projectId",
       });
@@ -77,13 +92,27 @@ router.post("/ingest", async (req: Request, res: Response) => {
 
     // Validate trace data structure with Zod
     const traceData = req.body;
+    console.log(
+      `[Observa API] Received trace data - traceId: ${traceData?.traceId}, query length: ${traceData?.query?.length || 0}`
+    );
+    console.log(
+      `[Observa API] Trace data keys:`,
+      traceData ? Object.keys(traceData) : "null"
+    );
+
     const validationResult = traceEventSchema.safeParse(traceData);
     if (!validationResult.success) {
+      console.error(
+        `[Observa API] Validation failed:`,
+        JSON.stringify(validationResult.error.issues, null, 2)
+      );
       return res.status(400).json({
         error: "Invalid trace data structure",
         details: validationResult.error.issues,
       });
     }
+
+    console.log(`[Observa API] Trace data validation passed`);
 
     // Override tenant/project from JWT (security: prevent token spoofing)
     const validatedData = validationResult.data;
@@ -170,24 +199,38 @@ router.post("/ingest", async (req: Request, res: Response) => {
     // SOTA Architecture: Store trace data immediately in PostgreSQL (HTAP pattern)
     // This ensures data is available for operational queries while Tinybird handles analytics
     console.log(
-      `[Observa API] Storing trace data in PostgreSQL - TraceID: ${trace.traceId}`
+      `[Observa API] Storing trace data in PostgreSQL - TraceID: ${trace.traceId}, Query: ${trace.query?.substring(0, 50)}...`
     );
-    await TraceService.storeTraceData(trace);
-    console.log(
-      `[Observa API] Successfully stored trace data in PostgreSQL - TraceID: ${trace.traceId}`
-    );
+    try {
+      await TraceService.storeTraceData(trace);
+      console.log(
+        `[Observa API] ✅ Successfully stored trace data in PostgreSQL - TraceID: ${trace.traceId}`
+      );
+    } catch (storeError) {
+      console.error(
+        `[Observa API] ❌ Failed to store trace data in PostgreSQL - TraceID: ${trace.traceId}`,
+        storeError
+      );
+      // Don't throw - continue to try Tinybird forwarding
+    }
 
     // Forward to Tinybird for analytical workloads (async, can retry if fails)
     console.log(
       `[Observa API] Forwarding trace to Tinybird - TraceID: ${trace.traceId}, Tenant: ${tenantId}, Project: ${projectId}`
     );
-    TraceService.forwardToTinybird(trace).catch((error) => {
-      console.error(
-        `[Observa API] Failed to forward trace to Tinybird (non-fatal):`,
-        error
-      );
-      // Don't throw - Tinybird failure shouldn't break trace ingestion
-    });
+    TraceService.forwardToTinybird(trace)
+      .then(() => {
+        console.log(
+          `[Observa API] ✅ Successfully forwarded trace to Tinybird - TraceID: ${trace.traceId}`
+        );
+      })
+      .catch((error) => {
+        console.error(
+          `[Observa API] ❌ Failed to forward trace to Tinybird (non-fatal) - TraceID: ${trace.traceId}:`,
+          error
+        );
+        // Don't throw - Tinybird failure shouldn't break trace ingestion
+      });
 
     // Trigger ML analysis asynchronously (don't block response)
     AnalysisService.analyzeTrace(trace).catch((error) => {
@@ -206,13 +249,20 @@ router.post("/ingest", async (req: Request, res: Response) => {
       console.log(`Trace ID: ${trace.traceId}`);
     }
 
+    console.log(
+      `[Observa API] ✅ Trace ingestion completed successfully - TraceID: ${trace.traceId}`
+    );
     return res.status(200).json({
       success: true,
       traceId: trace.traceId,
       message: "Trace ingested successfully",
     });
   } catch (error) {
-    console.error("Error during trace ingestion:", error);
+    console.error("[Observa API] ❌ Error during trace ingestion:", error);
+    if (error instanceof Error) {
+      console.error("[Observa API] Error message:", error.message);
+      console.error("[Observa API] Error stack:", error.stack);
+    }
     const errorMessage =
       error instanceof Error ? error.message : "Internal server error";
     return res.status(500).json({
