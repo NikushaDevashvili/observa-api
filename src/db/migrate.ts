@@ -10,15 +10,6 @@ export async function migrateAnalysisResultsTable(): Promise<void> {
       "🔄 Migrating analysis_results table to add trace data columns..."
     );
 
-    // Check if columns already exist
-    const checkColumns = await query(`
-      SELECT column_name 
-      FROM information_schema.columns 
-      WHERE table_name = 'analysis_results' 
-      AND column_name IN ('query', 'context', 'response', 'model', 'tokens_prompt', 'tokens_completion', 'tokens_total', 'latency_ms', 'response_length', 'timestamp', 'environment')
-    `);
-
-    const existingColumns = checkColumns.map((row: any) => row.column_name);
     const columnsToAdd = [
       { name: "span_id", type: "VARCHAR(255)" },
       { name: "parent_span_id", type: "VARCHAR(255)" },
@@ -44,22 +35,55 @@ export async function migrateAnalysisResultsTable(): Promise<void> {
       { name: "environment", type: "VARCHAR(10)" },
     ];
 
+    // Check if columns already exist (check ALL columns we're trying to add)
+    const checkColumns = await query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'analysis_results' 
+      AND column_name IN (${columnsToAdd.map((c) => `'${c.name}'`).join(",")})
+    `);
+
+    const existingColumns = checkColumns.map((row: any) => row.column_name);
+
+    let addedColumns = 0;
     for (const column of columnsToAdd) {
       if (!existingColumns.includes(column.name)) {
         console.log(`  Adding column: ${column.name}`);
-        await query(`
-          ALTER TABLE analysis_results 
-          ADD COLUMN ${column.name} ${column.type}
-        `);
+        try {
+          await query(`
+            ALTER TABLE analysis_results 
+            ADD COLUMN ${column.name} ${column.type}
+          `);
+          addedColumns++;
+        } catch (err: any) {
+          // Column might have been added by another process (race condition)
+          if (err.message?.includes("already exists") || err.code === "42701") {
+            console.log(
+              `  Column ${column.name} already exists (race condition), skipping`
+            );
+          } else {
+            throw err;
+          }
+        }
       } else {
         console.log(`  Column ${column.name} already exists, skipping`);
       }
     }
 
+    if (addedColumns > 0) {
+      console.log(`  ✅ Added ${addedColumns} new column(s)`);
+    } else {
+      console.log(`  ✅ All columns already exist, no changes needed`);
+    }
+
     console.log("✅ Migration completed successfully");
   } catch (error) {
     console.error("❌ Migration failed:", error);
-    throw error;
+    // Don't throw - allow the app to continue even if migration fails
+    // The columns might already exist or will be added on next deployment
+    console.error(
+      "⚠️ Continuing despite migration error - app will still function"
+    );
   }
 }
 

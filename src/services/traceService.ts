@@ -77,7 +77,9 @@ export class TraceService {
 
     try {
       console.log(
-        `[TraceService] Forwarding to Tinybird - TraceID: ${trace.traceId}, Conversation: ${trace.conversationId || "none"}`
+        `[TraceService] Forwarding to Tinybird - TraceID: ${
+          trace.traceId
+        }, Conversation: ${trace.conversationId || "none"}`
       );
       console.log(
         `[TraceService] Tinybird URL: ${url}, Token present: ${!!token}`
@@ -135,7 +137,9 @@ export class TraceService {
       `);
       hasConversationColumns = columnCheck.length > 0;
       console.log(
-        `[TraceService] Conversation columns check: ${hasConversationColumns ? "found" : "not found"}`
+        `[TraceService] Conversation columns check: ${
+          hasConversationColumns ? "found" : "not found"
+        }`
       );
     } catch (err) {
       console.error(
@@ -149,7 +153,11 @@ export class TraceService {
     if (hasConversationColumns) {
       // Full query with conversation tracking
       console.log(
-        `[TraceService] Storing trace with conversation tracking - TraceID: ${trace.traceId}, ConversationID: ${trace.conversationId || "none"}, MessageIndex: ${trace.messageIndex || "none"}`
+        `[TraceService] Storing trace with conversation tracking - TraceID: ${
+          trace.traceId
+        }, ConversationID: ${trace.conversationId || "none"}, MessageIndex: ${
+          trace.messageIndex || "none"
+        }`
       );
       await query(
         `INSERT INTO analysis_results (
