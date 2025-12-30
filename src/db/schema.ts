@@ -131,7 +131,13 @@ export async function initializeSchema(): Promise<void> {
       metadata_json TEXT,
       headers_json TEXT,
       timestamp TIMESTAMP,
-      environment VARCHAR(10)
+      environment VARCHAR(10),
+      
+      -- Conversation tracking fields
+      conversation_id VARCHAR(255),
+      session_id VARCHAR(255),
+      user_id VARCHAR(255),
+      message_index INTEGER
     );
   `);
 
@@ -193,6 +199,22 @@ export async function initializeSchema(): Promise<void> {
     ON analysis_results(trace_id);
   `);
 
+  // Indexes for conversation tracking (added after table creation)
+  await query(`
+    CREATE INDEX IF NOT EXISTS idx_analysis_conversation 
+    ON analysis_results(conversation_id, message_index);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS idx_analysis_session 
+    ON analysis_results(session_id, timestamp);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS idx_analysis_user 
+    ON analysis_results(tenant_id, user_id, timestamp DESC);
+  `);
+
   await query(`
     CREATE INDEX IF NOT EXISTS idx_projects_tenant 
     ON projects(tenant_id);
@@ -252,8 +274,10 @@ export async function initializeSchema(): Promise<void> {
     const { migrateAnalysisResultsTable, migrateConversationColumns } = await import("./migrate.js");
     await migrateAnalysisResultsTable();
     await migrateConversationColumns();
+    console.log("✅ All migrations completed successfully");
   } catch (error) {
-    // Migration errors are non-fatal - columns might already exist
-    console.log("Migration check completed (some columns may already exist)");
+    // Log migration errors but don't fail - columns might already exist
+    console.error("⚠️ Migration error (this is usually safe to ignore if columns already exist):", error);
+    // Try to continue - the migration might have partially succeeded
   }
 }

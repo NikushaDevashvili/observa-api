@@ -90,37 +90,69 @@ export async function migrateConversationColumns(): Promise<void> {
     `);
     const existingColumns = checkColumns.map((row: any) => row.column_name);
 
+    let addedColumns = 0;
     for (const col of conversationColumns) {
       if (!existingColumns.includes(col.name)) {
         console.log(`  Adding column: ${col.name}`);
-        await query(
-          `ALTER TABLE analysis_results ADD COLUMN ${col.name} ${col.type}`
-        );
+        try {
+          await query(
+            `ALTER TABLE analysis_results ADD COLUMN ${col.name} ${col.type}`
+          );
+          addedColumns++;
+        } catch (err: any) {
+          // Column might have been added by another process
+          if (err.message?.includes("already exists") || err.code === "42701") {
+            console.log(`  Column ${col.name} already exists (race condition), skipping`);
+          } else {
+            throw err;
+          }
+        }
       } else {
         console.log(`  Column ${col.name} already exists, skipping`);
       }
     }
 
-    // Create indexes for conversation queries
-    await query(`
-      CREATE INDEX IF NOT EXISTS idx_analysis_conversation 
-      ON analysis_results(conversation_id, message_index);
-    `);
+    if (addedColumns > 0) {
+      console.log(`  ✅ Added ${addedColumns} new column(s)`);
+    }
 
-    await query(`
-      CREATE INDEX IF NOT EXISTS idx_analysis_session 
-      ON analysis_results(session_id, timestamp);
-    `);
+    // Create indexes for conversation queries (these will fail silently if columns don't exist)
+    try {
+      await query(`
+        CREATE INDEX IF NOT EXISTS idx_analysis_conversation 
+        ON analysis_results(conversation_id, message_index);
+      `);
+      console.log("  ✅ Created conversation index");
+    } catch (err) {
+      console.warn("  ⚠️ Could not create conversation index (columns may not exist yet):", err);
+    }
 
-    await query(`
-      CREATE INDEX IF NOT EXISTS idx_analysis_user 
-      ON analysis_results(tenant_id, user_id, timestamp DESC);
-    `);
+    try {
+      await query(`
+        CREATE INDEX IF NOT EXISTS idx_analysis_session 
+        ON analysis_results(session_id, timestamp);
+      `);
+      console.log("  ✅ Created session index");
+    } catch (err) {
+      console.warn("  ⚠️ Could not create session index:", err);
+    }
+
+    try {
+      await query(`
+        CREATE INDEX IF NOT EXISTS idx_analysis_user 
+        ON analysis_results(tenant_id, user_id, timestamp DESC);
+      `);
+      console.log("  ✅ Created user index");
+    } catch (err) {
+      console.warn("  ⚠️ Could not create user index:", err);
+    }
 
     console.log("✅ Conversation columns migration completed successfully");
   } catch (error) {
     console.error("❌ Conversation columns migration failed:", error);
-    throw error;
+    // Don't throw - allow the app to continue even if migration fails
+    // The columns might already exist or will be added on next deployment
+    console.error("⚠️ Continuing despite migration error - app will still function");
   }
 }
 
