@@ -174,8 +174,26 @@ router.get("/:conversationId/messages", async (req: Request, res: Response) => {
     );
     const total = parseInt(countResult[0].total, 10);
     
+    // Debug: Get all trace_ids and message_indexes for this conversation
+    const debugQuery = await query(
+      `SELECT trace_id, message_index, query, timestamp 
+       FROM analysis_results 
+       WHERE conversation_id = $1 AND tenant_id = $2
+       ORDER BY message_index ASC, timestamp ASC`,
+      [conversationId, user.tenantId]
+    );
+    
     console.log(
       `[Conversations API] Returning ${messages.length} messages for conversation ${conversationId?.substring(0, 20)}... (total in DB: ${total})`
+    );
+    console.log(
+      `[Conversations API] All traces in DB for this conversation:`,
+      debugQuery.map((r: any) => ({
+        traceId: r.trace_id?.substring(0, 20),
+        messageIndex: r.message_index,
+        query: r.query?.substring(0, 50),
+        timestamp: r.timestamp
+      }))
     );
 
     return res.status(200).json({
