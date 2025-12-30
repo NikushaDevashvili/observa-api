@@ -283,15 +283,24 @@ router.get("/", async (req: Request, res: Response) => {
       }
     }
 
-    // Get traces with analysis results from Tinybird (via analysis_results table)
-    // Note: In production, you'd join with actual traces from Tinybird
-    // For now, we'll return analysis results which reference trace_ids
+    // Get traces with analysis results from analysis_results table
+    // Include all trace data so traces are visible even before analysis completes
+    // Order by timestamp (when trace was created) since analyzed_at might be NULL for new traces
+    console.log(
+      `[Traces API] Fetching traces for tenant ${user.tenantId}, limit: ${limit}, offset: ${offset}`
+    );
     const traces = await query(
       `SELECT 
         ar.trace_id,
         ar.tenant_id,
         ar.project_id,
         ar.analyzed_at,
+        ar.timestamp,
+        ar.query,
+        ar.response,
+        ar.model,
+        ar.tokens_total,
+        ar.latency_ms,
         ar.is_hallucination,
         ar.hallucination_confidence,
         ar.quality_score,
@@ -302,12 +311,18 @@ router.get("/", async (req: Request, res: Response) => {
         ar.context_relevance_score,
         ar.answer_faithfulness_score,
         ar.drift_score,
-        ar.anomaly_score
+        ar.anomaly_score,
+        ar.conversation_id,
+        ar.message_index
        FROM analysis_results ar
        ${whereClause}
-       ORDER BY ar.analyzed_at DESC
+       ORDER BY COALESCE(ar.timestamp, ar.analyzed_at) DESC NULLS LAST
        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
       [...params, limit, offset]
+    );
+
+    console.log(
+      `[Traces API] Found ${traces.length} traces for tenant ${user.tenantId}`
     );
 
     // Get total count

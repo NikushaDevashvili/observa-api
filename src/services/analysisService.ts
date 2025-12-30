@@ -26,7 +26,9 @@ export class AnalysisService {
       }
 
       console.log(
-        `[Analysis] Starting analysis for trace ${trace.traceId}, conversation: ${trace.conversationId || "none"}`
+        `[Analysis] Starting analysis for trace ${
+          trace.traceId
+        }, conversation: ${trace.conversationId || "none"}`
       );
 
       // Call Python analysis service
@@ -430,7 +432,13 @@ export class AnalysisService {
     }
 
     console.log(
-      `[AnalysisService] Stored analysis results for trace ${trace.traceId} - Hallucination: ${analysisResult.is_hallucination || false}, Context Drop: ${analysisResult.has_context_drop || false}, Faithfulness: ${analysisResult.has_faithfulness_issue || false}`
+      `[AnalysisService] Stored analysis results for trace ${
+        trace.traceId
+      } - Hallucination: ${
+        analysisResult.is_hallucination || false
+      }, Context Drop: ${
+        analysisResult.has_context_drop || false
+      }, Faithfulness: ${analysisResult.has_faithfulness_issue || false}`
     );
   }
 
