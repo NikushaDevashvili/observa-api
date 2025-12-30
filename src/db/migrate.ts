@@ -63,6 +63,67 @@ export async function migrateAnalysisResultsTable(): Promise<void> {
   }
 }
 
+/**
+ * Migration to add conversation tracking columns to analysis_results table
+ */
+export async function migrateConversationColumns(): Promise<void> {
+  try {
+    console.log(
+      "🔄 Migrating analysis_results table to add conversation tracking columns..."
+    );
+
+    const conversationColumns = [
+      { name: "conversation_id", type: "VARCHAR(255)" },
+      { name: "session_id", type: "VARCHAR(255)" },
+      { name: "user_id", type: "VARCHAR(255)" },
+      { name: "message_index", type: "INTEGER" },
+    ];
+
+    // Check existing columns
+    const checkColumns = await query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'analysis_results' 
+      AND column_name IN (${conversationColumns
+        .map((c) => `'${c.name}'`)
+        .join(",")})
+    `);
+    const existingColumns = checkColumns.map((row: any) => row.column_name);
+
+    for (const col of conversationColumns) {
+      if (!existingColumns.includes(col.name)) {
+        console.log(`  Adding column: ${col.name}`);
+        await query(
+          `ALTER TABLE analysis_results ADD COLUMN ${col.name} ${col.type}`
+        );
+      } else {
+        console.log(`  Column ${col.name} already exists, skipping`);
+      }
+    }
+
+    // Create indexes for conversation queries
+    await query(`
+      CREATE INDEX IF NOT EXISTS idx_analysis_conversation 
+      ON analysis_results(conversation_id, message_index);
+    `);
+
+    await query(`
+      CREATE INDEX IF NOT EXISTS idx_analysis_session 
+      ON analysis_results(session_id, timestamp);
+    `);
+
+    await query(`
+      CREATE INDEX IF NOT EXISTS idx_analysis_user 
+      ON analysis_results(tenant_id, user_id, timestamp DESC);
+    `);
+
+    console.log("✅ Conversation columns migration completed successfully");
+  } catch (error) {
+    console.error("❌ Conversation columns migration failed:", error);
+    throw error;
+  }
+}
+
 // Run migration if called directly
 if (import.meta.url === `file://${process.argv[1]}`) {
   migrateAnalysisResultsTable()

@@ -7,6 +7,24 @@ import { TraceEvent } from "../types.js";
 import { traceEventSchema } from "../validation/schemas.js";
 import { query } from "../db/client.js";
 
+/**
+ * Calculate cost based on tokens and model (simplified)
+ * In production, use actual pricing from model provider
+ */
+function calculateCost(tokensTotal: number, model: string): number {
+  // Simplified cost calculation - adjust based on actual model pricing
+  // Example: GPT-4 is ~$0.03 per 1K tokens, GPT-3.5 is ~$0.002 per 1K tokens
+  const modelPricing: Record<string, number> = {
+    "gpt-4": 0.03,
+    "gpt-4-turbo": 0.01,
+    "gpt-3.5-turbo": 0.002,
+    "gpt-3.5": 0.002,
+  };
+
+  const pricePer1K = modelPricing[model.toLowerCase()] || 0.002;
+  return (tokensTotal / 1000) * pricePer1K;
+}
+
 const router = Router();
 
 /**
@@ -76,6 +94,78 @@ router.post("/ingest", async (req: Request, res: Response) => {
       environment,
       headers: validatedData.headers as Record<string, string> | undefined,
     };
+
+    // Handle conversation/session tracking (if provided)
+    if (trace.conversationId) {
+      const { ConversationService } = await import(
+        "../services/conversationService.js"
+      );
+
+      try {
+        // Get or create conversation
+        const conversation = await ConversationService.getOrCreate({
+          conversationId: trace.conversationId,
+          tenantId: trace.tenantId,
+          projectId: trace.projectId,
+          userId: trace.userId,
+        });
+
+        // Update conversation metrics
+        await ConversationService.updateConversationMetrics({
+          conversationId: trace.conversationId,
+          tenantId: trace.tenantId,
+          tokensTotal: trace.tokensTotal,
+          // Calculate cost if model and tokens are available (simplified)
+          cost:
+            trace.tokensTotal && trace.model
+              ? calculateCost(trace.tokensTotal, trace.model)
+              : undefined,
+          hasIssues: false, // Will be updated after analysis
+        });
+
+        console.log(
+          `[Observa API] Updated conversation ${trace.conversationId} - TraceID: ${trace.traceId}`
+        );
+      } catch (error) {
+        console.error(
+          `[Observa API] Failed to update conversation (non-fatal):`,
+          error
+        );
+        // Don't throw - conversation tracking failure shouldn't break trace ingestion
+      }
+    }
+
+    // Handle session tracking (if provided)
+    if (trace.sessionId) {
+      const { ConversationService } = await import(
+        "../services/conversationService.js"
+      );
+
+      try {
+        await ConversationService.getOrCreateSession({
+          sessionId: trace.sessionId,
+          tenantId: trace.tenantId,
+          projectId: trace.projectId,
+          userId: trace.userId,
+          conversationId: trace.conversationId,
+        });
+
+        await ConversationService.updateSessionMetrics({
+          sessionId: trace.sessionId,
+          tenantId: trace.tenantId,
+        });
+
+        console.log(
+          `[Observa API] Updated session ${trace.sessionId} - TraceID: ${trace.traceId}`
+        );
+      } catch (error) {
+        console.error(
+          `[Observa API] Failed to update session (non-fatal):`,
+          error
+        );
+        // Don't throw - session tracking failure shouldn't break trace ingestion
+      }
+    }
 
     // SOTA Architecture: Store trace data immediately in PostgreSQL (HTAP pattern)
     // This ensures data is available for operational queries while Tinybird handles analytics

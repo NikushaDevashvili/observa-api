@@ -105,7 +105,8 @@ export class TraceService {
         latency_ms, time_to_first_token_ms, streaming_duration_ms,
         response_length, status, status_text, finish_reason,
         response_id, system_fingerprint, metadata_json, headers_json,
-        timestamp, environment
+        timestamp, environment,
+        conversation_id, session_id, user_id, message_index
       ) VALUES (
         $1, $2, $3, NOW(),
         $4, $5, $6, $7, $8, $9,
@@ -113,7 +114,8 @@ export class TraceService {
         $13, $14, $15,
         $16, $17, $18, $19,
         $20, $21, $22, $23,
-        $24, $25
+        $24, $25,
+        $26, $27, $28, $29
       )
       ON CONFLICT (trace_id) DO UPDATE SET
         span_id = EXCLUDED.span_id,
@@ -137,7 +139,11 @@ export class TraceService {
         metadata_json = EXCLUDED.metadata_json,
         headers_json = EXCLUDED.headers_json,
         timestamp = EXCLUDED.timestamp,
-        environment = EXCLUDED.environment`,
+        environment = EXCLUDED.environment,
+        conversation_id = EXCLUDED.conversation_id,
+        session_id = EXCLUDED.session_id,
+        user_id = EXCLUDED.user_id,
+        message_index = EXCLUDED.message_index`,
       [
         trace.traceId,
         trace.tenantId,
@@ -164,6 +170,10 @@ export class TraceService {
         trace.headers ? JSON.stringify(trace.headers) : null,
         trace.timestamp ? new Date(trace.timestamp) : null,
         trace.environment || null,
+        trace.conversationId || null,
+        trace.sessionId || null,
+        trace.userId || null,
+        trace.messageIndex || null,
       ]
     );
   }

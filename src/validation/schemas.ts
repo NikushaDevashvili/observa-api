@@ -43,4 +43,10 @@ export const traceEventSchema = z.object({
   responseId: z.string().nullable().optional(),
   systemFingerprint: z.string().nullable().optional(),
   headers: z.record(z.string(), z.string()).optional(),
+  // Conversation tracking fields
+  conversationId: z.string().optional(),
+  sessionId: z.string().optional(),
+  userId: z.string().optional(),
+  messageIndex: z.number().int().positive().optional(),
+  parentMessageId: z.string().optional(),
 });

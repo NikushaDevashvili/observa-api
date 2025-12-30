@@ -40,38 +40,116 @@ export class AnalysisService {
   }
 
   /**
-   * Call the Python analysis service
+   * Call the Python analysis service with timeout and retry logic
    */
   private static async callAnalysisService(trace: TraceEvent): Promise<any> {
     const url = `${this.analysisServiceUrl}/analyze`;
+    const timeout = 60000; // 60 seconds timeout
+    const maxRetries = 3;
+    const baseDelay = 1000; // 1 second base delay for exponential backoff
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        trace_id: trace.traceId,
-        tenant_id: trace.tenantId,
-        project_id: trace.projectId,
-        query: trace.query,
-        context: trace.context || "",
-        response: trace.response,
-        model: trace.model || "",
-        tokens_prompt: trace.tokensPrompt || null,
-        tokens_completion: trace.tokensCompletion || null,
-        tokens_total: trace.tokensTotal || null,
-        latency_ms: trace.latencyMs,
-      }),
-    });
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        // Create AbortController for timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-    if (!response.ok) {
-      throw new Error(
-        `Analysis service returned ${response.status}: ${response.statusText}`
-      );
+        try {
+          const response = await fetch(url, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              trace_id: trace.traceId,
+              tenant_id: trace.tenantId,
+              project_id: trace.projectId,
+              query: trace.query,
+              context: trace.context || "",
+              response: trace.response,
+              model: trace.model || "",
+              tokens_prompt: trace.tokensPrompt || null,
+              tokens_completion: trace.tokensCompletion || null,
+              tokens_total: trace.tokensTotal || null,
+              latency_ms: trace.latencyMs,
+            }),
+            signal: controller.signal,
+          });
+
+          clearTimeout(timeoutId);
+
+          // Handle 503 (service not ready) with retry
+          if (response.status === 503) {
+            if (attempt < maxRetries - 1) {
+              const delay = baseDelay * Math.pow(2, attempt); // Exponential backoff
+              console.log(
+                `[Analysis] Service not ready (503), retrying in ${delay}ms (attempt ${
+                  attempt + 1
+                }/${maxRetries})`
+              );
+              await new Promise((resolve) => setTimeout(resolve, delay));
+              continue;
+            } else {
+              throw new Error(
+                `Analysis service not ready after ${maxRetries} attempts`
+              );
+            }
+          }
+
+          if (!response.ok) {
+            throw new Error(
+              `Analysis service returned ${response.status}: ${response.statusText}`
+            );
+          }
+
+          return await response.json();
+        } catch (fetchError: any) {
+          clearTimeout(timeoutId);
+
+          // Handle timeout
+          if (fetchError.name === "AbortError") {
+            if (attempt < maxRetries - 1) {
+              const delay = baseDelay * Math.pow(2, attempt);
+              console.log(
+                `[Analysis] Request timeout, retrying in ${delay}ms (attempt ${
+                  attempt + 1
+                }/${maxRetries})`
+              );
+              await new Promise((resolve) => setTimeout(resolve, delay));
+              continue;
+            } else {
+              throw new Error(
+                `Analysis service request timed out after ${maxRetries} attempts`
+              );
+            }
+          }
+
+          // Handle other errors
+          throw fetchError;
+        }
+      } catch (error: any) {
+        // If this is the last attempt, throw the error
+        if (attempt === maxRetries - 1) {
+          if (error.message) {
+            throw error;
+          }
+          throw new Error(
+            `Analysis service call failed after ${maxRetries} attempts: ${error}`
+          );
+        }
+
+        // Otherwise, wait and retry
+        const delay = baseDelay * Math.pow(2, attempt);
+        console.log(
+          `[Analysis] Error on attempt ${attempt + 1}, retrying in ${delay}ms:`,
+          error.message || error
+        );
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
     }
 
-    return await response.json();
+    // This should never be reached, but TypeScript needs it
+    throw new Error("Analysis service call failed");
   }
 
   /**

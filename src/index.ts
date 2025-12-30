@@ -33,6 +33,7 @@ import tracesRouter from "./routes/traces.js";
 import metricsRouter from "./routes/metrics.js";
 import authRouter from "./routes/auth.js";
 import analyticsRouter from "./routes/analytics.js";
+import conversationsRouter from "./routes/conversations.js";
 import { initializeSchema } from "./db/schema.js";
 import { testConnection } from "./db/client.js";
 
@@ -311,6 +312,7 @@ app.use("/api/v1/tenants", tenantsRouter);
 app.use("/api/v1/traces", tracesRouter);
 app.use("/api/v1/metrics", metricsRouter);
 app.use("/api/v1/analytics", analyticsRouter);
+app.use("/api/v1/conversations", conversationsRouter);
 
 // Error handler middleware (must be last)
 app.use(

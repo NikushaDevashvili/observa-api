@@ -59,6 +59,12 @@ export interface TraceEvent {
   responseId?: string | null;
   systemFingerprint?: string | null;
   headers?: Record<string, string>;
+  // Conversation tracking fields
+  conversationId?: string;  // Long-lived conversation identifier
+  sessionId?: string;       // Short-lived session identifier
+  userId?: string;          // End-user identifier
+  messageIndex?: number;    // Position in conversation (1, 2, 3...)
+  parentMessageId?: string;  // For threaded conversations
 }
 
 export interface TinybirdEvent {

@@ -135,6 +135,43 @@ export async function initializeSchema(): Promise<void> {
     );
   `);
 
+  // Create conversations table (groups messages)
+  await query(`
+    CREATE TABLE IF NOT EXISTS conversations (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      conversation_id VARCHAR(255) NOT NULL,
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      user_id VARCHAR(255),
+      started_at TIMESTAMP DEFAULT NOW(),
+      last_message_at TIMESTAMP DEFAULT NOW(),
+      message_count INTEGER DEFAULT 0,
+      total_tokens INTEGER DEFAULT 0,
+      total_cost DECIMAL(10, 4) DEFAULT 0,
+      has_issues BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW(),
+      UNIQUE(conversation_id, tenant_id)
+    );
+  `);
+
+  // Create user_sessions table (browser/app sessions)
+  await query(`
+    CREATE TABLE IF NOT EXISTS user_sessions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      session_id VARCHAR(255) NOT NULL,
+      conversation_id VARCHAR(255),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      user_id VARCHAR(255),
+      started_at TIMESTAMP DEFAULT NOW(),
+      ended_at TIMESTAMP,
+      message_count INTEGER DEFAULT 0,
+      created_at TIMESTAMP DEFAULT NOW(),
+      UNIQUE(session_id, tenant_id)
+    );
+  `);
+
   // Create indexes for performance
   await query(`
     CREATE INDEX IF NOT EXISTS idx_analysis_tenant 
@@ -181,12 +218,40 @@ export async function initializeSchema(): Promise<void> {
     ON sessions(token_hash);
   `);
 
+  // Indexes for conversations
+  await query(`
+    CREATE INDEX IF NOT EXISTS idx_conversations_tenant 
+    ON conversations(tenant_id, last_message_at DESC);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS idx_conversations_user 
+    ON conversations(tenant_id, user_id, last_message_at DESC);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS idx_conversations_id 
+    ON conversations(conversation_id, tenant_id);
+  `);
+
+  // Indexes for user_sessions
+  await query(`
+    CREATE INDEX IF NOT EXISTS idx_user_sessions_tenant 
+    ON user_sessions(tenant_id, started_at DESC);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS idx_user_sessions_user 
+    ON user_sessions(tenant_id, user_id, started_at DESC);
+  `);
+
   console.log("Database schema initialized successfully");
 
   // Run migration to add new columns if needed
   try {
-    const { migrateAnalysisResultsTable } = await import("./migrate.js");
+    const { migrateAnalysisResultsTable, migrateConversationColumns } = await import("./migrate.js");
     await migrateAnalysisResultsTable();
+    await migrateConversationColumns();
   } catch (error) {
     // Migration errors are non-fatal - columns might already exist
     console.log("Migration check completed (some columns may already exist)");
