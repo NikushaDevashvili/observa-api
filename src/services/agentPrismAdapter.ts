@@ -122,6 +122,9 @@ export interface AgentPrismTraceSpan {
   status?: "success" | "error" | "pending" | "warning"; // Status for status badge
   tokensCount?: number; // Optional tokens count for TokensBadge
   cost?: number; // Optional cost for PriceBadge
+  input?: string; // Input data for In/Out tab (JSON string or plain string)
+  output?: string; // Output data for In/Out tab (JSON string or plain string)
+  raw: string; // Raw JSON representation of span for RAW tab
   children?: AgentPrismTraceSpan[];
 }
 
@@ -263,6 +266,9 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
   let category: "llm_call" | "tool_execution" | "agent_invocation" | "chain_operation" | 
                 "retrieval" | "embedding" | "create_agent" | "span" | "event" | "guardrail" | "unknown" = "unknown";
   
+  const spanName = span.name || "";
+  const spanNameLower = spanName.toLowerCase();
+  
   // Check in priority order (most specific first)
   if (span.llm_call || span.event_type === "llm_call" || span.type === "llm_call") {
     category = "llm_call";
@@ -272,8 +278,27 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
     category = "retrieval";
   } else if (span.output || span.event_type === "output" || span.type === "output") {
     category = "event"; // Output events map to "event"
-  } else if (span.type === "trace" || span.name === "Trace" || span.name?.toLowerCase() === "trace") {
+  } else if (span.type === "trace" || span.name === "Trace" || spanNameLower === "trace") {
     category = "span"; // Root trace spans
+  } else {
+    // Try to detect category from span name patterns (common in LangChain/LangGraph)
+    if (
+      spanNameLower.includes("runnablesequence") ||
+      spanNameLower.includes("sequence") ||
+      spanNameLower.includes("chain") ||
+      spanNameLower.startsWith("runnable")
+    ) {
+      category = "chain_operation";
+    } else if (
+      spanNameLower.includes("agent") ||
+      spanNameLower.includes("agentexecutor") ||
+      spanNameLower.includes("runnableassign") ||
+      spanNameLower.includes("openaitoolsagent") ||
+      spanNameLower.includes("toolagent") ||
+      spanNameLower.includes("planandexecute")
+    ) {
+      category = "agent_invocation";
+    }
   }
 
   // Determine status from span data
@@ -287,6 +312,63 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
   // Extract tokensCount and cost for badges
   const tokensCount = span.llm_call?.total_tokens || null;
   const cost = span.llm_call?.cost || null;
+
+  // Extract input/output for In/Out tab
+  // For LLM calls, use llm_call input/output
+  // For tool calls, use tool_call args/result
+  // For other spans, use attributes or metadata
+  let input: string | undefined;
+  let output: string | undefined;
+  
+  if (span.llm_call) {
+    if (span.llm_call.input !== null && span.llm_call.input !== undefined) {
+      input = typeof span.llm_call.input === "string" 
+        ? span.llm_call.input 
+        : JSON.stringify(span.llm_call.input, null, 2);
+    }
+    if (span.llm_call.output !== null && span.llm_call.output !== undefined) {
+      output = typeof span.llm_call.output === "string"
+        ? span.llm_call.output
+        : JSON.stringify(span.llm_call.output, null, 2);
+    }
+  } else if (span.tool_call) {
+    if (span.tool_call.args !== null && span.tool_call.args !== undefined) {
+      input = typeof span.tool_call.args === "string"
+        ? span.tool_call.args
+        : JSON.stringify(span.tool_call.args, null, 2);
+    }
+    if (span.tool_call.result !== null && span.tool_call.result !== undefined) {
+      output = typeof span.tool_call.result === "string"
+        ? span.tool_call.result
+        : JSON.stringify(span.tool_call.result, null, 2);
+    }
+  } else if (span.output) {
+    if (span.output.final_output !== null && span.output.final_output !== undefined) {
+      output = typeof span.output.final_output === "string"
+        ? span.output.final_output
+        : JSON.stringify(span.output.final_output, null, 2);
+    }
+  }
+
+  // Create raw JSON representation of the span (for RAW tab)
+  // Include all span data in a clean format
+  const rawSpanData = {
+    id: span.span_id || span.id,
+    parentId: span.parent_span_id,
+    name: span.name,
+    startTime: span.start_time,
+    endTime: span.end_time,
+    duration_ms: span.duration_ms,
+    type: category,
+    status,
+    ...(span.llm_call && { llm_call: span.llm_call }),
+    ...(span.tool_call && { tool_call: span.tool_call }),
+    ...(span.retrieval && { retrieval: span.retrieval }),
+    ...(span.output && { output: span.output }),
+    ...(span.metadata && { metadata: span.metadata }),
+    attributes,
+  };
+  const raw = JSON.stringify(rawSpanData, null, 2);
 
   // Build TraceSpan object
   // Note: Agent-prism components expect 'title' not 'name', and startTime/endTime as numbers
@@ -303,6 +385,9 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
     status, // Status for status badge
     tokensCount: tokensCount !== null ? tokensCount : undefined, // Optional tokens count
     cost: cost !== null ? cost : undefined, // Optional cost
+    input, // Input for In/Out tab
+    output, // Output for In/Out tab
+    raw, // Raw JSON representation for RAW tab
     // Recursively transform children
     children: span.children?.map(transformSpan) || [],
   };
