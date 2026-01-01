@@ -109,6 +109,7 @@ export class TinybirdRepository {
 
     const params = new URLSearchParams();
     params.append("q", sql);
+    params.append("format", "json"); // Explicitly request JSON format
 
     // Always inject tenant_id as a parameter for safety
     params.append("tenant_id", options.tenantId);
@@ -125,6 +126,11 @@ export class TinybirdRepository {
     }
 
     const url = `${this.baseUrl}/v0/sql?${params.toString()}`;
+    
+    // Log the query for debugging (without sensitive data)
+    console.log(
+      `[TinybirdRepository] Executing SQL query (trace_id filter present: ${sql.includes('trace_id')})`
+    );
 
     try {
       const response = await fetch(url, {
@@ -134,15 +140,29 @@ export class TinybirdRepository {
         },
       });
 
+      // Read response as text first to handle both JSON and error cases
+      const responseText = await response.text();
+      
       if (!response.ok) {
-        const errorText = await response.text().catch(() => "Unknown error");
         throw new Error(
-          `Tinybird raw query failed: ${response.status} ${response.statusText} - ${errorText}`
+          `Tinybird raw query failed: ${response.status} ${response.statusText} - ${responseText}`
         );
       }
 
-      const data = await response.json();
-      return data;
+      // Try to parse as JSON
+      try {
+        const data = JSON.parse(responseText);
+        return data;
+      } catch (parseError) {
+        // If it's not valid JSON, log the actual response for debugging
+        console.error(
+          `[TinybirdRepository] Invalid JSON response (status ${response.status}):`,
+          responseText.substring(0, 500)
+        );
+        throw new Error(
+          `Tinybird returned invalid JSON: ${parseError instanceof Error ? parseError.message : String(parseError)}. Response: ${responseText.substring(0, 200)}`
+        );
+      }
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
