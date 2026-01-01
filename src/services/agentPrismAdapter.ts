@@ -119,6 +119,9 @@ export interface AgentPrismTraceSpan {
   attributes: Record<string, any>;
   type: "llm_call" | "tool_execution" | "agent_invocation" | "chain_operation" | 
         "retrieval" | "embedding" | "create_agent" | "span" | "event" | "guardrail" | "unknown"; // TraceSpanCategory for SpanBadge
+  status?: "success" | "error" | "pending" | "warning"; // Status for status badge
+  tokensCount?: number; // Optional tokens count for TokensBadge
+  cost?: number; // Optional cost for PriceBadge
   children?: AgentPrismTraceSpan[];
 }
 
@@ -273,18 +276,33 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
     category = "span"; // Root trace spans
   }
 
+  // Determine status from span data
+  let status: "success" | "error" | "pending" | "warning" = "success";
+  if (span.tool_call?.result_status === "error") {
+    status = "error";
+  } else if (span.tool_call?.error_message) {
+    status = "error";
+  }
+
+  // Extract tokensCount and cost for badges
+  const tokensCount = span.llm_call?.total_tokens || null;
+  const cost = span.llm_call?.cost || null;
+
   // Build TraceSpan object
   // Note: Agent-prism components expect 'title' not 'name', and startTime/endTime as numbers
   const traceSpan: AgentPrismTraceSpan = {
     id: span.span_id || span.id,
     parentId: span.parent_span_id,
-    name: span.name, // Keep name for compatibility, but components may use title
-    title: span.name, // Add title field (components use this)
+    name: span.name, // Keep name for compatibility
+    title: span.name, // Components use this field
     startTime, // Number (Unix ms) - components accept this format
     endTime, // Number (Unix ms) - components accept this format
     duration: span.duration_ms,
     attributes,
     type: category, // Set the type field for SpanBadge (valid TraceSpanCategory)
+    status, // Status for status badge
+    tokensCount: tokensCount !== null ? tokensCount : undefined, // Optional tokens count
+    cost: cost !== null ? cost : undefined, // Optional cost
     // Recursively transform children
     children: span.children?.map(transformSpan) || [],
   };
