@@ -35,6 +35,7 @@ import authRouter from "./routes/auth.js";
 import analyticsRouter from "./routes/analytics.js";
 import conversationsRouter from "./routes/conversations.js";
 import eventsRouter from "./routes/events.js";
+import sessionsRouter from "./routes/sessions.js";
 import { initializeSchema } from "./db/schema.js";
 import { testConnection } from "./db/client.js";
 
@@ -235,6 +236,8 @@ app.get("/", (req, res) => {
       tenants: "/api/v1/tenants",
       traces: "/api/v1/traces",
       events: "/api/v1/events",
+      conversations: "/api/v1/conversations",
+      sessions: "/api/v1/sessions",
     },
     documentation: "https://github.com/NikushaDevashvili/observa-api",
   });
@@ -385,6 +388,7 @@ app.use("/api/v1/events", eventsRouter);
 app.use("/api/v1/metrics", metricsRouter);
 app.use("/api/v1/analytics", analyticsRouter);
 app.use("/api/v1/conversations", conversationsRouter);
+app.use("/api/v1/sessions", sessionsRouter);
 
 // Error handler middleware (must be last)
 app.use(

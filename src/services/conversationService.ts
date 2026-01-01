@@ -350,5 +350,183 @@ export class ConversationService {
       hasMore: offset + limit < total,
     };
   }
+
+  /**
+   * Get session by ID
+   */
+  static async getSession(
+    sessionId: string,
+    tenantId: string
+  ): Promise<any | null> {
+    const result = await query(
+      `SELECT * FROM user_sessions 
+       WHERE session_id = $1 AND tenant_id = $2`,
+      [sessionId, tenantId]
+    );
+
+    return result.length > 0 ? result[0] : null;
+  }
+
+  /**
+   * Get all messages/traces in a session
+   */
+  static async getSessionMessages(
+    sessionId: string,
+    tenantId: string,
+    limit: number = 100,
+    offset: number = 0
+  ): Promise<any[]> {
+    const result = await query(
+      `SELECT * FROM analysis_results 
+       WHERE session_id = $1 AND tenant_id = $2
+       ORDER BY timestamp ASC, message_index ASC
+       LIMIT $3 OFFSET $4`,
+      [sessionId, tenantId, limit, offset]
+    );
+
+    return result;
+  }
+
+  /**
+   * Get session analytics
+   */
+  static async getSessionAnalytics(
+    sessionId: string,
+    tenantId: string
+  ): Promise<{
+    totalMessages: number;
+    totalTokens: number;
+    averageLatency: number;
+    issueCount: number;
+    hallucinationRate: number;
+    contextDropRate: number;
+    faithfulnessIssueRate: number;
+    duration: number | null; // Duration in milliseconds if session is ended
+  }> {
+    const session = await this.getSession(sessionId, tenantId);
+    if (!session) {
+      throw new Error("Session not found");
+    }
+
+    const messages = await query(
+      `SELECT 
+        COUNT(*) as total_messages,
+        SUM(tokens_total) as total_tokens,
+        AVG(latency_ms) as avg_latency,
+        COUNT(*) FILTER (WHERE is_hallucination = TRUE) as hallucination_count,
+        COUNT(*) FILTER (WHERE has_context_drop = TRUE) as context_drop_count,
+        COUNT(*) FILTER (WHERE has_faithfulness_issue = TRUE) as faithfulness_count,
+        COUNT(*) FILTER (
+          WHERE is_hallucination = TRUE 
+          OR has_context_drop = TRUE 
+          OR has_faithfulness_issue = TRUE
+        ) as issue_count
+       FROM analysis_results 
+       WHERE session_id = $1 AND tenant_id = $2`,
+      [sessionId, tenantId]
+    );
+
+    const stats = messages[0] as any;
+    const totalMessages = parseInt(stats.total_messages || "0", 10);
+
+    // Calculate duration if session is ended
+    let duration: number | null = null;
+    if (session.ended_at && session.started_at) {
+      duration =
+        new Date(session.ended_at).getTime() -
+        new Date(session.started_at).getTime();
+    }
+
+    return {
+      totalMessages,
+      totalTokens: parseInt(stats.total_tokens || "0", 10),
+      averageLatency: parseFloat(stats.avg_latency || "0"),
+      issueCount: parseInt(stats.issue_count || "0", 10),
+      hallucinationRate:
+        totalMessages > 0
+          ? (parseInt(stats.hallucination_count || "0", 10) / totalMessages) * 100
+          : 0,
+      contextDropRate:
+        totalMessages > 0
+          ? (parseInt(stats.context_drop_count || "0", 10) / totalMessages) * 100
+          : 0,
+      faithfulnessIssueRate:
+        totalMessages > 0
+          ? (parseInt(stats.faithfulness_count || "0", 10) / totalMessages) * 100
+          : 0,
+      duration,
+    };
+  }
+
+  /**
+   * List sessions with filters
+   */
+  static async listSessions(params: {
+    tenantId: string;
+    projectId?: string;
+    userId?: string;
+    limit?: number;
+    offset?: number;
+    activeOnly?: boolean; // Filter to only active sessions (ended_at IS NULL)
+  }): Promise<{
+    sessions: any[];
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  }> {
+    const {
+      tenantId,
+      projectId,
+      userId,
+      limit = 50,
+      offset = 0,
+      activeOnly,
+    } = params;
+
+    let whereClause = "WHERE tenant_id = $1";
+    const values: any[] = [tenantId];
+    let paramIndex = 2;
+
+    if (projectId) {
+      whereClause += ` AND project_id = $${paramIndex}`;
+      values.push(projectId);
+      paramIndex++;
+    }
+
+    if (userId) {
+      whereClause += ` AND user_id = $${paramIndex}`;
+      values.push(userId);
+      paramIndex++;
+    }
+
+    if (activeOnly) {
+      whereClause += ` AND ended_at IS NULL`;
+    }
+
+    // Get total count
+    const countResult = await query(
+      `SELECT COUNT(*) as total FROM user_sessions ${whereClause}`,
+      values
+    );
+    const total = parseInt(countResult[0].total, 10);
+
+    // Get sessions
+    const sessions = await query(
+      `SELECT * FROM user_sessions 
+       ${whereClause}
+       ORDER BY started_at DESC
+       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+      [...values, limit, offset]
+    );
+
+    return {
+      sessions: sessions as any[],
+      total,
+      limit,
+      offset,
+      hasMore: offset + limit < total,
+    };
+  }
 }
 
