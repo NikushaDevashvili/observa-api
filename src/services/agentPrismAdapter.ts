@@ -1,0 +1,350 @@
+/**
+ * Agent-Prism Adapter Service
+ *
+ * Transforms Observa trace data format into agent-prism compatible format.
+ * This allows the frontend to use agent-prism components for trace visualization.
+ *
+ * Agent-Prism format reference:
+ * - TraceRecord: { id, name, spansCount, durationMs, agentDescription }
+ * - TraceSpan: { id, parentId, name, startTime, endTime, duration, attributes, children? }
+ */
+
+/**
+ * Observa trace data format (from TraceQueryService.getTraceDetailTree)
+ */
+export interface ObservaTraceData {
+  summary: {
+    trace_id: string;
+    tenant_id: string;
+    project_id: string;
+    start_time: string; // ISO string
+    end_time: string; // ISO string
+    total_latency_ms: number | null;
+    total_tokens: number | null;
+    model?: string | null;
+    query?: string | null;
+    response?: string | null;
+    finish_reason?: string | null;
+    conversation_id?: string | null;
+    session_id?: string | null;
+    user_id?: string | null;
+    environment?: string | null;
+  };
+  spans: ObservaSpan[];
+  allSpans?: ObservaSpan[];
+  spansById?: Record<string, ObservaSpan>;
+  signals?: any[];
+  analysis?: any;
+}
+
+/**
+ * Observa span format (from TraceQueryService)
+ */
+export interface ObservaSpan {
+  id: string;
+  span_id: string;
+  parent_span_id: string | null;
+  name: string;
+  start_time: string; // ISO string
+  end_time: string; // ISO string
+  duration_ms: number;
+  events?: any[];
+  children?: ObservaSpan[];
+  metadata?: Record<string, any>;
+  // Type-specific flattened data
+  llm_call?: {
+    model?: string;
+    input?: string | null;
+    output?: string | null;
+    input_tokens?: number | null;
+    output_tokens?: number | null;
+    total_tokens?: number | null;
+    latency_ms?: number | null;
+    finish_reason?: string | null;
+    cost?: number | null;
+    time_to_first_token_ms?: number | null;
+    streaming_duration_ms?: number | null;
+    response_id?: string | null;
+    system_fingerprint?: string | null;
+    temperature?: number | null;
+    max_tokens?: number | null;
+  };
+  tool_call?: {
+    tool_name?: string;
+    args?: any;
+    result?: any;
+    latency_ms?: number | null;
+    result_status?: string;
+    error_message?: string | null;
+  };
+  retrieval?: {
+    k?: number | null;
+    top_k?: number | null;
+    latency_ms?: number | null;
+    retrieval_context_ids?: string[] | null;
+    similarity_scores?: number[] | null;
+    retrieval_context?: string | null;
+  };
+  output?: {
+    final_output?: string | null;
+    output_length?: number | null;
+  };
+  type?: string;
+  event_type?: string;
+}
+
+/**
+ * Agent-Prism TraceRecord format
+ */
+export interface AgentPrismTraceRecord {
+  id: string;
+  name: string;
+  spansCount: number;
+  durationMs: number;
+  agentDescription?: string;
+}
+
+/**
+ * Agent-Prism TraceSpan format
+ */
+export interface AgentPrismTraceSpan {
+  id: string;
+  parentId: string | null;
+  name: string;
+  startTime: number; // Unix timestamp in milliseconds
+  endTime: number; // Unix timestamp in milliseconds
+  duration: number; // Duration in milliseconds
+  attributes: Record<string, any>;
+  children?: AgentPrismTraceSpan[];
+}
+
+/**
+ * Agent-Prism formatted trace data
+ */
+export interface AgentPrismTraceData {
+  traceRecord: AgentPrismTraceRecord;
+  spans: AgentPrismTraceSpan[];
+  badges?: Array<{
+    label: string;
+    variant?: "default" | "secondary" | "destructive" | "outline" | "warning" | "error";
+  }>;
+}
+
+/**
+ * Convert ISO timestamp string to Unix milliseconds
+ */
+function isoToUnixMs(isoString: string): number {
+  try {
+    return new Date(isoString).getTime();
+  } catch (error) {
+    console.warn(`[AgentPrismAdapter] Failed to parse timestamp: ${isoString}`, error);
+    return Date.now();
+  }
+}
+
+/**
+ * Transform a single Observa span to Agent-Prism TraceSpan
+ */
+function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
+  const startTime = isoToUnixMs(span.start_time);
+  const endTime = isoToUnixMs(span.end_time);
+
+  // Start with metadata as base attributes
+  const attributes: Record<string, any> = {
+    ...(span.metadata || {}),
+    span_id: span.span_id,
+    duration_ms: span.duration_ms,
+    event_type: span.event_type || span.type,
+  };
+
+  // Add LLM call attributes (map to OpenTelemetry semantic conventions)
+  if (span.llm_call) {
+    const llm = span.llm_call;
+    
+    // OpenTelemetry GenAI semantic conventions
+    if (llm.model) attributes["gen_ai.request.model"] = llm.model;
+    if (llm.input_tokens !== null && llm.input_tokens !== undefined) {
+      attributes["gen_ai.usage.input_tokens"] = llm.input_tokens;
+    }
+    if (llm.output_tokens !== null && llm.output_tokens !== undefined) {
+      attributes["gen_ai.usage.output_tokens"] = llm.output_tokens;
+    }
+    if (llm.total_tokens !== null && llm.total_tokens !== undefined) {
+      attributes["gen_ai.usage.total_tokens"] = llm.total_tokens;
+    }
+    if (llm.finish_reason) {
+      attributes["gen_ai.response.finish_reasons"] = llm.finish_reason;
+    }
+    if (llm.cost !== null && llm.cost !== undefined) {
+      attributes["gen_ai.usage.cost"] = llm.cost;
+    }
+    if (llm.temperature !== null && llm.temperature !== undefined) {
+      attributes["gen_ai.request.temperature"] = llm.temperature;
+    }
+    if (llm.max_tokens !== null && llm.max_tokens !== undefined) {
+      attributes["gen_ai.request.max_tokens"] = llm.max_tokens;
+    }
+
+    // Also keep original structure for compatibility
+    attributes["llm_call.model"] = llm.model;
+    attributes["llm_call.input"] = llm.input;
+    attributes["llm_call.output"] = llm.output;
+    attributes["llm_call.input_tokens"] = llm.input_tokens;
+    attributes["llm_call.output_tokens"] = llm.output_tokens;
+    attributes["llm_call.total_tokens"] = llm.total_tokens;
+    attributes["llm_call.latency_ms"] = llm.latency_ms;
+    attributes["llm_call.finish_reason"] = llm.finish_reason;
+    attributes["llm_call.cost"] = llm.cost;
+    attributes["llm_call.time_to_first_token_ms"] = llm.time_to_first_token_ms;
+    attributes["llm_call.streaming_duration_ms"] = llm.streaming_duration_ms;
+    attributes["llm_call.response_id"] = llm.response_id;
+    attributes["llm_call.system_fingerprint"] = llm.system_fingerprint;
+  }
+
+  // Add tool call attributes
+  if (span.tool_call) {
+    const tool = span.tool_call;
+    if (tool.tool_name) attributes["tool.call.name"] = tool.tool_name;
+    if (tool.args !== undefined) attributes["tool.call.args"] = tool.args;
+    if (tool.result !== undefined) attributes["tool.call.result"] = tool.result;
+    if (tool.latency_ms !== null && tool.latency_ms !== undefined) {
+      attributes["tool.call.latency_ms"] = tool.latency_ms;
+    }
+    if (tool.result_status) {
+      attributes["tool.call.result_status"] = tool.result_status;
+    }
+    if (tool.error_message) {
+      attributes["tool.call.error_message"] = tool.error_message;
+    }
+  }
+
+  // Add retrieval attributes
+  if (span.retrieval) {
+    const retrieval = span.retrieval;
+    const topK = retrieval.top_k || retrieval.k;
+    if (topK !== null && topK !== undefined) {
+      attributes["retrieval.top_k"] = topK;
+    }
+    if (retrieval.latency_ms !== null && retrieval.latency_ms !== undefined) {
+      attributes["retrieval.latency_ms"] = retrieval.latency_ms;
+    }
+    if (retrieval.retrieval_context_ids) {
+      attributes["retrieval.context_ids"] = retrieval.retrieval_context_ids;
+    }
+    if (retrieval.similarity_scores) {
+      attributes["retrieval.similarity_scores"] = retrieval.similarity_scores;
+    }
+    if (retrieval.retrieval_context) {
+      attributes["retrieval.context"] = retrieval.retrieval_context;
+    }
+  }
+
+  // Add output attributes
+  if (span.output) {
+    if (span.output.final_output !== null && span.output.final_output !== undefined) {
+      attributes["output.final_output"] = span.output.final_output;
+    }
+    if (span.output.output_length !== null && span.output.output_length !== undefined) {
+      attributes["output.output_length"] = span.output.output_length;
+    }
+  }
+
+  // Build TraceSpan object
+  const traceSpan: AgentPrismTraceSpan = {
+    id: span.span_id || span.id,
+    parentId: span.parent_span_id,
+    name: span.name,
+    startTime,
+    endTime,
+    duration: span.duration_ms,
+    attributes,
+    // Recursively transform children
+    children: span.children?.map(transformSpan) || [],
+  };
+
+  return traceSpan;
+}
+
+/**
+ * Convert signals to badges for agent-prism
+ */
+function signalsToBadges(signals?: any[]): Array<{
+  label: string;
+  variant?: "default" | "secondary" | "destructive" | "outline" | "warning" | "error";
+}> {
+  if (!signals || signals.length === 0) {
+    return [];
+  }
+
+  return signals.map((signal) => {
+    const severity = signal.severity || "medium";
+    let variant: "default" | "secondary" | "destructive" | "outline" | "warning" | "error" = "default";
+
+    // Map severity to badge variant
+    if (severity === "high") {
+      variant = "error";
+    } else if (severity === "medium") {
+      variant = "warning";
+    } else if (severity === "low") {
+      variant = "secondary";
+    }
+
+    return {
+      label: signal.signal_type || "Issue",
+      variant,
+    };
+  });
+}
+
+/**
+ * Main adapter function: Convert Observa trace format to Agent-Prism format
+ *
+ * @param observaTrace - Trace data from TraceQueryService.getTraceDetailTree
+ * @returns Agent-Prism formatted trace data
+ */
+export function adaptObservaTraceToAgentPrism(
+  observaTrace: ObservaTraceData
+): AgentPrismTraceData {
+  const { summary, spans, signals } = observaTrace;
+
+  // Transform summary to TraceRecord
+  const traceRecord: AgentPrismTraceRecord = {
+    id: summary.trace_id,
+    name: summary.query || "Trace", // Use query as trace name
+    spansCount: spans.length,
+    durationMs: summary.total_latency_ms || 0,
+    agentDescription: summary.model || "", // Model name as agent description
+  };
+
+  // Transform all spans (recursive transformation handles children)
+  const transformedSpans = spans.map(transformSpan);
+
+  // Convert signals to badges
+  const badges = signalsToBadges(signals);
+
+  return {
+    traceRecord,
+    spans: transformedSpans,
+    badges: badges.length > 0 ? badges : undefined,
+  };
+}
+
+/**
+ * Service class for agent-prism adapter operations
+ */
+export class AgentPrismAdapterService {
+  /**
+   * Transform Observa trace data to agent-prism format
+   */
+  static adapt(observaTrace: ObservaTraceData): AgentPrismTraceData {
+    return adaptObservaTraceToAgentPrism(observaTrace);
+  }
+
+  /**
+   * Transform multiple traces (for trace list view)
+   */
+  static adaptTraces(traces: ObservaTraceData[]): AgentPrismTraceData[] {
+    return traces.map(adaptObservaTraceToAgentPrism);
+  }
+}
+

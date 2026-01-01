@@ -4,6 +4,7 @@ import { TraceService } from "../services/traceService.js";
 import { AnalysisService } from "../services/analysisService.js";
 import { AuthService } from "../services/authService.js";
 import { TraceQueryService } from "../services/traceQueryService.js";
+import { AgentPrismAdapterService } from "../services/agentPrismAdapter.js";
 import { TraceEvent } from "../types.js";
 import { traceEventSchema } from "../validation/schemas.js";
 import { query } from "../db/client.js";
@@ -431,6 +432,29 @@ router.get("/:traceId", async (req: Request, res: Response) => {
     if (!user) {
       return res.status(401).json({
         error: "Invalid or expired session",
+      });
+    }
+
+    // If format=agent-prism requested, return agent-prism formatted data
+    if (format === "agent-prism") {
+      const traceTree = await TraceQueryService.getTraceDetailTree(
+        traceId,
+        user.tenantId,
+        (req.query.projectId as string | undefined) || null
+      );
+
+      if (!traceTree) {
+        return res.status(404).json({
+          error: "Trace not found",
+        });
+      }
+
+      // Transform to agent-prism format
+      const agentPrismData = AgentPrismAdapterService.adapt(traceTree);
+
+      return res.json({
+        success: true,
+        trace: agentPrismData,
       });
     }
 
