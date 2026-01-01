@@ -434,6 +434,11 @@ async function sendEvents(events, apiKey, retries = 3) {
         const errorType = `${response.status}_${data.error?.code || 'unknown'}`;
         stats.errorsByType[errorType] = (stats.errorsByType[errorType] || 0) + 1;
         
+        // Log validation errors for debugging
+        if (response.status === 422 && data.error?.details?.validation_errors) {
+          console.error('❌ Validation errors:', JSON.stringify(data.error.details.validation_errors, null, 2));
+        }
+        
         if (response.status >= 500 && attempt < retries - 1) {
           await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
           continue;
@@ -499,7 +504,7 @@ async function simulateConversation(userId, conversationIndex, apiKey) {
 }
 
 async function simulateUser(userIndex, apiKey) {
-  const userId = `user-${userIndex}-${generateUUID().substring(0, 8)}`;
+  const userId = generateUUID(); // Use proper UUID format
   const results = [];
 
   for (let convIndex = 0; convIndex < CONFIG.conversationsPerUser; convIndex++) {
