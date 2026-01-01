@@ -3,6 +3,7 @@ import { TokenService } from "../services/tokenService.js";
 import { TraceService } from "../services/traceService.js";
 import { AnalysisService } from "../services/analysisService.js";
 import { AuthService } from "../services/authService.js";
+import { TraceQueryService } from "../services/traceQueryService.js";
 import { TraceEvent } from "../types.js";
 import { traceEventSchema } from "../validation/schemas.js";
 import { query } from "../db/client.js";
@@ -95,14 +96,34 @@ router.post("/ingest", async (req: Request, res: Response) => {
     console.log(
       `[Observa API] Received trace data - traceId: ${
         traceData?.traceId
-      }, query length: ${traceData?.query?.length || 0}, conversationId: ${traceData?.conversationId?.substring(0, 20) || "none"}, messageIndex: ${traceData?.messageIndex || "none"}`
+      }, query length: ${traceData?.query?.length || 0}, conversationId: ${
+        traceData?.conversationId?.substring(0, 20) || "none"
+      }, messageIndex: ${traceData?.messageIndex || "none"}`
     );
     console.log(
       `[Observa API] Trace data keys:`,
       traceData ? Object.keys(traceData) : "null"
     );
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/431a9fa4-96bd-46c7-8321-5ccac542c2c3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'traces.ts:100',message:'Trace ingestion received',data:{traceId:traceData?.traceId?.substring(0,20),conversationId:traceData?.conversationId?.substring(0,20),messageIndex:traceData?.messageIndex,queryLength:traceData?.query?.length,query:traceData?.query?.substring(0,30)},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'A,B,C'})}).catch(()=>{});
+    fetch("http://127.0.0.1:7242/ingest/431a9fa4-96bd-46c7-8321-5ccac542c2c3", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        location: "traces.ts:100",
+        message: "Trace ingestion received",
+        data: {
+          traceId: traceData?.traceId?.substring(0, 20),
+          conversationId: traceData?.conversationId?.substring(0, 20),
+          messageIndex: traceData?.messageIndex,
+          queryLength: traceData?.query?.length,
+          query: traceData?.query?.substring(0, 30),
+        },
+        timestamp: Date.now(),
+        sessionId: "debug-session",
+        runId: "run3",
+        hypothesisId: "A,B,C",
+      }),
+    }).catch(() => {});
     // #endregion
 
     const validationResult = traceEventSchema.safeParse(traceData);
@@ -119,7 +140,25 @@ router.post("/ingest", async (req: Request, res: Response) => {
 
     console.log(`[Observa API] Trace data validation passed`);
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/431a9fa4-96bd-46c7-8321-5ccac542c2c3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'traces.ts:118',message:'Trace validated, creating TraceEvent',data:{traceId:validationResult.data?.traceId,conversationId:validationResult.data?.conversationId,messageIndex:validationResult.data?.messageIndex,tenantId,projectId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,B,C'})}).catch(()=>{});
+    fetch("http://127.0.0.1:7242/ingest/431a9fa4-96bd-46c7-8321-5ccac542c2c3", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        location: "traces.ts:118",
+        message: "Trace validated, creating TraceEvent",
+        data: {
+          traceId: validationResult.data?.traceId,
+          conversationId: validationResult.data?.conversationId,
+          messageIndex: validationResult.data?.messageIndex,
+          tenantId,
+          projectId,
+        },
+        timestamp: Date.now(),
+        sessionId: "debug-session",
+        runId: "run1",
+        hypothesisId: "A,B,C",
+      }),
+    }).catch(() => {});
     // #endregion
 
     // Override tenant/project from JWT (security: prevent token spoofing)
@@ -284,7 +323,7 @@ router.post("/ingest", async (req: Request, res: Response) => {
 /**
  * GET /api/v1/traces
  * Get traces for the authenticated user
- * Includes analysis results if available
+ * Uses TraceQueryService for consistent querying (currently uses analysis_results table)
  */
 router.get("/", async (req: Request, res: Response) => {
   try {
@@ -311,126 +350,53 @@ router.get("/", async (req: Request, res: Response) => {
     const issueType = req.query.issueType as string | undefined;
     const projectId = req.query.projectId as string | undefined;
 
-    // Build query
-    let whereClause = `WHERE ar.tenant_id = $1`;
-    const params: any[] = [user.tenantId];
-    let paramIndex = 2;
-
-    if (projectId) {
-      whereClause += ` AND ar.project_id = $${paramIndex}`;
-      params.push(projectId);
-      paramIndex++;
-    }
-
-    // Filter by issue type
-    if (issueType) {
-      switch (issueType) {
-        case "hallucination":
-          whereClause += ` AND ar.is_hallucination = true`;
-          break;
-        case "context_drop":
-          whereClause += ` AND ar.has_context_drop = true`;
-          break;
-        case "faithfulness":
-          whereClause += ` AND ar.has_faithfulness_issue = true`;
-          break;
-        case "drift":
-          whereClause += ` AND ar.has_model_drift = true`;
-          break;
-        case "cost_anomaly":
-          whereClause += ` AND ar.has_cost_anomaly = true`;
-          break;
-      }
-    }
-
-    // Get traces with analysis results from analysis_results table
-    // Include all trace data so traces are visible even before analysis completes
-    // Order by timestamp (when trace was created) since analyzed_at might be NULL for new traces
     console.log(
-      `[Traces API] Fetching traces for tenant ${user.tenantId}, limit: ${limit}, offset: ${offset}`
+      `[Traces API] Fetching traces for tenant ${
+        user.tenantId
+      }, limit: ${limit}, offset: ${offset}, issueType: ${issueType || "all"}`
     );
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/431a9fa4-96bd-46c7-8321-5ccac542c2c3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'traces.ts:346',message:'Before querying traces',data:{tenantId:user.tenantId,limit,offset,whereClause,paramCount:params.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-    // #endregion
-    const traces = await query(
-      `SELECT 
-        ar.trace_id,
-        ar.tenant_id,
-        ar.project_id,
-        ar.analyzed_at,
-        ar.timestamp,
-        ar.query,
-        ar.response,
-        ar.model,
-        ar.tokens_total,
-        ar.latency_ms,
-        ar.is_hallucination,
-        ar.hallucination_confidence,
-        ar.quality_score,
-        ar.has_context_drop,
-        ar.has_model_drift,
-        ar.has_faithfulness_issue,
-        ar.has_cost_anomaly,
-        ar.context_relevance_score,
-        ar.answer_faithfulness_score,
-        ar.drift_score,
-        ar.anomaly_score,
-        ar.conversation_id,
-        ar.message_index
-       FROM analysis_results ar
-       ${whereClause}
-       ORDER BY COALESCE(ar.timestamp, ar.analyzed_at) DESC NULLS LAST
-       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
-      [...params, limit, offset]
+
+    // Use TraceQueryService for consistent querying
+    const result = await TraceQueryService.getTraces(
+      user.tenantId,
+      projectId || null,
+      limit,
+      offset,
+      issueType
     );
+
+    // Transform to match frontend expectations (snake_case to camelCase where needed)
+    const traces = result.traces.map((trace) => ({
+      trace_id: trace.trace_id,
+      tenant_id: trace.tenant_id,
+      project_id: trace.project_id,
+      analyzed_at: trace.analyzed_at,
+      timestamp: trace.timestamp,
+      model: trace.model,
+      tokens_total: trace.tokens_total,
+      latency_ms: trace.latency_ms,
+      is_hallucination: trace.is_hallucination,
+      hallucination_confidence: trace.hallucination_confidence,
+      has_context_drop: trace.has_context_drop,
+      has_faithfulness_issue: trace.has_faithfulness_issue,
+      has_model_drift: trace.has_model_drift,
+      has_cost_anomaly: trace.has_cost_anomaly,
+      context_relevance_score: trace.context_relevance_score,
+      answer_faithfulness_score: trace.answer_faithfulness_score,
+    }));
 
     console.log(
-      `[Traces API] Found ${traces.length} traces for tenant ${user.tenantId}`
+      `[Traces API] Found ${traces.length} traces (total: ${result.total})`
     );
-    // Log detailed trace information for debugging
-    if (traces.length > 0) {
-      console.log(`[Traces API] Sample traces:`, traces.slice(0, 5).map((t: any) => ({
-        traceId: t.trace_id?.substring(0, 20),
-        conversationId: t.conversation_id?.substring(0, 20),
-        messageIndex: t.message_index,
-        query: t.query?.substring(0, 50),
-        timestamp: t.timestamp
-      })));
-    }
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/431a9fa4-96bd-46c7-8321-5ccac542c2c3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'traces.ts:390',message:'After query, traces returned',data:{traceCount:traces.length,traceIds:traces.map((t:any)=>t.trace_id),conversationIds:traces.map((t:any)=>t.conversation_id),messageIndexes:traces.map((t:any)=>t.message_index),queries:traces.map((t:any)=>t.query?.substring(0,30))},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'D'})}).catch(()=>{});
-    // #endregion
-
-    // Get total count
-    const countResult = await query<{ count: string }>(
-      `SELECT COUNT(*) as count FROM analysis_results ar ${whereClause}`,
-      params
-    );
-    const total = parseInt(countResult[0]?.count || "0", 10);
-    
-    // Debug: Count traces per conversation to see if multiple traces exist
-    const conversationCounts = await query<{ conversation_id: string; count: string }>(
-      `SELECT conversation_id, COUNT(*) as count 
-       FROM analysis_results ar 
-       ${whereClause} 
-       GROUP BY conversation_id 
-       ORDER BY count DESC 
-       LIMIT 10`,
-      params
-    );
-    console.log(`[Traces API] Traces per conversation:`, conversationCounts.map((c: any) => ({
-      conversationId: c.conversation_id?.substring(0, 20),
-      count: c.count
-    })));
 
     res.json({
       success: true,
       traces,
       pagination: {
-        total,
+        total: result.total,
         limit,
         offset,
-        hasMore: offset + limit < total,
+        hasMore: offset + limit < result.total,
       },
     });
   } catch (error) {
@@ -444,6 +410,7 @@ router.get("/", async (req: Request, res: Response) => {
 /**
  * GET /api/v1/traces/:traceId
  * Get a specific trace with full analysis results
+ * Uses TraceQueryService for consistent querying
  */
 router.get("/:traceId", async (req: Request, res: Response) => {
   try {
@@ -466,8 +433,12 @@ router.get("/:traceId", async (req: Request, res: Response) => {
       });
     }
 
-    // Get analysis results
-    const analysisResult = await AnalysisService.getAnalysisResults(traceId);
+    // Get trace detail using TraceQueryService
+    const analysisResult = await TraceQueryService.getTraceDetail(
+      traceId,
+      user.tenantId,
+      (req.query.projectId as string | undefined) || null
+    );
 
     if (!analysisResult) {
       return res.status(404).json({
@@ -482,6 +453,7 @@ router.get("/:traceId", async (req: Request, res: Response) => {
       });
     }
 
+    // Transform to match frontend expectations
     res.json({
       success: true,
       trace: {
@@ -489,7 +461,6 @@ router.get("/:traceId", async (req: Request, res: Response) => {
         tenantId: analysisResult.tenant_id,
         projectId: analysisResult.project_id,
         analyzedAt: analysisResult.analyzed_at,
-        // ALL original trace data - every field
         spanId: analysisResult.span_id,
         parentSpanId: analysisResult.parent_span_id,
         query: analysisResult.query,
@@ -514,9 +485,9 @@ router.get("/:traceId", async (req: Request, res: Response) => {
         headers: analysisResult.headers_json
           ? JSON.parse(analysisResult.headers_json)
           : null,
-        timestamp: analysisResult.timestamp,
+        timestamp:
+          analysisResult.timestamp?.toISOString() || analysisResult.timestamp,
         environment: analysisResult.environment,
-        // Analysis results
         analysis: {
           isHallucination: analysisResult.is_hallucination,
           hallucinationConfidence: analysisResult.hallucination_confidence,

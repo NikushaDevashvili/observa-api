@@ -28,6 +28,9 @@ export async function initializeSchema(): Promise<void> {
       tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
       name VARCHAR(255) NOT NULL,
       environment VARCHAR(50) DEFAULT 'prod',
+      monthly_event_quota INTEGER DEFAULT 10000000,
+      monthly_event_count INTEGER DEFAULT 0,
+      quota_period_start TIMESTAMP DEFAULT NOW(),
       created_at TIMESTAMP DEFAULT NOW(),
       UNIQUE(tenant_id, name, environment)
     );
@@ -65,6 +68,24 @@ export async function initializeSchema(): Promise<void> {
       tinybird_token_id VARCHAR(255),
       jwt_secret TEXT NOT NULL,
       created_at TIMESTAMP DEFAULT NOW()
+    );
+  `);
+
+  // Create api_keys table (for split server/publishable keys)
+  await query(`
+    CREATE TABLE IF NOT EXISTS api_keys (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+      name VARCHAR(255) NOT NULL,
+      key_prefix VARCHAR(10) NOT NULL CHECK (key_prefix IN ('sk_', 'pk_')),
+      key_hash TEXT NOT NULL,
+      scopes JSONB NOT NULL DEFAULT '{"ingest": true, "query": false}'::jsonb,
+      allowed_origins TEXT[] DEFAULT ARRAY[]::TEXT[],
+      revoked_at TIMESTAMP NULL,
+      created_at TIMESTAMP DEFAULT NOW(),
+      last_used_at TIMESTAMP NULL,
+      UNIQUE(key_hash)
     );
   `);
 
@@ -208,6 +229,21 @@ export async function initializeSchema(): Promise<void> {
   `);
 
   await query(`
+    CREATE INDEX IF NOT EXISTS idx_api_keys_tenant 
+    ON api_keys(tenant_id, revoked_at NULLS LAST);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS idx_api_keys_project 
+    ON api_keys(project_id, revoked_at NULLS LAST);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS idx_api_keys_hash 
+    ON api_keys(key_hash);
+  `);
+
+  await query(`
     CREATE INDEX IF NOT EXISTS idx_users_email 
     ON users(email);
   `);
@@ -266,7 +302,10 @@ export async function initializeSchema(): Promise<void> {
         await migrateAnalysisResultsTable();
         console.log("✅ migrateAnalysisResultsTable completed");
       } catch (err: any) {
-        console.warn("⚠️ migrateAnalysisResultsTable failed (non-fatal):", err?.message || err);
+        console.warn(
+          "⚠️ migrateAnalysisResultsTable failed (non-fatal):",
+          err?.message || err
+        );
       }
     })(),
     (async () => {
@@ -275,14 +314,78 @@ export async function initializeSchema(): Promise<void> {
         await migrateConversationColumns();
         console.log("✅ migrateConversationColumns completed");
       } catch (err: any) {
-        console.warn("⚠️ migrateConversationColumns failed (non-fatal):", err?.message || err);
+        console.warn(
+          "⚠️ migrateConversationColumns failed (non-fatal):",
+          err?.message || err
+        );
+      }
+    })(),
+    (async () => {
+      try {
+        const { migrateAddProjectQuota } = await import(
+          "./migrations/addProjectQuota.js"
+        );
+        await migrateAddProjectQuota();
+        console.log("✅ migrateAddProjectQuota completed");
+      } catch (err: any) {
+        console.warn(
+          "⚠️ migrateAddProjectQuota failed (non-fatal):",
+          err?.message || err
+        );
+      }
+    })(),
+    (async () => {
+      try {
+        const { migrateAddApiKeys } = await import(
+          "./migrations/addApiKeys.js"
+        );
+        await migrateAddApiKeys();
+        console.log("✅ migrateAddApiKeys completed");
+      } catch (err: any) {
+        console.warn(
+          "⚠️ migrateAddApiKeys failed (non-fatal):",
+          err?.message || err
+        );
+      }
+    })(),
+    (async () => {
+      try {
+        const { migrateAddDatasets } = await import(
+          "./migrations/addDatasets.js"
+        );
+        await migrateAddDatasets();
+        console.log("✅ migrateAddDatasets completed");
+      } catch (err: any) {
+        console.warn(
+          "⚠️ migrateAddDatasets failed (non-fatal):",
+          err?.message || err
+        );
+      }
+    })(),
+    (async () => {
+      try {
+        const { migrateAddTraceIndex } = await import(
+          "./migrations/addTraceIndex.js"
+        );
+        await migrateAddTraceIndex();
+        console.log("✅ migrateAddTraceIndex completed");
+      } catch (err: any) {
+        console.warn(
+          "⚠️ migrateAddTraceIndex failed (non-fatal):",
+          err?.message || err
+        );
       }
     })(),
   ]).catch((err) => {
-    console.warn("⚠️ Migration background task error (non-fatal):", err?.message || err);
+    console.warn(
+      "⚠️ Migration background task error (non-fatal):",
+      err?.message || err
+    );
   });
-  
+
   // Don't wait for migrations - schema initialization is complete
   // Migrations will run in background and won't block the app
-  console.log("✅ Schema initialization complete (migrations running in background)");
+  console.log(
+    "✅ Schema initialization complete (migrations running in background)"
+  );
 }

@@ -34,6 +34,7 @@ import metricsRouter from "./routes/metrics.js";
 import authRouter from "./routes/auth.js";
 import analyticsRouter from "./routes/analytics.js";
 import conversationsRouter from "./routes/conversations.js";
+import eventsRouter from "./routes/events.js";
 import { initializeSchema } from "./db/schema.js";
 import { testConnection } from "./db/client.js";
 
@@ -169,7 +170,9 @@ const apiLimiter = rateLimit({
     const forwarded = req.headers["x-forwarded-for"];
     if (forwarded) {
       // X-Forwarded-For can contain multiple IPs, take the first one
-      const ip = Array.isArray(forwarded) ? forwarded[0] : forwarded.split(",")[0].trim();
+      const ip = Array.isArray(forwarded)
+        ? forwarded[0]
+        : forwarded.split(",")[0].trim();
       return ip || req.ip || "unknown";
     }
     return req.ip || "unknown";
@@ -231,6 +234,7 @@ app.get("/", (req, res) => {
       onboarding: "/api/v1/onboarding",
       tenants: "/api/v1/tenants",
       traces: "/api/v1/traces",
+      events: "/api/v1/events",
     },
     documentation: "https://github.com/NikushaDevashvili/observa-api",
   });
@@ -377,6 +381,7 @@ app.use("/api/v1/onboarding", onboardingRouter);
 app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/tenants", tenantsRouter);
 app.use("/api/v1/traces", tracesRouter);
+app.use("/api/v1/events", eventsRouter);
 app.use("/api/v1/metrics", metricsRouter);
 app.use("/api/v1/analytics", analyticsRouter);
 app.use("/api/v1/conversations", conversationsRouter);

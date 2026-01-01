@@ -60,13 +60,17 @@ export interface TraceEvent {
   systemFingerprint?: string | null;
   headers?: Record<string, string>;
   // Conversation tracking fields
-  conversationId?: string;  // Long-lived conversation identifier
-  sessionId?: string;       // Short-lived session identifier
-  userId?: string;          // End-user identifier
-  messageIndex?: number;    // Position in conversation (1, 2, 3...)
-  parentMessageId?: string;  // For threaded conversations
+  conversationId?: string; // Long-lived conversation identifier
+  sessionId?: string; // Short-lived session identifier
+  userId?: string; // End-user identifier
+  messageIndex?: number; // Position in conversation (1, 2, 3...)
+  parentMessageId?: string; // For threaded conversations
 }
 
+/**
+ * @deprecated Use TinybirdCanonicalEvent from types/events.ts instead
+ * Legacy Tinybird event format - maintained for backward compatibility
+ */
 export interface TinybirdEvent {
   tenant_id: string;
   project_id: string;
@@ -100,3 +104,22 @@ export interface TinybirdEvent {
   message_index: number | null;
 }
 
+// Export canonical event types
+export * from "./types/events.js";
+
+// API Key types
+export interface ApiKey {
+  id: string;
+  tenantId: string;
+  projectId: string | null;
+  name: string;
+  keyPrefix: "sk_" | "pk_";
+  scopes: {
+    ingest: boolean;
+    query?: boolean;
+  };
+  allowedOrigins: string[];
+  revokedAt: Date | null;
+  createdAt: Date;
+  lastUsedAt: Date | null;
+}

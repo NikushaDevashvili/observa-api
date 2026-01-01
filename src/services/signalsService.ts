@@ -1,0 +1,269 @@
+/**
+ * Signals Service
+ * 
+ * Layer 2: Deterministic/free signals (run on 100% of events)
+ * - Latency thresholds (p95/p99 by route/model)
+ * - Error rate by tool/model/version
+ * - Loop detection
+ * - Token/cost spikes
+ */
+
+import { CanonicalEvent, EventType } from "../types/events.js";
+import { TinybirdCanonicalEvent } from "../types/events.js";
+import { CanonicalEventService } from "./canonicalEventService.js";
+
+export interface Signal {
+  tenant_id: string;
+  project_id: string;
+  trace_id: string;
+  span_id: string;
+  signal_name: string;
+  signal_type: "threshold" | "error" | "loop" | "spike" | "mismatch";
+  signal_value: number | boolean | string;
+  signal_severity: "low" | "medium" | "high";
+  metadata?: Record<string, any>;
+  timestamp: string;
+}
+
+/**
+ * Layer 2 Signals Service
+ * Generates deterministic signals from events
+ */
+export class SignalsService {
+  /**
+   * Process events and generate Layer 2 signals
+   */
+  static async processEvents(events: TinybirdCanonicalEvent[]): Promise<void> {
+    const signals: Signal[] = [];
+
+    for (const event of events) {
+      const attributes = JSON.parse(event.attributes_json);
+      const eventTimestamp = new Date(event.timestamp).toISOString();
+
+      // Process LLM call events
+      if (event.event_type === "llm_call" && attributes.llm_call) {
+        const llmCall = attributes.llm_call;
+
+        // Latency threshold check (p95/p99)
+        if (llmCall.latency_ms) {
+          // Simple threshold: >5s is high, >2s is medium
+          if (llmCall.latency_ms > 5000) {
+            signals.push({
+              tenant_id: event.tenant_id,
+              project_id: event.project_id,
+              trace_id: event.trace_id,
+              span_id: event.span_id,
+              signal_name: "high_latency",
+              signal_type: "threshold",
+              signal_value: llmCall.latency_ms,
+              signal_severity: "high",
+              metadata: {
+                model: llmCall.model,
+                threshold_ms: 5000,
+              },
+              timestamp: eventTimestamp,
+            });
+          } else if (llmCall.latency_ms > 2000) {
+            signals.push({
+              tenant_id: event.tenant_id,
+              project_id: event.project_id,
+              trace_id: event.trace_id,
+              span_id: event.span_id,
+              signal_name: "medium_latency",
+              signal_type: "threshold",
+              signal_value: llmCall.latency_ms,
+              signal_severity: "medium",
+              metadata: {
+                model: llmCall.model,
+                threshold_ms: 2000,
+              },
+              timestamp: eventTimestamp,
+            });
+          }
+        }
+
+        // Token/cost spike detection
+        if (llmCall.total_tokens) {
+          // Simple threshold: >100k tokens is a spike
+          if (llmCall.total_tokens > 100000) {
+            signals.push({
+              tenant_id: event.tenant_id,
+              project_id: event.project_id,
+              trace_id: event.trace_id,
+              span_id: event.span_id,
+              signal_name: "token_spike",
+              signal_type: "spike",
+              signal_value: llmCall.total_tokens,
+              signal_severity: "high",
+              metadata: {
+                model: llmCall.model,
+                input_tokens: llmCall.input_tokens,
+                output_tokens: llmCall.output_tokens,
+              },
+              timestamp: eventTimestamp,
+            });
+          }
+        }
+
+        // Cost spike detection
+        if (llmCall.cost && llmCall.cost > 10) {
+          // $10+ per call is a spike
+          signals.push({
+            tenant_id: event.tenant_id,
+            project_id: event.project_id,
+            trace_id: event.trace_id,
+            span_id: event.span_id,
+            signal_name: "cost_spike",
+            signal_type: "spike",
+            signal_value: llmCall.cost,
+            signal_severity: "high",
+            metadata: {
+              model: llmCall.model,
+              tokens: llmCall.total_tokens,
+            },
+            timestamp: eventTimestamp,
+          });
+        }
+      }
+
+      // Process tool call events
+      if (event.event_type === "tool_call" && attributes.tool_call) {
+        const toolCall = attributes.tool_call;
+
+        // Error detection
+        if (toolCall.result_status === "error") {
+          signals.push({
+            tenant_id: event.tenant_id,
+            project_id: event.project_id,
+            trace_id: event.trace_id,
+            span_id: event.span_id,
+            signal_name: "tool_error",
+            signal_type: "error",
+            signal_value: true,
+            signal_severity: "high",
+            metadata: {
+              tool_name: toolCall.tool_name,
+              error_message: toolCall.error_message,
+            },
+            timestamp: eventTimestamp,
+          });
+        }
+
+        // Timeout detection
+        if (toolCall.result_status === "timeout") {
+          signals.push({
+            tenant_id: event.tenant_id,
+            project_id: event.project_id,
+            trace_id: event.trace_id,
+            span_id: event.span_id,
+            signal_name: "tool_timeout",
+            signal_type: "error",
+            signal_value: true,
+            signal_severity: "high",
+            metadata: {
+              tool_name: toolCall.tool_name,
+              latency_ms: toolCall.latency_ms,
+            },
+            timestamp: eventTimestamp,
+          });
+        }
+
+        // High latency for tool calls
+        if (toolCall.latency_ms > 5000) {
+          signals.push({
+            tenant_id: event.tenant_id,
+            project_id: event.project_id,
+            trace_id: event.trace_id,
+            span_id: event.span_id,
+            signal_name: "tool_latency",
+            signal_type: "threshold",
+            signal_value: toolCall.latency_ms,
+            signal_severity: "medium",
+            metadata: {
+              tool_name: toolCall.tool_name,
+            },
+            timestamp: eventTimestamp,
+          });
+        }
+      }
+
+      // Process error events
+      if (event.event_type === "error" && attributes.error) {
+        signals.push({
+          tenant_id: event.tenant_id,
+          project_id: event.project_id,
+          trace_id: event.trace_id,
+          span_id: event.span_id,
+          signal_name: "error_event",
+          signal_type: "error",
+          signal_value: true,
+          signal_severity: "high",
+          metadata: {
+            error_type: attributes.error.error_type,
+            error_message: attributes.error.error_message,
+          },
+          timestamp: eventTimestamp,
+        });
+      }
+
+      // Check for secrets (from scrubbing metadata)
+      if ((event as any)._scrubbing_metadata?.contains_secrets) {
+        signals.push({
+          tenant_id: event.tenant_id,
+          project_id: event.project_id,
+          trace_id: event.trace_id,
+          span_id: event.span_id,
+          signal_name: "contains_secrets",
+          signal_type: "threshold",
+          signal_value: true,
+          signal_severity: "high",
+          metadata: {
+            secret_types: (event as any)._scrubbing_metadata.secret_types,
+          },
+          timestamp: eventTimestamp,
+        });
+      }
+    }
+
+    // Store signals as canonical events
+    // Note: Signals are stored as separate events with signal metadata in attributes
+    // In a full implementation, you might want a dedicated "signal" event_type
+    // For now, we'll use a metadata approach or store as error events with signal attributes
+    if (signals.length > 0) {
+      const signalEvents: TinybirdCanonicalEvent[] = signals.map((signal) => ({
+        tenant_id: signal.tenant_id,
+        project_id: signal.project_id,
+        environment: "dev", // TODO: Derive from parent event if available
+        trace_id: signal.trace_id,
+        span_id: signal.span_id,
+        parent_span_id: null,
+        timestamp: signal.timestamp,
+        event_type: "error" as EventType, // Use error type as placeholder for signals
+        conversation_id: null,
+        session_id: null,
+        user_id: null,
+        agent_name: null,
+        version: null,
+        route: null,
+        attributes_json: JSON.stringify({
+          signal: {
+            signal_name: signal.signal_name,
+            signal_type: signal.signal_type,
+            signal_value: signal.signal_value,
+            signal_severity: signal.signal_severity,
+            metadata: signal.metadata,
+          },
+        }),
+      }));
+
+      // Forward signals to Tinybird
+      try {
+        await CanonicalEventService.forwardToTinybird(signalEvents);
+      } catch (error) {
+        console.error("[SignalsService] Failed to store signals:", error);
+        // Don't throw - signal storage failure shouldn't break ingestion
+      }
+    }
+  }
+}
+

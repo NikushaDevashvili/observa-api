@@ -50,3 +50,40 @@ export const traceEventSchema = z.object({
   messageIndex: z.number().int().positive().optional(),
   parentMessageId: z.string().optional(),
 });
+
+/**
+ * Canonical event validation schema
+ */
+export const eventTypeSchema = z.enum([
+  "llm_call",
+  "tool_call",
+  "retrieval",
+  "error",
+  "feedback",
+  "output",
+  "trace_start",
+  "trace_end",
+]);
+
+export const canonicalEventSchema = z.object({
+  tenant_id: z.string().uuid(),
+  project_id: z.string().uuid(),
+  environment: z.enum(["dev", "prod"]),
+  trace_id: z.string().uuid(),
+  span_id: z.string().uuid(),
+  parent_span_id: z.string().uuid().nullable(),
+  timestamp: z.string(), // ISO 8601
+  event_type: eventTypeSchema,
+  conversation_id: z.string().uuid().nullable().optional(),
+  session_id: z.string().uuid().nullable().optional(),
+  user_id: z.string().uuid().nullable().optional(),
+  agent_name: z.string().nullable().optional(),
+  version: z.string().nullable().optional(),
+  route: z.string().nullable().optional(),
+  attributes: z.record(z.string(), z.any()), // Flexible JSON object
+});
+
+/**
+ * Batch events schema (array of canonical events)
+ */
+export const batchEventsSchema = z.array(canonicalEventSchema).min(1).max(1000);
