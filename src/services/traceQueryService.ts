@@ -1130,13 +1130,21 @@ export class TraceQueryService {
       }
     }
 
+    // CRITICAL: Include ALL spans in the top-level spans array
+    // Many frontends only search the top-level spans array, not nested children
+    // This ensures every span is accessible regardless of hierarchy
+    const allSpansFlat = [...allSpans];
+    
     return {
       summary,
-      // Return root spans for tree structure (hierarchical view)
-      spans: rootSpans.length > 0 ? rootSpans : allSpans,
+      // Return ALL spans in top-level array for frontend lookup
+      // Frontends often only search top-level spans array, not nested children
+      spans: allSpansFlat, // ALL spans accessible at top level
+      // Keep root spans structure for hierarchical tree view
+      rootSpans: rootSpans.length > 0 ? rootSpans : allSpans,
       // Include flat array of ALL spans (including children) for easy lookup
       // This ensures frontend can find any span by ID without traversing the tree
-      allSpans: allSpans,
+      allSpans: allSpansFlat,
       // Include lookup map for O(1) span access by multiple identifiers
       // Frontend can use: trace.spansById[spanId] to get any span instantly
       spansById: spansById,
