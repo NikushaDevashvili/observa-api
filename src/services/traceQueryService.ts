@@ -1100,6 +1100,34 @@ export class TraceQueryService {
           span.output
         );
       }
+      
+      // CRITICAL: Ensure details object exists and is populated
+      // Many frontends check span.details to determine if span has data
+      if (!span.details || Object.keys(span.details).length === 0) {
+        // If details is empty but we have type-specific data, populate it
+        if (span.llm_call) {
+          span.details = span.llm_call;
+        } else if (span.tool_call) {
+          span.details = span.tool_call;
+        } else if (span.retrieval) {
+          span.details = span.retrieval;
+        } else if (span.output) {
+          span.details = span.output;
+        } else if (span.metadata) {
+          span.details = span.metadata;
+        } else {
+          span.details = {
+            type: span.type,
+            name: span.name,
+            duration_ms: span.duration_ms,
+          };
+        }
+      }
+      
+      // Ensure span has a display name for frontend rendering
+      if (!span.displayName) {
+        span.displayName = span.name;
+      }
     }
 
     // Create a lookup map by ID for O(1) access
