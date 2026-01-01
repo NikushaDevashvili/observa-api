@@ -659,25 +659,20 @@ async function runSimulation() {
     console.log("");
   }
 
+  // Determine dashboard URL based on API URL
+  let dashboardUrl = API_URL;
+  if (API_URL.includes('observa-api')) {
+    dashboardUrl = API_URL.replace('observa-api', 'observa-app');
+  } else if (API_URL.includes('localhost:3000')) {
+    dashboardUrl = API_URL.replace('localhost:3000', 'localhost:3001');
+  } else {
+    dashboardUrl = 'https://observa-app.vercel.app';
+  }
+
   console.log("💡 Next steps:");
-  console.log(
-    `  1. View traces at: ${API_URL.replace(":3000", ":3001").replace(
-      "http://",
-      "https://"
-    )}/dashboard/traces`
-  );
-  console.log(
-    `  2. View conversations at: ${API_URL.replace(":3000", ":3001").replace(
-      "http://",
-      "https://"
-    )}/dashboard/conversations`
-  );
-  console.log(
-    `  3. Check analytics at: ${API_URL.replace(":3000", ":3001").replace(
-      "http://",
-      "https://"
-    )}/dashboard/analytics`
-  );
+  console.log(`  1. View traces at: ${dashboardUrl}/dashboard/traces`);
+  console.log(`  2. View conversations at: ${dashboardUrl}/dashboard/conversations`);
+  console.log(`  3. Check analytics at: ${dashboardUrl}/dashboard/analytics`);
   console.log(`\n📝 Each trace now includes:`);
   console.log(`   - trace_start event`);
   console.log(`   - retrieval event (context fetching)`);
