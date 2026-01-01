@@ -160,7 +160,27 @@ export class TraceService {
         }`
       );
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/431a9fa4-96bd-46c7-8321-5ccac542c2c3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'traceService.ts:162',message:'Before INSERT with ON CONFLICT',data:{traceId:trace.traceId,conversationId:trace.conversationId,messageIndex:trace.messageIndex,willOverwrite:'ON CONFLICT will update if trace_id exists'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+      fetch(
+        "http://127.0.0.1:7242/ingest/431a9fa4-96bd-46c7-8321-5ccac542c2c3",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            location: "traceService.ts:162",
+            message: "Before INSERT with ON CONFLICT",
+            data: {
+              traceId: trace.traceId,
+              conversationId: trace.conversationId,
+              messageIndex: trace.messageIndex,
+              willOverwrite: "ON CONFLICT will update if trace_id exists",
+            },
+            timestamp: Date.now(),
+            sessionId: "debug-session",
+            runId: "run1",
+            hypothesisId: "C",
+          }),
+        }
+      ).catch(() => {});
       // #endregion
       await query(
         `INSERT INTO analysis_results (
@@ -183,32 +203,32 @@ export class TraceService {
           $26, $27, $28, $29
         )
         ON CONFLICT (trace_id) DO UPDATE SET
-          span_id = EXCLUDED.span_id,
-          parent_span_id = EXCLUDED.parent_span_id,
-          query = EXCLUDED.query,
-          context = EXCLUDED.context,
-          response = EXCLUDED.response,
-          model = EXCLUDED.model,
-          tokens_prompt = EXCLUDED.tokens_prompt,
-          tokens_completion = EXCLUDED.tokens_completion,
-          tokens_total = EXCLUDED.tokens_total,
-          latency_ms = EXCLUDED.latency_ms,
-          time_to_first_token_ms = EXCLUDED.time_to_first_token_ms,
-          streaming_duration_ms = EXCLUDED.streaming_duration_ms,
-          response_length = EXCLUDED.response_length,
-          status = EXCLUDED.status,
-          status_text = EXCLUDED.status_text,
-          finish_reason = EXCLUDED.finish_reason,
-          response_id = EXCLUDED.response_id,
-          system_fingerprint = EXCLUDED.system_fingerprint,
-          metadata_json = EXCLUDED.metadata_json,
-          headers_json = EXCLUDED.headers_json,
-          timestamp = EXCLUDED.timestamp,
-          environment = EXCLUDED.environment,
-          conversation_id = EXCLUDED.conversation_id,
-          session_id = EXCLUDED.session_id,
-          user_id = EXCLUDED.user_id,
-          message_index = EXCLUDED.message_index`,
+          span_id = COALESCE(EXCLUDED.span_id, analysis_results.span_id),
+          parent_span_id = COALESCE(EXCLUDED.parent_span_id, analysis_results.parent_span_id),
+          query = COALESCE(NULLIF(EXCLUDED.query, ''), analysis_results.query),
+          context = COALESCE(EXCLUDED.context, analysis_results.context),
+          response = COALESCE(NULLIF(EXCLUDED.response, ''), analysis_results.response),
+          model = COALESCE(EXCLUDED.model, analysis_results.model),
+          tokens_prompt = COALESCE(EXCLUDED.tokens_prompt, analysis_results.tokens_prompt),
+          tokens_completion = COALESCE(EXCLUDED.tokens_completion, analysis_results.tokens_completion),
+          tokens_total = COALESCE(EXCLUDED.tokens_total, analysis_results.tokens_total),
+          latency_ms = COALESCE(EXCLUDED.latency_ms, analysis_results.latency_ms),
+          time_to_first_token_ms = COALESCE(EXCLUDED.time_to_first_token_ms, analysis_results.time_to_first_token_ms),
+          streaming_duration_ms = COALESCE(EXCLUDED.streaming_duration_ms, analysis_results.streaming_duration_ms),
+          response_length = COALESCE(EXCLUDED.response_length, analysis_results.response_length),
+          status = COALESCE(EXCLUDED.status, analysis_results.status),
+          status_text = COALESCE(EXCLUDED.status_text, analysis_results.status_text),
+          finish_reason = COALESCE(EXCLUDED.finish_reason, analysis_results.finish_reason),
+          response_id = COALESCE(EXCLUDED.response_id, analysis_results.response_id),
+          system_fingerprint = COALESCE(EXCLUDED.system_fingerprint, analysis_results.system_fingerprint),
+          metadata_json = COALESCE(EXCLUDED.metadata_json, analysis_results.metadata_json),
+          headers_json = COALESCE(EXCLUDED.headers_json, analysis_results.headers_json),
+          timestamp = COALESCE(EXCLUDED.timestamp, analysis_results.timestamp),
+          environment = COALESCE(EXCLUDED.environment, analysis_results.environment),
+          conversation_id = COALESCE(EXCLUDED.conversation_id, analysis_results.conversation_id),
+          session_id = COALESCE(EXCLUDED.session_id, analysis_results.session_id),
+          user_id = COALESCE(EXCLUDED.user_id, analysis_results.user_id),
+          message_index = COALESCE(EXCLUDED.message_index, analysis_results.message_index)`,
         [
           trace.traceId,
           trace.tenantId,
@@ -242,7 +262,28 @@ export class TraceService {
         ]
       );
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/431a9fa4-96bd-46c7-8321-5ccac542c2c3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'traceService.ts:244',message:'After INSERT completed',data:{traceId:trace.traceId?.substring(0,20),conversationId:trace.conversationId?.substring(0,20),messageIndex:trace.messageIndex,query:trace.query?.substring(0,30),inserted:'Row inserted or updated'},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'C'})}).catch(()=>{});
+      fetch(
+        "http://127.0.0.1:7242/ingest/431a9fa4-96bd-46c7-8321-5ccac542c2c3",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            location: "traceService.ts:244",
+            message: "After INSERT completed",
+            data: {
+              traceId: trace.traceId?.substring(0, 20),
+              conversationId: trace.conversationId?.substring(0, 20),
+              messageIndex: trace.messageIndex,
+              query: trace.query?.substring(0, 30),
+              inserted: "Row inserted or updated",
+            },
+            timestamp: Date.now(),
+            sessionId: "debug-session",
+            runId: "run2",
+            hypothesisId: "C",
+          }),
+        }
+      ).catch(() => {});
       // #endregion
     } else {
       // Fallback query without conversation columns (for databases that haven't migrated yet)
@@ -268,28 +309,28 @@ export class TraceService {
           $24, $25
         )
         ON CONFLICT (trace_id) DO UPDATE SET
-          span_id = EXCLUDED.span_id,
-          parent_span_id = EXCLUDED.parent_span_id,
-          query = EXCLUDED.query,
-          context = EXCLUDED.context,
-          response = EXCLUDED.response,
-          model = EXCLUDED.model,
-          tokens_prompt = EXCLUDED.tokens_prompt,
-          tokens_completion = EXCLUDED.tokens_completion,
-          tokens_total = EXCLUDED.tokens_total,
-          latency_ms = EXCLUDED.latency_ms,
-          time_to_first_token_ms = EXCLUDED.time_to_first_token_ms,
-          streaming_duration_ms = EXCLUDED.streaming_duration_ms,
-          response_length = EXCLUDED.response_length,
-          status = EXCLUDED.status,
-          status_text = EXCLUDED.status_text,
-          finish_reason = EXCLUDED.finish_reason,
-          response_id = EXCLUDED.response_id,
-          system_fingerprint = EXCLUDED.system_fingerprint,
-          metadata_json = EXCLUDED.metadata_json,
-          headers_json = EXCLUDED.headers_json,
-          timestamp = EXCLUDED.timestamp,
-          environment = EXCLUDED.environment`,
+          span_id = COALESCE(EXCLUDED.span_id, analysis_results.span_id),
+          parent_span_id = COALESCE(EXCLUDED.parent_span_id, analysis_results.parent_span_id),
+          query = COALESCE(NULLIF(EXCLUDED.query, ''), analysis_results.query),
+          context = COALESCE(EXCLUDED.context, analysis_results.context),
+          response = COALESCE(NULLIF(EXCLUDED.response, ''), analysis_results.response),
+          model = COALESCE(EXCLUDED.model, analysis_results.model),
+          tokens_prompt = COALESCE(EXCLUDED.tokens_prompt, analysis_results.tokens_prompt),
+          tokens_completion = COALESCE(EXCLUDED.tokens_completion, analysis_results.tokens_completion),
+          tokens_total = COALESCE(EXCLUDED.tokens_total, analysis_results.tokens_total),
+          latency_ms = COALESCE(EXCLUDED.latency_ms, analysis_results.latency_ms),
+          time_to_first_token_ms = COALESCE(EXCLUDED.time_to_first_token_ms, analysis_results.time_to_first_token_ms),
+          streaming_duration_ms = COALESCE(EXCLUDED.streaming_duration_ms, analysis_results.streaming_duration_ms),
+          response_length = COALESCE(EXCLUDED.response_length, analysis_results.response_length),
+          status = COALESCE(EXCLUDED.status, analysis_results.status),
+          status_text = COALESCE(EXCLUDED.status_text, analysis_results.status_text),
+          finish_reason = COALESCE(EXCLUDED.finish_reason, analysis_results.finish_reason),
+          response_id = COALESCE(EXCLUDED.response_id, analysis_results.response_id),
+          system_fingerprint = COALESCE(EXCLUDED.system_fingerprint, analysis_results.system_fingerprint),
+          metadata_json = COALESCE(EXCLUDED.metadata_json, analysis_results.metadata_json),
+          headers_json = COALESCE(EXCLUDED.headers_json, analysis_results.headers_json),
+          timestamp = COALESCE(EXCLUDED.timestamp, analysis_results.timestamp),
+          environment = COALESCE(EXCLUDED.environment, analysis_results.environment)`,
         [
           trace.traceId,
           trace.tenantId,
