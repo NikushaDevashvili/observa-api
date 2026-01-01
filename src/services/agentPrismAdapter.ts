@@ -106,16 +106,19 @@ export interface AgentPrismTraceRecord {
 
 /**
  * Agent-Prism TraceSpan format
+ * Note: Components use 'title' not 'name', and accept startTime/endTime as numbers
  */
 export interface AgentPrismTraceSpan {
   id: string;
   parentId: string | null;
-  name: string;
-  startTime: number; // Unix timestamp in milliseconds
-  endTime: number; // Unix timestamp in milliseconds
+  name: string; // Keep for compatibility
+  title: string; // Components use this field
+  startTime: number; // Unix timestamp in milliseconds (components accept this)
+  endTime: number; // Unix timestamp in milliseconds (components accept this)
   duration: number; // Duration in milliseconds
   attributes: Record<string, any>;
-  type?: string; // TraceSpanCategory for SpanBadge
+  type: "llm_call" | "tool_execution" | "agent_invocation" | "chain_operation" | 
+        "retrieval" | "embedding" | "create_agent" | "span" | "event" | "guardrail" | "unknown"; // TraceSpanCategory for SpanBadge
   children?: AgentPrismTraceSpan[];
 }
 
@@ -271,15 +274,17 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
   }
 
   // Build TraceSpan object
+  // Note: Agent-prism components expect 'title' not 'name', and startTime/endTime as numbers
   const traceSpan: AgentPrismTraceSpan = {
     id: span.span_id || span.id,
     parentId: span.parent_span_id,
-    name: span.name,
-    startTime,
-    endTime,
+    name: span.name, // Keep name for compatibility, but components may use title
+    title: span.name, // Add title field (components use this)
+    startTime, // Number (Unix ms) - components accept this format
+    endTime, // Number (Unix ms) - components accept this format
     duration: span.duration_ms,
     attributes,
-    type: category as any, // Set the type field for SpanBadge
+    type: category, // Set the type field for SpanBadge (valid TraceSpanCategory)
     // Recursively transform children
     children: span.children?.map(transformSpan) || [],
   };
