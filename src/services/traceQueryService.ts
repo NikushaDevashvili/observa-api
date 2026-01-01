@@ -688,22 +688,53 @@ export class TraceQueryService {
 
       // Add type-specific data at the top level for easy access
       // This makes it easier for the frontend to display details when a span is clicked
+      // We expose data in multiple formats to ensure frontend compatibility
       if (span.llm_call) {
         span.type = 'llm_call';
         span.details = span.llm_call;
+        // Also expose at top level for direct access
+        span.model = span.llm_call.model;
+        span.input = span.llm_call.input;
+        span.output = span.llm_call.output;
+        span.input_tokens = span.llm_call.input_tokens;
+        span.output_tokens = span.llm_call.output_tokens;
+        span.total_tokens = span.llm_call.total_tokens;
+        span.latency_ms = span.llm_call.latency_ms;
       } else if (span.tool_call) {
         span.type = 'tool_call';
         span.details = span.tool_call;
+        // Also expose at top level
+        span.tool_name = span.tool_call.tool_name;
+        span.tool_args = span.tool_call.args;
+        span.tool_result = span.tool_call.result;
+        span.tool_status = span.tool_call.result_status;
       } else if (span.retrieval) {
         span.type = 'retrieval';
         span.details = span.retrieval;
+        // Also expose at top level
+        span.top_k = span.retrieval.top_k;
+        span.retrieval_context = span.retrieval.retrieval_context;
+        span.similarity_scores = span.retrieval.similarity_scores;
       } else if (span.output) {
         span.type = 'output';
         span.details = span.output;
+        // Also expose at top level
+        span.final_output = span.output.final_output;
+        span.output_length = span.output.output_length;
       } else {
         span.type = 'trace';
         span.details = span.metadata;
       }
+      
+      // Ensure events array has full attribute data for frontend that reads from events
+      span.events = spanEvents.map((e: any) => ({
+        ...e,
+        // Include full attributes for each event type
+        llm_call: e.event_type === 'llm_call' ? e.attributes?.llm_call : undefined,
+        tool_call: e.event_type === 'tool_call' ? e.attributes?.tool_call : undefined,
+        retrieval: e.event_type === 'retrieval' ? e.attributes?.retrieval : undefined,
+        output: e.event_type === 'output' ? e.attributes?.output : undefined,
+      }));
     }
 
     // Third pass: build parent-child relationships
