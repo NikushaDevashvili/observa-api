@@ -1074,28 +1074,34 @@ export class TraceQueryService {
     // Create a flat array of all spans for easy lookup by frontend
     // This ensures the frontend can find any span by ID, regardless of hierarchy
     const allSpans = Array.from(spansMap.values());
-    
+
     // Ensure all spans have consistent identifiers and are properly structured
     // Add additional lookup fields for frontend compatibility
     for (const span of allSpans) {
       // Ensure id and span_id are both set and consistent
       if (!span.id) span.id = span.span_id;
       if (!span.span_id) span.span_id = span.id;
-      
+
       // Add a unique key field that frontends often use for React keys
       span.key = span.id;
-      
+
       // Ensure selectable flag is set for all spans
       if (span.selectable === undefined) {
         span.selectable = true;
       }
-      
+
       // Ensure hasDetails is set appropriately
       if (span.hasDetails === undefined) {
-        span.hasDetails = !!(span.details || span.llm_call || span.tool_call || span.retrieval || span.output);
+        span.hasDetails = !!(
+          span.details ||
+          span.llm_call ||
+          span.tool_call ||
+          span.retrieval ||
+          span.output
+        );
       }
     }
-    
+
     // Create a lookup map by ID for O(1) access
     // Index by multiple identifiers to support different frontend matching strategies
     const spansById: Record<string, any> = {};
@@ -1103,12 +1109,12 @@ export class TraceQueryService {
       // Index by current ID (synthetic or original)
       spansById[span.id] = span;
       spansById[span.span_id] = span;
-      
+
       // Also index by original span_id if different (for child spans)
       if (span.original_span_id && span.original_span_id !== span.id) {
         spansById[span.original_span_id] = span;
       }
-      
+
       // Index by name for some frontends that use name as identifier
       if (span.name) {
         spansById[span.name] = span;
@@ -1117,13 +1123,13 @@ export class TraceQueryService {
           spansById[`${span.name}-${span.event_type}`] = span;
         }
       }
-      
+
       // Index by event_type for event-based lookups
       if (span.event_type) {
         spansById[span.event_type] = span;
       }
     }
-    
+
     return {
       summary,
       // Return root spans for tree structure (hierarchical view)
@@ -1140,7 +1146,9 @@ export class TraceQueryService {
       _meta: {
         totalSpans: allSpans.length,
         rootSpans: rootSpans.length,
-        hasChildren: rootSpans.some((s: any) => s.children && s.children.length > 0),
+        hasChildren: rootSpans.some(
+          (s: any) => s.children && s.children.length > 0
+        ),
       },
     };
   }
