@@ -179,6 +179,8 @@ export class TinybirdRepository {
 
     // Query canonical_events datasource from Tinybird using direct value interpolation
     // We validate UUIDs above to prevent SQL injection
+    // Note: Only selecting columns that exist in the datasource schema
+    // Optional columns (agent_name, version, route) may not exist in all datasources
     const sql = `
       SELECT 
         tenant_id,
@@ -192,9 +194,6 @@ export class TinybirdRepository {
         conversation_id,
         session_id,
         user_id,
-        agent_name,
-        version,
-        route,
         attributes_json
       FROM canonical_events
       WHERE tenant_id = '${escapedTenantId}'
