@@ -739,14 +739,35 @@ export class TraceQueryService {
       }
       
       // Ensure events array has full attribute data for frontend that reads from events
+      // Many frontends look for data in span.events[0].attributes.eventType
       span.events = spanEvents.map((e: any) => ({
         ...e,
-        // Include full attributes for each event type
+        // Include full attributes for each event type at top level
         llm_call: e.event_type === 'llm_call' ? e.attributes?.llm_call : undefined,
         tool_call: e.event_type === 'tool_call' ? e.attributes?.tool_call : undefined,
         retrieval: e.event_type === 'retrieval' ? e.attributes?.retrieval : undefined,
         output: e.event_type === 'output' ? e.attributes?.output : undefined,
+        // Keep original attributes structure for compatibility
+        attributes: e.attributes,
       }));
+      
+      // For frontends that read from the first event, ensure it has the data
+      if (spanEvents.length > 0 && span.events.length > 0) {
+        const firstEvent = span.events[0];
+        // If this span has type-specific data, ensure first event has it too
+        if (span.llm_call && firstEvent.event_type === 'llm_call') {
+          firstEvent.llm_call = span.llm_call;
+        }
+        if (span.tool_call && firstEvent.event_type === 'tool_call') {
+          firstEvent.tool_call = span.tool_call;
+        }
+        if (span.retrieval && firstEvent.event_type === 'retrieval') {
+          firstEvent.retrieval = span.retrieval;
+        }
+        if (span.output && firstEvent.event_type === 'output') {
+          firstEvent.output = span.output;
+        }
+      }
     }
 
     // Third pass: build parent-child relationships
