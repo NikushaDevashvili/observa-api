@@ -1066,9 +1066,15 @@ export class TraceQueryService {
       });
     }
 
+    // Create a flat array of all spans for easy lookup by frontend
+    // This ensures the frontend can find any span by ID, regardless of hierarchy
+    const allSpans = Array.from(spansMap.values());
+    
     return {
       summary,
-      spans: rootSpans.length > 0 ? rootSpans : Array.from(spansMap.values()),
+      spans: rootSpans.length > 0 ? rootSpans : allSpans,
+      // Include flat array of all spans for frontend lookup
+      allSpans: allSpans,
       signals,
       analysis: analysisData,
     };
