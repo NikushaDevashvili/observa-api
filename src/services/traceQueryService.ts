@@ -686,16 +686,14 @@ export class TraceQueryService {
         relative_time_ms: new Date(e.timestamp).getTime() - new Date(span.start_time).getTime(),
       }));
 
-      // Add type-specific data at the top level for easy access
-      // This makes it easier for the frontend to display details when a span is clicked
-      // We expose data in multiple formats to ensure frontend compatibility
-      span.hasDetails = true; // Flag to indicate this span has details to show
-      span.selectable = true; // Flag to indicate this span can be selected
+      // Langfuse-style: Flatten ALL data to top level of span for direct access
+      // This ensures frontend can access everything directly like span.model, span.input, etc.
+      span.hasDetails = true;
+      span.selectable = true;
       
       if (span.llm_call) {
         span.type = 'llm_call';
-        span.details = span.llm_call;
-        // Also expose at top level for direct access
+        // Flatten ALL LLM call data to top level (Langfuse approach)
         span.model = span.llm_call.model;
         span.input = span.llm_call.input;
         span.output = span.llm_call.output;
@@ -703,38 +701,54 @@ export class TraceQueryService {
         span.output_tokens = span.llm_call.output_tokens;
         span.total_tokens = span.llm_call.total_tokens;
         span.latency_ms = span.llm_call.latency_ms;
-        // Ensure these are not null/undefined so frontend can detect them
+        span.time_to_first_token_ms = span.llm_call.time_to_first_token_ms;
+        span.streaming_duration_ms = span.llm_call.streaming_duration_ms;
+        span.finish_reason = span.llm_call.finish_reason;
+        span.response_id = span.llm_call.response_id;
+        span.system_fingerprint = span.llm_call.system_fingerprint;
+        span.temperature = span.llm_call.temperature;
+        span.max_tokens = span.llm_call.max_tokens;
+        span.cost = span.llm_call.cost;
+        // Keep nested structure for compatibility
+        span.details = span.llm_call;
         span.hasInput = !!span.llm_call.input;
         span.hasOutput = !!span.llm_call.output;
       } else if (span.tool_call) {
         span.type = 'tool_call';
-        span.details = span.tool_call;
-        // Also expose at top level
+        // Flatten ALL tool call data to top level
         span.tool_name = span.tool_call.tool_name;
         span.tool_args = span.tool_call.args;
         span.tool_result = span.tool_call.result;
         span.tool_status = span.tool_call.result_status;
+        span.latency_ms = span.tool_call.latency_ms;
+        span.error_message = span.tool_call.error_message;
+        // Keep nested structure for compatibility
+        span.details = span.tool_call;
         span.hasArgs = !!span.tool_call.args;
         span.hasResult = !!span.tool_call.result;
       } else if (span.retrieval) {
         span.type = 'retrieval';
-        span.details = span.retrieval;
-        // Also expose at top level
+        // Flatten ALL retrieval data to top level
         span.top_k = span.retrieval.top_k;
+        span.k = span.retrieval.k;
         span.retrieval_context = span.retrieval.retrieval_context;
+        span.retrieval_context_ids = span.retrieval.retrieval_context_ids;
         span.similarity_scores = span.retrieval.similarity_scores;
+        span.latency_ms = span.retrieval.latency_ms;
+        // Keep nested structure for compatibility
+        span.details = span.retrieval;
         span.hasContext = !!span.retrieval.retrieval_context;
       } else if (span.output) {
         span.type = 'output';
-        span.details = span.output;
-        // Also expose at top level
+        // Flatten ALL output data to top level
         span.final_output = span.output.final_output;
         span.output_length = span.output.output_length;
+        // Keep nested structure for compatibility
+        span.details = span.output;
         span.hasOutput = !!span.output.final_output;
       } else {
         span.type = 'trace';
         span.details = span.metadata;
-        // Root trace span might not have details, but children do
         span.hasDetails = span.children && span.children.length > 0;
       }
       
