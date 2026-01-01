@@ -1126,14 +1126,22 @@ export class TraceQueryService {
     
     return {
       summary,
-      // Return root spans for tree structure
+      // Return root spans for tree structure (hierarchical view)
       spans: rootSpans.length > 0 ? rootSpans : allSpans,
-      // Include flat array of all spans for frontend lookup
+      // Include flat array of ALL spans (including children) for easy lookup
+      // This ensures frontend can find any span by ID without traversing the tree
       allSpans: allSpans,
-      // Include lookup map for O(1) span access by ID
+      // Include lookup map for O(1) span access by multiple identifiers
+      // Frontend can use: trace.spansById[spanId] to get any span instantly
       spansById: spansById,
       signals,
       analysis: analysisData,
+      // Metadata about the trace structure
+      _meta: {
+        totalSpans: allSpans.length,
+        rootSpans: rootSpans.length,
+        hasChildren: rootSpans.some((s: any) => s.children && s.children.length > 0),
+      },
     };
   }
 
