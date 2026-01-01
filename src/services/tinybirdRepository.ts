@@ -117,6 +117,13 @@ export class TinybirdRepository {
       params.append("project_id", options.projectId);
     }
 
+    // Add any additional params (e.g., trace_id, limit, offset)
+    if (options.params) {
+      for (const [key, value] of Object.entries(options.params)) {
+        params.append(key, String(value));
+      }
+    }
+
     const url = `${this.baseUrl}/v0/sql?${params.toString()}`;
 
     try {
@@ -183,18 +190,35 @@ export class TinybirdRepository {
         params: { trace_id: traceId },
       });
 
+      console.log(
+        `[TinybirdRepository] Query result for trace ${traceId}:`,
+        JSON.stringify(result, null, 2).substring(0, 500)
+      );
+
       // Tinybird returns { data: [...], meta: [...] }
       if (result && Array.isArray(result)) {
+        console.log(
+          `[TinybirdRepository] Found ${result.length} events (array format)`
+        );
         return result;
       } else if (result?.data && Array.isArray(result.data)) {
+        console.log(
+          `[TinybirdRepository] Found ${result.data.length} events (object.data format)`
+        );
         return result.data;
       }
       
+      console.log(
+        `[TinybirdRepository] No events found or unexpected format:`,
+        typeof result
+      );
       return [];
     } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       console.error(
         `[TinybirdRepository] Error fetching trace events for ${traceId}:`,
-        error
+        errorMessage
       );
       // Return empty array on error (fallback to analysis_results)
       return [];
