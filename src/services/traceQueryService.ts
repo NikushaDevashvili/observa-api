@@ -199,6 +199,9 @@ export class TraceQueryService {
   /**
    * Get trace detail with tree structure (spans and events)
    * Returns structured data for waterfall/timeline view
+   * 
+   * First tries to get canonical events from Tinybird for full hierarchical structure.
+   * Falls back to analysis_results for backward compatibility.
    */
   static async getTraceDetailTree(
     traceId: string,
@@ -206,8 +209,45 @@ export class TraceQueryService {
     projectId?: string | null
   ): Promise<any | null> {
     try {
-      // First, try to get events from Tinybird (if available)
-      // For now, fall back to analysis_results for backward compatibility
+      // Try to get canonical events from Tinybird first
+      const { TinybirdRepository } = await import("./tinybirdRepository.js");
+      
+      let canonicalEvents: any[] = [];
+      try {
+        const eventsData: any = await TinybirdRepository.getTraceEvents(
+          traceId,
+          tenantId,
+          projectId || null
+        );
+        
+        // Tinybird returns data in format: { data: [...], meta: [...] }
+        if (eventsData && Array.isArray(eventsData)) {
+          canonicalEvents = eventsData;
+        } else if (eventsData && typeof eventsData === 'object' && Array.isArray(eventsData.data)) {
+          canonicalEvents = eventsData.data;
+        }
+        
+        console.log(
+          `[TraceQueryService] Found ${canonicalEvents.length} canonical events for trace ${traceId}`
+        );
+      } catch (error) {
+        console.log(
+          `[TraceQueryService] Could not fetch canonical events from Tinybird, falling back to analysis_results:`,
+          error instanceof Error ? error.message : String(error)
+        );
+      }
+
+      // If we have canonical events, build tree from them
+      if (canonicalEvents.length > 0) {
+        return await this.buildTreeFromCanonicalEvents(
+          canonicalEvents,
+          traceId,
+          tenantId,
+          projectId || null
+        );
+      }
+
+      // Fallback: Build from analysis_results (backward compatibility)
       let traceData = await this.getTraceDetail(traceId, tenantId, projectId);
       
       if (!traceData) {
@@ -399,6 +439,258 @@ export class TraceQueryService {
       console.error("[TraceQueryService] Error querying trace detail tree:", error);
       throw error;
     }
+  }
+
+  /**
+   * Build hierarchical tree structure from canonical events
+   * Creates spans with parent-child relationships and attaches events to spans
+   */
+  private static async buildTreeFromCanonicalEvents(
+    events: any[],
+    traceId: string,
+    tenantId: string,
+    projectId: string | null
+  ): Promise<any> {
+    if (events.length === 0) {
+      return null;
+    }
+
+    // Parse events and extract attributes
+    const parsedEvents = events.map((event: any) => {
+      let attributes = {};
+      try {
+        if (typeof event.attributes_json === 'string') {
+          attributes = JSON.parse(event.attributes_json);
+        } else if (event.attributes) {
+          attributes = event.attributes;
+        }
+      } catch (e) {
+        console.warn(`[TraceQueryService] Failed to parse attributes for event:`, e);
+      }
+
+      return {
+        ...event,
+        attributes,
+      };
+    });
+
+    // Find trace_start and trace_end for summary
+    const traceStart = parsedEvents.find((e: any) => e.event_type === 'trace_start');
+    const traceEnd = parsedEvents.find((e: any) => e.event_type === 'trace_end');
+    const llmCall = parsedEvents.find((e: any) => e.event_type === 'llm_call');
+    const firstEvent = parsedEvents[0];
+    const lastEvent = parsedEvents[parsedEvents.length - 1];
+
+    // Build spans map (span_id -> span object)
+    const spansMap = new Map<string, any>();
+    const spanEventsMap = new Map<string, any[]>();
+
+    // First pass: create all spans
+    for (const event of parsedEvents) {
+      const spanId = event.span_id;
+      
+      if (!spansMap.has(spanId)) {
+        // Determine span name based on event type
+        let spanName = 'Span';
+        if (event.event_type === 'llm_call') {
+          const model = event.attributes?.llm_call?.model || 'unknown';
+          spanName = `LLM Call ${model}`;
+        } else if (event.event_type === 'tool_call') {
+          const toolName = event.attributes?.tool_call?.tool_name || 'unknown';
+          spanName = `Tool: ${toolName}`;
+        } else if (event.event_type === 'retrieval') {
+          spanName = 'Retrieval';
+        } else if (event.parent_span_id === null) {
+          spanName = 'Trace';
+        }
+
+        spansMap.set(spanId, {
+          span_id: spanId,
+          parent_span_id: event.parent_span_id,
+          name: spanName,
+          start_time: event.timestamp,
+          end_time: event.timestamp,
+          duration_ms: 0,
+          events: [],
+          children: [],
+          metadata: {
+            environment: event.environment,
+            conversation_id: event.conversation_id,
+            session_id: event.session_id,
+            user_id: event.user_id,
+          },
+        });
+        spanEventsMap.set(spanId, []);
+      }
+
+      // Add event to span
+      spanEventsMap.get(spanId)!.push({
+        event_type: event.event_type,
+        timestamp: event.timestamp,
+        attributes: event.attributes,
+      });
+    }
+
+    // Second pass: calculate span durations and attach events
+    for (const [spanId, span] of spansMap.entries()) {
+      const spanEvents = spanEventsMap.get(spanId)!;
+      
+      // Sort events by timestamp
+      spanEvents.sort((a: any, b: any) => 
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      );
+
+      // Attach events to span
+      span.events = spanEvents;
+
+      // Calculate span duration from events
+      if (spanEvents.length > 0) {
+        const startTime = new Date(spanEvents[0].timestamp);
+        const endTime = new Date(spanEvents[spanEvents.length - 1].timestamp);
+        
+        // For tool_call events, use latency from attributes
+        if (spanEvents.some((e: any) => e.event_type === 'tool_call')) {
+          const toolCallEvent = spanEvents.find((e: any) => e.event_type === 'tool_call');
+          if (toolCallEvent?.attributes?.tool_call?.latency_ms) {
+            span.duration_ms = toolCallEvent.attributes.tool_call.latency_ms;
+            span.end_time = new Date(startTime.getTime() + span.duration_ms).toISOString();
+          } else {
+            span.duration_ms = endTime.getTime() - startTime.getTime();
+            span.end_time = endTime.toISOString();
+          }
+        } else if (spanEvents.some((e: any) => e.event_type === 'llm_call')) {
+          const llmEvent = spanEvents.find((e: any) => e.event_type === 'llm_call');
+          if (llmEvent?.attributes?.llm_call?.latency_ms) {
+            span.duration_ms = llmEvent.attributes.llm_call.latency_ms;
+            span.end_time = new Date(startTime.getTime() + span.duration_ms).toISOString();
+          } else {
+            span.duration_ms = endTime.getTime() - startTime.getTime();
+            span.end_time = endTime.toISOString();
+          }
+        } else if (spanEvents.some((e: any) => e.event_type === 'retrieval')) {
+          const retrievalEvent = spanEvents.find((e: any) => e.event_type === 'retrieval');
+          if (retrievalEvent?.attributes?.retrieval?.latency_ms) {
+            span.duration_ms = retrievalEvent.attributes.retrieval.latency_ms;
+            span.end_time = new Date(startTime.getTime() + span.duration_ms).toISOString();
+          } else {
+            span.duration_ms = endTime.getTime() - startTime.getTime();
+            span.end_time = endTime.toISOString();
+          }
+        } else {
+          span.duration_ms = endTime.getTime() - startTime.getTime();
+          span.end_time = endTime.toISOString();
+        }
+
+        span.start_time = startTime.toISOString();
+      }
+    }
+
+    // Third pass: build parent-child relationships
+    const rootSpans: any[] = [];
+    for (const [spanId, span] of spansMap.entries()) {
+      if (span.parent_span_id === null) {
+        rootSpans.push(span);
+      } else {
+        const parentSpan = spansMap.get(span.parent_span_id);
+        if (parentSpan) {
+          if (!parentSpan.children) {
+            parentSpan.children = [];
+          }
+          parentSpan.children.push(span);
+        } else {
+          // Parent not found, treat as root
+          rootSpans.push(span);
+        }
+      }
+    }
+
+    // Build summary from events
+    const llmAttrs = llmCall?.attributes?.llm_call;
+    const traceEndAttrs = traceEnd?.attributes?.trace_end;
+    const summary = {
+      trace_id: traceId,
+      tenant_id: tenantId,
+      project_id: projectId || firstEvent?.project_id || '',
+      environment: firstEvent?.environment || 'prod',
+      conversation_id: firstEvent?.conversation_id || null,
+      session_id: firstEvent?.session_id || null,
+      user_id: firstEvent?.user_id || null,
+      start_time: traceStart?.timestamp || firstEvent?.timestamp || new Date().toISOString(),
+      end_time: traceEnd?.timestamp || lastEvent?.timestamp || new Date().toISOString(),
+      total_latency_ms: traceEndAttrs?.total_latency_ms || 
+        (traceStart && traceEnd ? 
+          new Date(traceEnd.timestamp).getTime() - new Date(traceStart.timestamp).getTime() : 
+          0),
+      total_tokens: traceEndAttrs?.total_tokens || llmAttrs?.total_tokens || 0,
+      total_cost: null,
+      model: llmAttrs?.model || null,
+    };
+
+    // Get analysis results if available
+    let analysisData: any = {};
+    try {
+      const traceData = await this.getTraceDetail(traceId, tenantId, projectId);
+      if (traceData) {
+        analysisData = {
+          isHallucination: traceData.is_hallucination,
+          hallucinationConfidence: traceData.hallucination_confidence,
+          hallucinationReasoning: traceData.hallucination_reasoning,
+          qualityScore: traceData.quality_score,
+          coherenceScore: traceData.coherence_score,
+          relevanceScore: traceData.relevance_score,
+          helpfulnessScore: traceData.helpfulness_score,
+          hasContextDrop: traceData.has_context_drop,
+          hasModelDrift: traceData.has_model_drift,
+          hasPromptInjection: traceData.has_prompt_injection,
+          hasContextOverflow: traceData.has_context_overflow,
+          hasFaithfulnessIssue: traceData.has_faithfulness_issue,
+          hasCostAnomaly: traceData.has_cost_anomaly,
+          hasLatencyAnomaly: traceData.has_latency_anomaly,
+          hasQualityDegradation: traceData.has_quality_degradation,
+          contextRelevanceScore: traceData.context_relevance_score,
+          answerFaithfulnessScore: traceData.answer_faithfulness_score,
+          driftScore: traceData.drift_score,
+          anomalyScore: traceData.anomaly_score,
+          analysisModel: traceData.analysis_model,
+          analysisVersion: traceData.analysis_version,
+          processingTimeMs: traceData.processing_time_ms,
+        };
+      }
+    } catch (error) {
+      console.warn('[TraceQueryService] Could not fetch analysis results:', error);
+    }
+
+    // Build signals from analysis
+    const signals: any[] = [];
+    if (analysisData.isHallucination === true) {
+      signals.push({
+        signal_type: 'hallucination',
+        severity: 'high',
+        confidence: analysisData.hallucinationConfidence,
+        reasoning: analysisData.hallucinationReasoning,
+      });
+    }
+    if (analysisData.hasContextDrop) {
+      signals.push({
+        signal_type: 'context_drop',
+        severity: 'medium',
+        score: analysisData.contextRelevanceScore,
+      });
+    }
+    if (analysisData.hasFaithfulnessIssue) {
+      signals.push({
+        signal_type: 'faithfulness',
+        severity: 'medium',
+        score: analysisData.answerFaithfulnessScore,
+      });
+    }
+
+    return {
+      summary,
+      spans: rootSpans.length > 0 ? rootSpans : Array.from(spansMap.values()),
+      signals,
+      analysis: analysisData,
+    };
   }
 
   /**

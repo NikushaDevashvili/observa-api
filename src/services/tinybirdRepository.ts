@@ -151,10 +151,24 @@ export class TinybirdRepository {
     tenantId: string,
     projectId?: string | null
   ): Promise<any[]> {
-    // This would query a Tinybird endpoint or SQL
-    // Example implementation - adjust based on your Tinybird setup
+    // Query canonical_events datasource from Tinybird
     const sql = `
-      SELECT *
+      SELECT 
+        tenant_id,
+        project_id,
+        environment,
+        trace_id,
+        span_id,
+        parent_span_id,
+        timestamp,
+        event_type,
+        conversation_id,
+        session_id,
+        user_id,
+        agent_name,
+        version,
+        route,
+        attributes_json
       FROM canonical_events
       WHERE tenant_id = {tenant_id:String}
         AND trace_id = {trace_id:String}
@@ -162,11 +176,29 @@ export class TinybirdRepository {
       ORDER BY timestamp ASC
     `;
 
-    return this.rawQuery(sql, {
-      tenantId,
-      projectId,
-      params: { trace_id: traceId },
-    });
+    try {
+      const result = await this.rawQuery(sql, {
+        tenantId,
+        projectId,
+        params: { trace_id: traceId },
+      });
+
+      // Tinybird returns { data: [...], meta: [...] }
+      if (result && Array.isArray(result)) {
+        return result;
+      } else if (result?.data && Array.isArray(result.data)) {
+        return result.data;
+      }
+      
+      return [];
+    } catch (error) {
+      console.error(
+        `[TinybirdRepository] Error fetching trace events for ${traceId}:`,
+        error
+      );
+      // Return empty array on error (fallback to analysis_results)
+      return [];
+    }
   }
 
   /**
