@@ -1097,13 +1097,30 @@ export class TraceQueryService {
     }
     
     // Create a lookup map by ID for O(1) access
+    // Index by multiple identifiers to support different frontend matching strategies
     const spansById: Record<string, any> = {};
     for (const span of allSpans) {
+      // Index by current ID (synthetic or original)
       spansById[span.id] = span;
-      spansById[span.span_id] = span; // Also index by span_id for compatibility
-      // Also index by name for some frontends that use name as identifier
+      spansById[span.span_id] = span;
+      
+      // Also index by original span_id if different (for child spans)
+      if (span.original_span_id && span.original_span_id !== span.id) {
+        spansById[span.original_span_id] = span;
+      }
+      
+      // Index by name for some frontends that use name as identifier
       if (span.name) {
         spansById[span.name] = span;
+        // Also create a compound key: "name-event_type" for more specific matching
+        if (span.event_type) {
+          spansById[`${span.name}-${span.event_type}`] = span;
+        }
+      }
+      
+      // Index by event_type for event-based lookups
+      if (span.event_type) {
+        spansById[span.event_type] = span;
       }
     }
     
