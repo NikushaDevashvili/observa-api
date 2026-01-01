@@ -427,6 +427,19 @@ function signalsToBadges(signals?: any[]): Array<{
 }
 
 /**
+ * Count all spans recursively (including nested children)
+ */
+function countAllSpansRecursively(spans: AgentPrismTraceSpan[]): number {
+  let count = spans.length;
+  for (const span of spans) {
+    if (span.children && span.children.length > 0) {
+      count += countAllSpansRecursively(span.children);
+    }
+  }
+  return count;
+}
+
+/**
  * Main adapter function: Convert Observa trace format to Agent-Prism format
  *
  * @param observaTrace - Trace data from TraceQueryService.getTraceDetailTree
@@ -437,17 +450,20 @@ export function adaptObservaTraceToAgentPrism(
 ): AgentPrismTraceData {
   const { summary, spans, signals } = observaTrace;
 
+  // Transform all spans (recursive transformation handles children)
+  const transformedSpans = spans.map(transformSpan);
+
+  // Count all spans recursively (including nested children)
+  const totalSpansCount = countAllSpansRecursively(transformedSpans);
+
   // Transform summary to TraceRecord
   const traceRecord: AgentPrismTraceRecord = {
     id: summary.trace_id,
     name: summary.query || "Trace", // Use query as trace name
-    spansCount: spans.length,
+    spansCount: totalSpansCount, // Count all spans including nested children
     durationMs: summary.total_latency_ms || 0,
     agentDescription: summary.model || "", // Model name as agent description
   };
-
-  // Transform all spans (recursive transformation handles children)
-  const transformedSpans = spans.map(transformSpan);
 
   // Convert signals to badges
   const badges = signalsToBadges(signals);
