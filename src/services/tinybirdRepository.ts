@@ -149,20 +149,32 @@ export class TinybirdRepository {
         );
       }
 
-      // Try to parse as JSON
-      try {
-        const data = JSON.parse(responseText);
-        return data;
-      } catch (parseError) {
-        // If it's not valid JSON, log the actual response for debugging
-        console.error(
-          `[TinybirdRepository] Invalid JSON response (status ${response.status}):`,
-          responseText.substring(0, 500)
-        );
-        throw new Error(
-          `Tinybird returned invalid JSON: ${parseError instanceof Error ? parseError.message : String(parseError)}. Response: ${responseText.substring(0, 200)}`
-        );
+      // Check content-type to determine format
+      const contentType = response.headers.get("content-type") || "";
+      
+      // Try to parse as JSON first
+      if (contentType.includes("application/json") || responseText.trim().startsWith("{")) {
+        try {
+          const data = JSON.parse(responseText);
+          return data;
+        } catch (parseError) {
+          // Fall through to TSV parsing if JSON fails
+        }
       }
+      
+      // Parse as TSV (Tinybird often returns TSV by default)
+      if (responseText.includes("\t") || contentType.includes("text/tab-separated-values")) {
+        return this.parseTSVResponse(responseText);
+      }
+      
+      // If neither JSON nor TSV, log and throw
+      console.error(
+        `[TinybirdRepository] Unexpected response format (status ${response.status}, content-type: ${contentType}):`,
+        responseText.substring(0, 500)
+      );
+      throw new Error(
+        `Tinybird returned unexpected format. Content-Type: ${contentType}. Response preview: ${responseText.substring(0, 200)}`
+      );
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
@@ -171,10 +183,60 @@ export class TinybirdRepository {
   }
 
   /**
+   * Parse TSV (Tab-Separated Values) response from Tinybird
+   * Converts TSV rows into array of objects
+   */
+  private static parseTSVResponse(tsv: string): any {
+    const lines = tsv.trim().split("\n").filter((line) => line.trim());
+    if (lines.length === 0) {
+      return { data: [] };
+    }
+
+    // First line might be headers, or it might be data
+    // For canonical_events, we know the column order from our SELECT statement
+    const columns = [
+      "tenant_id",
+      "project_id",
+      "environment",
+      "trace_id",
+      "span_id",
+      "parent_span_id",
+      "timestamp",
+      "event_type",
+      "conversation_id",
+      "session_id",
+      "user_id",
+      "attributes_json",
+    ];
+
+    const data = lines.map((line) => {
+      const values = line.split("\t");
+      const row: any = {};
+      
+      columns.forEach((col, index) => {
+        let value = values[index];
+        
+        // Handle null values (\N in TSV)
+        if (value === "\\N" || value === null || value === undefined) {
+          row[col] = null;
+        } else {
+          row[col] = value;
+        }
+      });
+      
+      return row;
+    });
+
+    return { data, meta: columns.map((col) => ({ name: col, type: "String" })) };
+  }
+
+  /**
    * Get events for a trace (with tenant isolation)
    * 
    * Note: Using string interpolation for parameters because Tinybird's {param:Type} syntax
    * requires secrets configuration. We validate tenant_id before interpolation for security.
+   * 
+   * IMPORTANT: Queries the canonical_events datasource, NOT the traces datasource.
    */
   static async getTraceEvents(
     traceId: string,
