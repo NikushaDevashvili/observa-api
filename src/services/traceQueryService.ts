@@ -515,6 +515,7 @@ export class TraceQueryService {
         }
 
         spansMap.set(spanId, {
+          id: spanId, // Add id field for frontend compatibility
           span_id: spanId,
           parent_span_id: event.parent_span_id,
           name: spanName,
@@ -533,11 +534,14 @@ export class TraceQueryService {
         spanEventsMap.set(spanId, []);
       }
 
-      // Add event to span
+      // Add event to span with unique ID
+      const eventId = `${event.span_id}-${event.event_type}-${event.timestamp}`;
       spanEventsMap.get(spanId)!.push({
+        id: eventId, // Add unique id for each event
         event_type: event.event_type,
         timestamp: event.timestamp,
         attributes: event.attributes,
+        span_id: event.span_id, // Include span_id for reference
       });
     }
 
@@ -659,10 +663,30 @@ export class TraceQueryService {
 
       // Add all event timestamps for timeline visualization
       span.event_timestamps = spanEvents.map((e: any) => ({
+        id: e.id,
         event_type: e.event_type,
         timestamp: e.timestamp,
         relative_time_ms: new Date(e.timestamp).getTime() - new Date(span.start_time).getTime(),
       }));
+
+      // Add type-specific data at the top level for easy access
+      // This makes it easier for the frontend to display details when a span is clicked
+      if (span.llm_call) {
+        span.type = 'llm_call';
+        span.details = span.llm_call;
+      } else if (span.tool_call) {
+        span.type = 'tool_call';
+        span.details = span.tool_call;
+      } else if (span.retrieval) {
+        span.type = 'retrieval';
+        span.details = span.retrieval;
+      } else if (span.output) {
+        span.type = 'output';
+        span.details = span.output;
+      } else {
+        span.type = 'trace';
+        span.details = span.metadata;
+      }
     }
 
     // Third pass: build parent-child relationships
