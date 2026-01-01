@@ -227,13 +227,23 @@ export class TraceQueryService {
           canonicalEvents = eventsData.data;
         }
         
-        console.log(
-          `[TraceQueryService] Found ${canonicalEvents.length} canonical events for trace ${traceId}`
-        );
+        if (canonicalEvents.length > 0) {
+          console.log(
+            `[TraceQueryService] ✅ Found ${canonicalEvents.length} canonical events for trace ${traceId}`
+          );
+        } else {
+          console.log(
+            `[TraceQueryService] ⚠️  No canonical events found in Tinybird for trace ${traceId}, falling back to analysis_results`
+          );
+        }
       } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error(
+          `[TraceQueryService] ❌ Error fetching canonical events from Tinybird for trace ${traceId}:`,
+          errorMessage
+        );
         console.log(
-          `[TraceQueryService] Could not fetch canonical events from Tinybird, falling back to analysis_results:`,
-          error instanceof Error ? error.message : String(error)
+          `[TraceQueryService] Falling back to analysis_results table`
         );
       }
 

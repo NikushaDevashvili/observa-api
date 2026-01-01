@@ -356,9 +356,7 @@ async function storeTraceSummaries(
   // Process each trace
   for (const [traceId, traceEvents] of tracesByTraceId) {
     // Find llm_call event (main event for trace summary)
-    const llmCallEvent = traceEvents.find(
-      (e) => e.event_type === "llm_call"
-    );
+    const llmCallEvent = traceEvents.find((e) => e.event_type === "llm_call");
     const outputEvent = traceEvents.find((e) => e.event_type === "output");
     const traceStartEvent = traceEvents.find(
       (e) => e.event_type === "trace_start"
@@ -413,8 +411,12 @@ async function storeTraceSummaries(
       projectId: projectId || "",
       environment: environment as "dev" | "prod",
       query: llmAttrs.input || "",
-      response: llmAttrs.output || outputEvent?.attributes.output?.final_output || "",
-      responseLength: llmAttrs.output?.length || outputEvent?.attributes.output?.output_length || 0,
+      response:
+        llmAttrs.output || outputEvent?.attributes.output?.final_output || "",
+      responseLength:
+        llmAttrs.output?.length ||
+        outputEvent?.attributes.output?.output_length ||
+        0,
       model: llmAttrs.model || "",
       tokensPrompt: llmAttrs.input_tokens || null,
       tokensCompletion: llmAttrs.output_tokens || null,
