@@ -615,6 +615,10 @@ export class TraceQueryService {
             session_id: event.session_id,
             user_id: event.user_id,
           },
+          // Include original span_id for frontend matching
+          original_span_id: event.span_id,
+          // Include event type for easy filtering/identification
+          event_type: event.event_type,
         });
         spanEventsMap.set(spanId, []);
       }
@@ -627,6 +631,7 @@ export class TraceQueryService {
         timestamp: event.timestamp,
         attributes: event.attributes,
         span_id: event.span_id, // Include original span_id for reference
+        original_span_id: event.span_id, // Keep original for frontend matching
       });
     }
 
@@ -1070,11 +1075,46 @@ export class TraceQueryService {
     // This ensures the frontend can find any span by ID, regardless of hierarchy
     const allSpans = Array.from(spansMap.values());
     
+    // Ensure all spans have consistent identifiers and are properly structured
+    // Add additional lookup fields for frontend compatibility
+    for (const span of allSpans) {
+      // Ensure id and span_id are both set and consistent
+      if (!span.id) span.id = span.span_id;
+      if (!span.span_id) span.span_id = span.id;
+      
+      // Add a unique key field that frontends often use for React keys
+      span.key = span.id;
+      
+      // Ensure selectable flag is set for all spans
+      if (span.selectable === undefined) {
+        span.selectable = true;
+      }
+      
+      // Ensure hasDetails is set appropriately
+      if (span.hasDetails === undefined) {
+        span.hasDetails = !!(span.details || span.llm_call || span.tool_call || span.retrieval || span.output);
+      }
+    }
+    
+    // Create a lookup map by ID for O(1) access
+    const spansById: Record<string, any> = {};
+    for (const span of allSpans) {
+      spansById[span.id] = span;
+      spansById[span.span_id] = span; // Also index by span_id for compatibility
+      // Also index by name for some frontends that use name as identifier
+      if (span.name) {
+        spansById[span.name] = span;
+      }
+    }
+    
     return {
       summary,
+      // Return root spans for tree structure
       spans: rootSpans.length > 0 ? rootSpans : allSpans,
       // Include flat array of all spans for frontend lookup
       allSpans: allSpans,
+      // Include lookup map for O(1) span access by ID
+      spansById: spansById,
       signals,
       analysis: analysisData,
     };
