@@ -105,6 +105,21 @@ export interface AgentPrismTraceRecord {
 }
 
 /**
+ * Agent-Prism TraceSpan Attribute format
+ * Attributes must be an array with key-value structure
+ */
+export interface AgentPrismTraceSpanAttribute {
+  key: string;
+  value: {
+    stringValue?: string;
+    intValue?: number;
+    doubleValue?: number;
+    boolValue?: boolean;
+    // For complex objects/arrays, use stringValue with JSON string
+  };
+}
+
+/**
  * Agent-Prism TraceSpan format
  * Note: Components use 'title' not 'name', and accept startTime/endTime as numbers
  */
@@ -116,9 +131,19 @@ export interface AgentPrismTraceSpan {
   startTime: number; // Unix timestamp in milliseconds (components accept this)
   endTime: number; // Unix timestamp in milliseconds (components accept this)
   duration: number; // Duration in milliseconds
-  attributes: Record<string, any>;
-  type: "llm_call" | "tool_execution" | "agent_invocation" | "chain_operation" | 
-        "retrieval" | "embedding" | "create_agent" | "span" | "event" | "guardrail" | "unknown"; // TraceSpanCategory for SpanBadge
+  attributes: AgentPrismTraceSpanAttribute[]; // Array format required by DetailsViewAttributesTab
+  type:
+    | "llm_call"
+    | "tool_execution"
+    | "agent_invocation"
+    | "chain_operation"
+    | "retrieval"
+    | "embedding"
+    | "create_agent"
+    | "span"
+    | "event"
+    | "guardrail"
+    | "unknown"; // TraceSpanCategory for SpanBadge
   status?: "success" | "error" | "pending" | "warning"; // Status for status badge
   tokensCount?: number; // Optional tokens count for TokensBadge
   cost?: number; // Optional cost for PriceBadge
@@ -136,7 +161,13 @@ export interface AgentPrismTraceData {
   spans: AgentPrismTraceSpan[];
   badges?: Array<{
     label: string;
-    variant?: "default" | "secondary" | "destructive" | "outline" | "warning" | "error";
+    variant?:
+      | "default"
+      | "secondary"
+      | "destructive"
+      | "outline"
+      | "warning"
+      | "error";
   }>;
 }
 
@@ -147,9 +178,64 @@ function isoToUnixMs(isoString: string): number {
   try {
     return new Date(isoString).getTime();
   } catch (error) {
-    console.warn(`[AgentPrismAdapter] Failed to parse timestamp: ${isoString}`, error);
+    console.warn(
+      `[AgentPrismAdapter] Failed to parse timestamp: ${isoString}`,
+      error
+    );
     return Date.now();
   }
+}
+
+/**
+ * Convert attributes object to agent-prism attribute array format
+ * Transforms Record<string, any> to AgentPrismTraceSpanAttribute[]
+ */
+function convertAttributesToArray(
+  attributesObj: Record<string, any>
+): AgentPrismTraceSpanAttribute[] {
+  return Object.entries(attributesObj).map(([key, value]) => {
+    // Determine the value type and structure
+    if (value === null || value === undefined) {
+      return {
+        key,
+        value: { stringValue: "null" },
+      };
+    }
+
+    // Handle different value types
+    if (typeof value === "string") {
+      return {
+        key,
+        value: { stringValue: value },
+      };
+    } else if (typeof value === "number") {
+      // Check if it's an integer or float
+      if (Number.isInteger(value)) {
+        return {
+          key,
+          value: { intValue: value },
+        };
+      } else {
+        return {
+          key,
+          value: { doubleValue: value },
+        };
+      }
+    } else if (typeof value === "boolean") {
+      return {
+        key,
+        value: { boolValue: value },
+      };
+    } else {
+      // For objects, arrays, and other complex types, stringify as JSON
+      return {
+        key,
+        value: {
+          stringValue: JSON.stringify(value, null, 2),
+        },
+      };
+    }
+  });
 }
 
 /**
@@ -170,7 +256,7 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
   // Add LLM call attributes (map to OpenTelemetry semantic conventions)
   if (span.llm_call) {
     const llm = span.llm_call;
-    
+
     // OpenTelemetry GenAI semantic conventions
     if (llm.model) attributes["gen_ai.request.model"] = llm.model;
     if (llm.input_tokens !== null && llm.input_tokens !== undefined) {
@@ -251,34 +337,70 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
 
   // Add output attributes
   if (span.output) {
-    if (span.output.final_output !== null && span.output.final_output !== undefined) {
+    if (
+      span.output.final_output !== null &&
+      span.output.final_output !== undefined
+    ) {
       attributes["output.final_output"] = span.output.final_output;
     }
-    if (span.output.output_length !== null && span.output.output_length !== undefined) {
+    if (
+      span.output.output_length !== null &&
+      span.output.output_length !== undefined
+    ) {
       attributes["output.output_length"] = span.output.output_length;
     }
   }
 
   // Map our span types to agent-prism TraceSpanCategory
-  // Valid categories: llm_call, tool_execution, agent_invocation, chain_operation, 
+  // Valid categories: llm_call, tool_execution, agent_invocation, chain_operation,
   // retrieval, embedding, create_agent, span, event, guardrail, unknown
   // IMPORTANT: Must match exactly - case sensitive!
-  let category: "llm_call" | "tool_execution" | "agent_invocation" | "chain_operation" | 
-                "retrieval" | "embedding" | "create_agent" | "span" | "event" | "guardrail" | "unknown" = "unknown";
-  
+  let category:
+    | "llm_call"
+    | "tool_execution"
+    | "agent_invocation"
+    | "chain_operation"
+    | "retrieval"
+    | "embedding"
+    | "create_agent"
+    | "span"
+    | "event"
+    | "guardrail"
+    | "unknown" = "unknown";
+
   const spanName = span.name || "";
   const spanNameLower = spanName.toLowerCase();
-  
+
   // Check in priority order (most specific first)
-  if (span.llm_call || span.event_type === "llm_call" || span.type === "llm_call") {
+  if (
+    span.llm_call ||
+    span.event_type === "llm_call" ||
+    span.type === "llm_call"
+  ) {
     category = "llm_call";
-  } else if (span.tool_call || span.event_type === "tool_call" || span.type === "tool_call") {
+  } else if (
+    span.tool_call ||
+    span.event_type === "tool_call" ||
+    span.type === "tool_call"
+  ) {
     category = "tool_execution"; // Note: tool_call maps to tool_execution
-  } else if (span.retrieval || span.event_type === "retrieval" || span.type === "retrieval") {
+  } else if (
+    span.retrieval ||
+    span.event_type === "retrieval" ||
+    span.type === "retrieval"
+  ) {
     category = "retrieval";
-  } else if (span.output || span.event_type === "output" || span.type === "output") {
+  } else if (
+    span.output ||
+    span.event_type === "output" ||
+    span.type === "output"
+  ) {
     category = "event"; // Output events map to "event"
-  } else if (span.type === "trace" || span.name === "Trace" || spanNameLower === "trace") {
+  } else if (
+    span.type === "trace" ||
+    span.name === "Trace" ||
+    spanNameLower === "trace"
+  ) {
     category = "span"; // Root trace spans
   } else {
     // Try to detect category from span name patterns (common in LangChain/LangGraph)
@@ -319,34 +441,42 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
   // For other spans, use attributes or metadata
   let input: string | undefined;
   let output: string | undefined;
-  
+
   if (span.llm_call) {
     if (span.llm_call.input !== null && span.llm_call.input !== undefined) {
-      input = typeof span.llm_call.input === "string" 
-        ? span.llm_call.input 
-        : JSON.stringify(span.llm_call.input, null, 2);
+      input =
+        typeof span.llm_call.input === "string"
+          ? span.llm_call.input
+          : JSON.stringify(span.llm_call.input, null, 2);
     }
     if (span.llm_call.output !== null && span.llm_call.output !== undefined) {
-      output = typeof span.llm_call.output === "string"
-        ? span.llm_call.output
-        : JSON.stringify(span.llm_call.output, null, 2);
+      output =
+        typeof span.llm_call.output === "string"
+          ? span.llm_call.output
+          : JSON.stringify(span.llm_call.output, null, 2);
     }
   } else if (span.tool_call) {
     if (span.tool_call.args !== null && span.tool_call.args !== undefined) {
-      input = typeof span.tool_call.args === "string"
-        ? span.tool_call.args
-        : JSON.stringify(span.tool_call.args, null, 2);
+      input =
+        typeof span.tool_call.args === "string"
+          ? span.tool_call.args
+          : JSON.stringify(span.tool_call.args, null, 2);
     }
     if (span.tool_call.result !== null && span.tool_call.result !== undefined) {
-      output = typeof span.tool_call.result === "string"
-        ? span.tool_call.result
-        : JSON.stringify(span.tool_call.result, null, 2);
+      output =
+        typeof span.tool_call.result === "string"
+          ? span.tool_call.result
+          : JSON.stringify(span.tool_call.result, null, 2);
     }
   } else if (span.output) {
-    if (span.output.final_output !== null && span.output.final_output !== undefined) {
-      output = typeof span.output.final_output === "string"
-        ? span.output.final_output
-        : JSON.stringify(span.output.final_output, null, 2);
+    if (
+      span.output.final_output !== null &&
+      span.output.final_output !== undefined
+    ) {
+      output =
+        typeof span.output.final_output === "string"
+          ? span.output.final_output
+          : JSON.stringify(span.output.final_output, null, 2);
     }
   }
 
@@ -370,6 +500,9 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
   };
   const raw = JSON.stringify(rawSpanData, null, 2);
 
+  // Convert attributes object to array format (required by DetailsViewAttributesTab)
+  const attributesArray = convertAttributesToArray(attributes);
+
   // Build TraceSpan object
   // Note: Agent-prism components expect 'title' not 'name', and startTime/endTime as numbers
   const traceSpan: AgentPrismTraceSpan = {
@@ -380,7 +513,7 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
     startTime, // Number (Unix ms) - components accept this format
     endTime, // Number (Unix ms) - components accept this format
     duration: span.duration_ms,
-    attributes,
+    attributes: attributesArray, // Array format required by DetailsViewAttributesTab
     type: category, // Set the type field for SpanBadge (valid TraceSpanCategory)
     status, // Status for status badge
     tokensCount: tokensCount !== null ? tokensCount : undefined, // Optional tokens count
@@ -400,7 +533,13 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
  */
 function signalsToBadges(signals?: any[]): Array<{
   label: string;
-  variant?: "default" | "secondary" | "destructive" | "outline" | "warning" | "error";
+  variant?:
+    | "default"
+    | "secondary"
+    | "destructive"
+    | "outline"
+    | "warning"
+    | "error";
 }> {
   if (!signals || signals.length === 0) {
     return [];
@@ -408,7 +547,13 @@ function signalsToBadges(signals?: any[]): Array<{
 
   return signals.map((signal) => {
     const severity = signal.severity || "medium";
-    let variant: "default" | "secondary" | "destructive" | "outline" | "warning" | "error" = "default";
+    let variant:
+      | "default"
+      | "secondary"
+      | "destructive"
+      | "outline"
+      | "warning"
+      | "error" = "default";
 
     // Map severity to badge variant
     if (severity === "high") {
@@ -493,4 +638,3 @@ export class AgentPrismAdapterService {
     return traces.map(adaptObservaTraceToAgentPrism);
   }
 }
-
