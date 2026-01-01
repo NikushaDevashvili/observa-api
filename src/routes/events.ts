@@ -19,6 +19,7 @@ import { QuotaService } from "../services/quotaService.js";
 import { SecretsScrubbingService } from "../services/secretsScrubbingService.js";
 import { SignalsService } from "../services/signalsService.js";
 import { TraceService } from "../services/traceService.js";
+import { ConversationService } from "../services/conversationService.js";
 import {
   canonicalEventSchema,
   batchEventsSchema,
@@ -334,6 +335,29 @@ router.post(
 );
 
 /**
+ * Calculate cost based on tokens and model (simplified)
+ * In production, use actual pricing from model provider
+ */
+function calculateCost(
+  tokensTotal: number | null,
+  model: string | null
+): number {
+  if (!tokensTotal || !model) return 0;
+
+  // Simplified cost calculation - adjust based on actual model pricing
+  // Example: GPT-4 is ~$0.03 per 1K tokens, GPT-3.5 is ~$0.002 per 1K tokens
+  const modelPricing: Record<string, number> = {
+    "gpt-4": 0.03,
+    "gpt-4-turbo": 0.01,
+    "gpt-3.5-turbo": 0.002,
+    "gpt-3.5": 0.002,
+  };
+
+  const pricePer1K = modelPricing[model.toLowerCase()] || 0.002;
+  return (tokensTotal / 1000) * pricePer1K;
+}
+
+/**
  * Store trace summaries in analysis_results table for dashboard compatibility
  * Extracts llm_call events and creates summary records
  */
@@ -440,6 +464,69 @@ async function storeTraceSummaries(
     console.log(
       `[Events API] Stored trace summary for ${traceId} in analysis_results`
     );
+
+    // Handle conversation tracking (if provided)
+    if (conversationId && projectId) {
+      try {
+        // Get or create conversation
+        const conversation = await ConversationService.getOrCreate({
+          conversationId,
+          tenantId,
+          projectId,
+          userId: userId || undefined,
+        });
+
+        // Update conversation metrics
+        await ConversationService.updateConversationMetrics({
+          conversationId,
+          tenantId,
+          tokensTotal: traceData.tokensTotal ?? null,
+          cost: calculateCost(
+            traceData.tokensTotal ?? null,
+            traceData.model || null
+          ),
+          hasIssues: false, // Will be updated after analysis
+        });
+
+        console.log(
+          `[Events API] Updated conversation ${conversationId} - TraceID: ${traceId}`
+        );
+      } catch (error) {
+        console.error(
+          `[Events API] Failed to update conversation (non-fatal):`,
+          error
+        );
+        // Don't throw - conversation tracking failure shouldn't break event ingestion
+      }
+    }
+
+    // Handle session tracking (if provided)
+    if (sessionId && projectId) {
+      try {
+        await ConversationService.getOrCreateSession({
+          sessionId,
+          tenantId,
+          projectId,
+          userId: userId || undefined,
+          conversationId: conversationId || undefined,
+        });
+
+        await ConversationService.updateSessionMetrics({
+          sessionId,
+          tenantId,
+        });
+
+        console.log(
+          `[Events API] Updated session ${sessionId} - TraceID: ${traceId}`
+        );
+      } catch (error) {
+        console.error(
+          `[Events API] Failed to update session (non-fatal):`,
+          error
+        );
+        // Don't throw - session tracking failure shouldn't break event ingestion
+      }
+    }
   }
 }
 
