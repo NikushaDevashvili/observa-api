@@ -483,8 +483,21 @@ export class TraceQueryService {
       return null;
     }
 
+    // CRITICAL: Filter events to ensure we only process events for this specific trace
+    // This prevents including events from other traces that might share conversation_id
+    const filteredEvents = events.filter((event: any) => {
+      // Ensure event belongs to this trace
+      return event.trace_id === traceId;
+    });
+
+    if (filteredEvents.length !== events.length) {
+      console.warn(
+        `[TraceQueryService] Filtered ${events.length - filteredEvents.length} events that don't belong to trace ${traceId}`
+      );
+    }
+
     // Parse events and extract attributes
-    const parsedEvents = events.map((event: any) => {
+    const parsedEvents = filteredEvents.map((event: any) => {
       let attributes = {};
       try {
         if (typeof event.attributes_json === "string") {
@@ -1100,7 +1113,7 @@ export class TraceQueryService {
           span.output
         );
       }
-      
+
       // CRITICAL: Ensure details object exists and is populated
       // Many frontends check span.details to determine if span has data
       if (!span.details || Object.keys(span.details).length === 0) {
@@ -1123,7 +1136,7 @@ export class TraceQueryService {
           };
         }
       }
-      
+
       // Ensure span has a display name for frontend rendering
       if (!span.displayName) {
         span.displayName = span.name;
@@ -1158,21 +1171,17 @@ export class TraceQueryService {
       }
     }
 
-    // CRITICAL: Include ALL spans in the top-level spans array
-    // Many frontends only search the top-level spans array, not nested children
-    // This ensures every span is accessible regardless of hierarchy
-    const allSpansFlat = [...allSpans];
-    
+    // CRITICAL FIX: Return root spans in main spans array to avoid duplicates
+    // Frontend renders tree from rootSpans/children, but needs to find spans by ID
+    // Solution: Use rootSpans for tree structure, allSpans/spansById for lookup
     return {
       summary,
-      // Return ALL spans in top-level array for frontend lookup
-      // Frontends often only search top-level spans array, not nested children
-      spans: allSpansFlat, // ALL spans accessible at top level
-      // Keep root spans structure for hierarchical tree view
-      rootSpans: rootSpans.length > 0 ? rootSpans : allSpans,
-      // Include flat array of ALL spans (including children) for easy lookup
-      // This ensures frontend can find any span by ID without traversing the tree
-      allSpans: allSpansFlat,
+      // Return ONLY root spans in main spans array (for tree structure)
+      // This prevents frontend from rendering duplicates (spans + children)
+      spans: rootSpans.length > 0 ? rootSpans : allSpans,
+      // Include flat array of ALL spans (including children) for lookup
+      // Frontend should use allSpans or spansById to find child spans by ID
+      allSpans: allSpans,
       // Include lookup map for O(1) span access by multiple identifiers
       // Frontend can use: trace.spansById[spanId] to get any span instantly
       spansById: spansById,
