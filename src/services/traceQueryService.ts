@@ -199,7 +199,7 @@ export class TraceQueryService {
   /**
    * Get trace detail with tree structure (spans and events)
    * Returns structured data for waterfall/timeline view
-   * 
+   *
    * First tries to get canonical events from Tinybird for full hierarchical structure.
    * Falls back to analysis_results for backward compatibility.
    */
@@ -211,7 +211,7 @@ export class TraceQueryService {
     try {
       // Try to get canonical events from Tinybird first
       const { TinybirdRepository } = await import("./tinybirdRepository.js");
-      
+
       let canonicalEvents: any[] = [];
       try {
         const eventsData: any = await TinybirdRepository.getTraceEvents(
@@ -219,14 +219,18 @@ export class TraceQueryService {
           tenantId,
           projectId || null
         );
-        
+
         // Tinybird returns data in format: { data: [...], meta: [...] }
         if (eventsData && Array.isArray(eventsData)) {
           canonicalEvents = eventsData;
-        } else if (eventsData && typeof eventsData === 'object' && Array.isArray(eventsData.data)) {
+        } else if (
+          eventsData &&
+          typeof eventsData === "object" &&
+          Array.isArray(eventsData.data)
+        ) {
           canonicalEvents = eventsData.data;
         }
-        
+
         if (canonicalEvents.length > 0) {
           console.log(
             `[TraceQueryService] ✅ Found ${canonicalEvents.length} canonical events for trace ${traceId}`
@@ -237,7 +241,8 @@ export class TraceQueryService {
           );
         }
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
         console.error(
           `[TraceQueryService] ❌ Error fetching canonical events from Tinybird for trace ${traceId}:`,
           errorMessage
@@ -259,7 +264,7 @@ export class TraceQueryService {
 
       // Fallback: Build from analysis_results (backward compatibility)
       let traceData = await this.getTraceDetail(traceId, tenantId, projectId);
-      
+
       if (!traceData) {
         return null;
       }
@@ -271,9 +276,12 @@ export class TraceQueryService {
         parent_span_id: traceData.parent_span_id || null,
         name: traceData.query ? "LLM Call" : "Trace",
         start_time: traceData.timestamp || traceData.analyzed_at,
-        end_time: traceData.timestamp ? 
-          new Date(new Date(traceData.timestamp).getTime() + (traceData.latency_ms || 0)).toISOString() :
-          traceData.analyzed_at,
+        end_time: traceData.timestamp
+          ? new Date(
+              new Date(traceData.timestamp).getTime() +
+                (traceData.latency_ms || 0)
+            ).toISOString()
+          : traceData.analyzed_at,
         duration_ms: traceData.latency_ms || 0,
         events: [] as any[],
         metadata: {
@@ -288,8 +296,12 @@ export class TraceQueryService {
           finish_reason: traceData.finish_reason,
           response_id: traceData.response_id,
           system_fingerprint: traceData.system_fingerprint,
-          metadata: traceData.metadata_json ? JSON.parse(traceData.metadata_json) : null,
-          headers: traceData.headers_json ? JSON.parse(traceData.headers_json) : null,
+          metadata: traceData.metadata_json
+            ? JSON.parse(traceData.metadata_json)
+            : null,
+          headers: traceData.headers_json
+            ? JSON.parse(traceData.headers_json)
+            : null,
         },
       };
 
@@ -360,9 +372,12 @@ export class TraceQueryService {
         user_id: traceData.user_id,
         message_index: traceData.message_index,
         start_time: traceData.timestamp || traceData.analyzed_at,
-        end_time: traceData.timestamp ?
-          new Date(new Date(traceData.timestamp).getTime() + (traceData.latency_ms || 0)).toISOString() :
-          traceData.analyzed_at,
+        end_time: traceData.timestamp
+          ? new Date(
+              new Date(traceData.timestamp).getTime() +
+                (traceData.latency_ms || 0)
+            ).toISOString()
+          : traceData.analyzed_at,
         total_latency_ms: traceData.latency_ms || 0,
         total_tokens: traceData.tokens_total || 0,
         total_cost: null, // Not in analysis_results
@@ -446,7 +461,10 @@ export class TraceQueryService {
         },
       };
     } catch (error) {
-      console.error("[TraceQueryService] Error querying trace detail tree:", error);
+      console.error(
+        "[TraceQueryService] Error querying trace detail tree:",
+        error
+      );
       throw error;
     }
   }
@@ -469,13 +487,16 @@ export class TraceQueryService {
     const parsedEvents = events.map((event: any) => {
       let attributes = {};
       try {
-        if (typeof event.attributes_json === 'string') {
+        if (typeof event.attributes_json === "string") {
           attributes = JSON.parse(event.attributes_json);
         } else if (event.attributes) {
           attributes = event.attributes;
         }
       } catch (e) {
-        console.warn(`[TraceQueryService] Failed to parse attributes for event:`, e);
+        console.warn(
+          `[TraceQueryService] Failed to parse attributes for event:`,
+          e
+        );
       }
 
       return {
@@ -485,9 +506,13 @@ export class TraceQueryService {
     });
 
     // Find trace_start and trace_end for summary
-    const traceStart = parsedEvents.find((e: any) => e.event_type === 'trace_start');
-    const traceEnd = parsedEvents.find((e: any) => e.event_type === 'trace_end');
-    const llmCall = parsedEvents.find((e: any) => e.event_type === 'llm_call');
+    const traceStart = parsedEvents.find(
+      (e: any) => e.event_type === "trace_start"
+    );
+    const traceEnd = parsedEvents.find(
+      (e: any) => e.event_type === "trace_end"
+    );
+    const llmCall = parsedEvents.find((e: any) => e.event_type === "llm_call");
     const firstEvent = parsedEvents[0];
     const lastEvent = parsedEvents[parsedEvents.length - 1];
 
@@ -495,40 +520,83 @@ export class TraceQueryService {
     const spansMap = new Map<string, any>();
     const spanEventsMap = new Map<string, any[]>();
 
-    // First pass: create all spans
+    // Find the root span ID (from events with parent_span_id === null)
+    const originalRootSpanId = parsedEvents.find(
+      (e: any) => e.parent_span_id === null
+    )?.span_id;
+
+    // FIRST: Create root "Trace" span if it doesn't exist
+    // This ensures parent spans exist before creating children
+    if (originalRootSpanId && !spansMap.has(originalRootSpanId)) {
+      const firstEvent =
+        parsedEvents.find((e: any) => e.span_id === originalRootSpanId) ||
+        parsedEvents[0];
+      spansMap.set(originalRootSpanId, {
+        id: originalRootSpanId,
+        span_id: originalRootSpanId,
+        parent_span_id: null,
+        name: "Trace",
+        start_time:
+          firstEvent?.timestamp ||
+          parsedEvents[0]?.timestamp ||
+          new Date().toISOString(),
+        end_time:
+          parsedEvents[parsedEvents.length - 1]?.timestamp ||
+          new Date().toISOString(),
+        duration_ms: 0,
+        events: [],
+        children: [],
+        metadata: {
+          environment: firstEvent?.environment || parsedEvents[0]?.environment,
+          conversation_id:
+            firstEvent?.conversation_id || parsedEvents[0]?.conversation_id,
+          session_id: firstEvent?.session_id || parsedEvents[0]?.session_id,
+          user_id: firstEvent?.user_id || parsedEvents[0]?.user_id,
+        },
+        type: "trace",
+        details: {},
+        hasDetails: false,
+        selectable: true,
+      });
+      spanEventsMap.set(originalRootSpanId, []);
+    }
+
+    // First pass: create all spans and attach events
     // For root span events (parent_span_id === null), create separate spans for each event type
     // This allows the frontend to display and click on each event type separately
     for (const event of parsedEvents) {
       let spanId = event.span_id;
       let parentSpanId = event.parent_span_id;
-      
+
       // If this is a root span event (parent_span_id === null), create a unique span for each event type
       // This makes each event type (retrieval, llm_call, output, etc.) a separate clickable node
-      if (event.parent_span_id === null && 
-          (event.event_type === 'retrieval' || 
-           event.event_type === 'llm_call' || 
-           event.event_type === 'tool_call' || 
-           event.event_type === 'output')) {
+      if (
+        event.parent_span_id === null &&
+        (event.event_type === "retrieval" ||
+          event.event_type === "llm_call" ||
+          event.event_type === "tool_call" ||
+          event.event_type === "output")
+      ) {
         // Create a unique span ID for this event type
         spanId = `${event.span_id}-${event.event_type}`;
         parentSpanId = event.span_id; // Make the original span_id the parent
       }
-      
+
       if (!spansMap.has(spanId)) {
         // Determine span name based on event type
-        let spanName = 'Span';
-        if (event.event_type === 'llm_call') {
-          const model = event.attributes?.llm_call?.model || 'unknown';
+        let spanName = "Span";
+        if (event.event_type === "llm_call") {
+          const model = event.attributes?.llm_call?.model || "unknown";
           spanName = `LLM Call: ${model}`;
-        } else if (event.event_type === 'tool_call') {
-          const toolName = event.attributes?.tool_call?.tool_name || 'unknown';
+        } else if (event.event_type === "tool_call") {
+          const toolName = event.attributes?.tool_call?.tool_name || "unknown";
           spanName = `Tool: ${toolName}`;
-        } else if (event.event_type === 'retrieval') {
-          spanName = 'Retrieval';
-        } else if (event.event_type === 'output') {
-          spanName = 'Output';
+        } else if (event.event_type === "retrieval") {
+          spanName = "Retrieval";
+        } else if (event.event_type === "output") {
+          spanName = "Output";
         } else if (event.parent_span_id === null) {
-          spanName = 'Trace';
+          spanName = "Trace";
         }
 
         spansMap.set(spanId, {
@@ -565,22 +633,35 @@ export class TraceQueryService {
     // Second pass: calculate span durations, attach events, and extract detailed information
     for (const [spanId, span] of spansMap.entries()) {
       const spanEvents = spanEventsMap.get(spanId)!;
-      
+
       // Sort events by timestamp
-      spanEvents.sort((a: any, b: any) => 
-        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      spanEvents.sort(
+        (a: any, b: any) =>
+          new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
       );
 
       // Attach events to span with full details
       span.events = spanEvents;
 
       // Extract detailed information from events based on type
-      const llmCallEvent = spanEvents.find((e: any) => e.event_type === 'llm_call');
-      const toolCallEvent = spanEvents.find((e: any) => e.event_type === 'tool_call');
-      const retrievalEvent = spanEvents.find((e: any) => e.event_type === 'retrieval');
-      const outputEvent = spanEvents.find((e: any) => e.event_type === 'output');
-      const traceStartEvent = spanEvents.find((e: any) => e.event_type === 'trace_start');
-      const traceEndEvent = spanEvents.find((e: any) => e.event_type === 'trace_end');
+      const llmCallEvent = spanEvents.find(
+        (e: any) => e.event_type === "llm_call"
+      );
+      const toolCallEvent = spanEvents.find(
+        (e: any) => e.event_type === "tool_call"
+      );
+      const retrievalEvent = spanEvents.find(
+        (e: any) => e.event_type === "retrieval"
+      );
+      const outputEvent = spanEvents.find(
+        (e: any) => e.event_type === "output"
+      );
+      const traceStartEvent = spanEvents.find(
+        (e: any) => e.event_type === "trace_start"
+      );
+      const traceEndEvent = spanEvents.find(
+        (e: any) => e.event_type === "trace_end"
+      );
 
       // Extract LLM call details
       if (llmCallEvent?.attributes?.llm_call) {
@@ -629,6 +710,14 @@ export class TraceQueryService {
           // Note: retrieval_context might be in a different field or redacted
           retrieval_context: retrievalAttrs.retrieval_context || null,
         };
+        // Ensure retrieval data is available even if event is not found directly
+        if (
+          !span.retrieval.retrieval_context &&
+          retrievalEvent.attributes?.retrieval?.retrieval_context
+        ) {
+          span.retrieval.retrieval_context =
+            retrievalEvent.attributes.retrieval.retrieval_context;
+        }
       }
 
       // Extract output details
@@ -650,7 +739,8 @@ export class TraceQueryService {
 
       if (traceEndEvent?.attributes?.trace_end) {
         span.trace_end = {
-          total_latency_ms: traceEndEvent.attributes.trace_end.total_latency_ms || null,
+          total_latency_ms:
+            traceEndEvent.attributes.trace_end.total_latency_ms || null,
           total_tokens: traceEndEvent.attributes.trace_end.total_tokens || null,
         };
       }
@@ -659,17 +749,23 @@ export class TraceQueryService {
       if (spanEvents.length > 0) {
         const startTime = new Date(spanEvents[0].timestamp);
         const endTime = new Date(spanEvents[spanEvents.length - 1].timestamp);
-        
+
         // For tool_call events, use latency from attributes
         if (toolCallEvent?.attributes?.tool_call?.latency_ms) {
           span.duration_ms = toolCallEvent.attributes.tool_call.latency_ms;
-          span.end_time = new Date(startTime.getTime() + span.duration_ms).toISOString();
+          span.end_time = new Date(
+            startTime.getTime() + span.duration_ms
+          ).toISOString();
         } else if (llmCallEvent?.attributes?.llm_call?.latency_ms) {
           span.duration_ms = llmCallEvent.attributes.llm_call.latency_ms;
-          span.end_time = new Date(startTime.getTime() + span.duration_ms).toISOString();
+          span.end_time = new Date(
+            startTime.getTime() + span.duration_ms
+          ).toISOString();
         } else if (retrievalEvent?.attributes?.retrieval?.latency_ms) {
           span.duration_ms = retrievalEvent.attributes.retrieval.latency_ms;
-          span.end_time = new Date(startTime.getTime() + span.duration_ms).toISOString();
+          span.end_time = new Date(
+            startTime.getTime() + span.duration_ms
+          ).toISOString();
         } else {
           span.duration_ms = endTime.getTime() - startTime.getTime();
           span.end_time = endTime.toISOString();
@@ -679,20 +775,31 @@ export class TraceQueryService {
       }
 
       // Add all event timestamps for timeline visualization
+      // Use trace start time as reference for all spans (for consistent timeline)
+      const traceStartTime =
+        traceStart?.timestamp || firstEvent?.timestamp || span.start_time;
       span.event_timestamps = spanEvents.map((e: any) => ({
         id: e.id,
         event_type: e.event_type,
         timestamp: e.timestamp,
-        relative_time_ms: new Date(e.timestamp).getTime() - new Date(span.start_time).getTime(),
+        relative_time_ms:
+          new Date(e.timestamp).getTime() - new Date(traceStartTime).getTime(),
       }));
+
+      // Also add relative time from span start for span-level calculations
+      span.relative_start_time_ms =
+        new Date(span.start_time).getTime() -
+        new Date(traceStartTime).getTime();
+      span.relative_end_time_ms =
+        new Date(span.end_time).getTime() - new Date(traceStartTime).getTime();
 
       // Langfuse-style: Flatten ALL data to top level of span for direct access
       // This ensures frontend can access everything directly like span.model, span.input, etc.
       span.hasDetails = true;
       span.selectable = true;
-      
+
       if (span.llm_call) {
-        span.type = 'llm_call';
+        span.type = "llm_call";
         // Flatten ALL LLM call data to top level (Langfuse approach)
         span.model = span.llm_call.model;
         span.input = span.llm_call.input;
@@ -714,7 +821,7 @@ export class TraceQueryService {
         span.hasInput = !!span.llm_call.input;
         span.hasOutput = !!span.llm_call.output;
       } else if (span.tool_call) {
-        span.type = 'tool_call';
+        span.type = "tool_call";
         // Flatten ALL tool call data to top level
         span.tool_name = span.tool_call.tool_name;
         span.tool_args = span.tool_call.args;
@@ -726,8 +833,11 @@ export class TraceQueryService {
         span.details = span.tool_call;
         span.hasArgs = !!span.tool_call.args;
         span.hasResult = !!span.tool_call.result;
+        // Ensure tool_call span has all necessary fields for frontend
+        span.hasDetails = true;
+        span.selectable = true;
       } else if (span.retrieval) {
-        span.type = 'retrieval';
+        span.type = "retrieval";
         // Flatten ALL retrieval data to top level
         span.top_k = span.retrieval.top_k;
         span.k = span.retrieval.k;
@@ -738,8 +848,11 @@ export class TraceQueryService {
         // Keep nested structure for compatibility
         span.details = span.retrieval;
         span.hasContext = !!span.retrieval.retrieval_context;
+        // Ensure retrieval span has all necessary fields for frontend
+        span.hasDetails = true;
+        span.selectable = true;
       } else if (span.output) {
-        span.type = 'output';
+        span.type = "output";
         // Flatten ALL output data to top level
         span.final_output = span.output.final_output;
         span.output_length = span.output.output_length;
@@ -747,68 +860,102 @@ export class TraceQueryService {
         span.details = span.output;
         span.hasOutput = !!span.output.final_output;
       } else {
-        span.type = 'trace';
-        span.details = span.metadata;
-        span.hasDetails = span.children && span.children.length > 0;
+        span.type = "trace";
+        // For root trace spans, only show trace-level metadata, not child data
+        span.details = {
+          ...span.metadata,
+          trace_id: traceId,
+          tenant_id: tenantId,
+          project_id: projectId,
+        };
+        // Root trace span should show it has children, but not include their data
+        span.hasDetails = true;
+        span.hasChildren = span.children && span.children.length > 0;
       }
-      
+
       // Ensure events array has full attribute data for frontend that reads from events
       // Many frontends look for data in span.events[0].attributes.eventType
       span.events = spanEvents.map((e: any) => ({
         ...e,
         // Include full attributes for each event type at top level
-        llm_call: e.event_type === 'llm_call' ? e.attributes?.llm_call : undefined,
-        tool_call: e.event_type === 'tool_call' ? e.attributes?.tool_call : undefined,
-        retrieval: e.event_type === 'retrieval' ? e.attributes?.retrieval : undefined,
-        output: e.event_type === 'output' ? e.attributes?.output : undefined,
+        llm_call:
+          e.event_type === "llm_call" ? e.attributes?.llm_call : undefined,
+        tool_call:
+          e.event_type === "tool_call" ? e.attributes?.tool_call : undefined,
+        retrieval:
+          e.event_type === "retrieval" ? e.attributes?.retrieval : undefined,
+        output: e.event_type === "output" ? e.attributes?.output : undefined,
         // Keep original attributes structure for compatibility
         attributes: e.attributes,
       }));
-      
+
       // For frontends that read from the first event, ensure it has the data
       if (spanEvents.length > 0 && span.events.length > 0) {
         const firstEvent = span.events[0];
         // If this span has type-specific data, ensure first event has it too
-        if (span.llm_call && firstEvent.event_type === 'llm_call') {
+        if (span.llm_call && firstEvent.event_type === "llm_call") {
           firstEvent.llm_call = span.llm_call;
         }
-        if (span.tool_call && firstEvent.event_type === 'tool_call') {
+        if (span.tool_call && firstEvent.event_type === "tool_call") {
           firstEvent.tool_call = span.tool_call;
         }
-        if (span.retrieval && firstEvent.event_type === 'retrieval') {
+        if (span.retrieval && firstEvent.event_type === "retrieval") {
           firstEvent.retrieval = span.retrieval;
         }
-        if (span.output && firstEvent.event_type === 'output') {
+        if (span.output && firstEvent.event_type === "output") {
           firstEvent.output = span.output;
         }
       }
     }
 
     // Third pass: build parent-child relationships
-    // First, ensure we have a root "Trace" span if events had parent_span_id === null
-    const originalRootSpanId = parsedEvents.find((e: any) => e.parent_span_id === null)?.span_id;
-    if (originalRootSpanId && !spansMap.has(originalRootSpanId)) {
-      // Create root trace span
-      const firstEvent = parsedEvents[0];
-      spansMap.set(originalRootSpanId, {
-        id: originalRootSpanId,
-        span_id: originalRootSpanId,
-        parent_span_id: null,
-        name: 'Trace',
-        start_time: firstEvent?.timestamp || new Date().toISOString(),
-        end_time: parsedEvents[parsedEvents.length - 1]?.timestamp || new Date().toISOString(),
-        duration_ms: 0,
-        events: [],
-        children: [],
-        metadata: {
-          environment: firstEvent?.environment,
-          conversation_id: firstEvent?.conversation_id,
-          session_id: firstEvent?.session_id,
-          user_id: firstEvent?.user_id,
-        },
-        type: 'trace',
-        details: {},
-      });
+    // Calculate root trace span duration from all child spans
+    if (originalRootSpanId && spansMap.has(originalRootSpanId)) {
+      const rootSpan = spansMap.get(originalRootSpanId)!;
+      // Update root span duration to cover all child spans
+      const allChildSpans = Array.from(spansMap.values()).filter(
+        (s: any) => s.parent_span_id === originalRootSpanId
+      );
+      if (allChildSpans.length > 0) {
+        const earliestStart = Math.min(
+          ...allChildSpans.map((s: any) => new Date(s.start_time).getTime())
+        );
+        const latestEnd = Math.max(
+          ...allChildSpans.map((s: any) => new Date(s.end_time).getTime())
+        );
+        rootSpan.start_time = new Date(earliestStart).toISOString();
+        rootSpan.end_time = new Date(latestEnd).toISOString();
+        rootSpan.duration_ms = latestEnd - earliestStart;
+      } else {
+        // Fallback to trace start/end events
+        rootSpan.start_time =
+          traceStart?.timestamp || firstEvent?.timestamp || rootSpan.start_time;
+        rootSpan.end_time =
+          traceEnd?.timestamp || lastEvent?.timestamp || rootSpan.end_time;
+        if (traceStart && traceEnd) {
+          rootSpan.duration_ms =
+            new Date(traceEnd.timestamp).getTime() -
+            new Date(traceStart.timestamp).getTime();
+        }
+      }
+
+      // For root trace span, ensure details only contain trace-level metadata
+      // Don't include children data in details to prevent showing all traces
+      rootSpan.details = {
+        trace_id: traceId,
+        tenant_id: tenantId,
+        project_id: projectId,
+        environment: rootSpan.metadata.environment,
+        conversation_id: rootSpan.metadata.conversation_id,
+        session_id: rootSpan.metadata.session_id,
+        user_id: rootSpan.metadata.user_id,
+        start_time: rootSpan.start_time,
+        end_time: rootSpan.end_time,
+        duration_ms: rootSpan.duration_ms,
+        child_count: allChildSpans.length,
+      };
+      // Mark that this is a root trace span (for frontend to handle differently)
+      rootSpan.isRootTrace = true;
     }
 
     const rootSpans: any[] = [];
@@ -835,17 +982,23 @@ export class TraceQueryService {
     const summary = {
       trace_id: traceId,
       tenant_id: tenantId,
-      project_id: projectId || firstEvent?.project_id || '',
-      environment: firstEvent?.environment || 'prod',
+      project_id: projectId || firstEvent?.project_id || "",
+      environment: firstEvent?.environment || "prod",
       conversation_id: firstEvent?.conversation_id || null,
       session_id: firstEvent?.session_id || null,
       user_id: firstEvent?.user_id || null,
-      start_time: traceStart?.timestamp || firstEvent?.timestamp || new Date().toISOString(),
-      end_time: traceEnd?.timestamp || lastEvent?.timestamp || new Date().toISOString(),
-      total_latency_ms: traceEndAttrs?.total_latency_ms || 
-        (traceStart && traceEnd ? 
-          new Date(traceEnd.timestamp).getTime() - new Date(traceStart.timestamp).getTime() : 
-          0),
+      start_time:
+        traceStart?.timestamp ||
+        firstEvent?.timestamp ||
+        new Date().toISOString(),
+      end_time:
+        traceEnd?.timestamp || lastEvent?.timestamp || new Date().toISOString(),
+      total_latency_ms:
+        traceEndAttrs?.total_latency_ms ||
+        (traceStart && traceEnd
+          ? new Date(traceEnd.timestamp).getTime() -
+            new Date(traceStart.timestamp).getTime()
+          : 0),
       total_tokens: traceEndAttrs?.total_tokens || llmAttrs?.total_tokens || 0,
       total_cost: null,
       model: llmAttrs?.model || null,
@@ -882,30 +1035,33 @@ export class TraceQueryService {
         };
       }
     } catch (error) {
-      console.warn('[TraceQueryService] Could not fetch analysis results:', error);
+      console.warn(
+        "[TraceQueryService] Could not fetch analysis results:",
+        error
+      );
     }
 
     // Build signals from analysis
     const signals: any[] = [];
     if (analysisData.isHallucination === true) {
       signals.push({
-        signal_type: 'hallucination',
-        severity: 'high',
+        signal_type: "hallucination",
+        severity: "high",
         confidence: analysisData.hallucinationConfidence,
         reasoning: analysisData.hallucinationReasoning,
       });
     }
     if (analysisData.hasContextDrop) {
       signals.push({
-        signal_type: 'context_drop',
-        severity: 'medium',
+        signal_type: "context_drop",
+        severity: "medium",
         score: analysisData.contextRelevanceScore,
       });
     }
     if (analysisData.hasFaithfulnessIssue) {
       signals.push({
-        signal_type: 'faithfulness',
-        severity: 'medium',
+        signal_type: "faithfulness",
+        severity: "medium",
         score: analysisData.answerFaithfulnessScore,
       });
     }

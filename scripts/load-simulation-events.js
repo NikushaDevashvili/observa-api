@@ -500,7 +500,12 @@ async function sendEvents(events, apiKey, retries = 3) {
   }
 }
 
-async function simulateConversation(userId, conversationIndex, apiKey, traceIdCollector = null) {
+async function simulateConversation(
+  userId,
+  conversationIndex,
+  apiKey,
+  traceIdCollector = null
+) {
   const conversationId = generateUUID();
   const sessionId = generateUUID();
   const template = randomChoice(CONVERSATION_TEMPLATES);
@@ -559,7 +564,12 @@ async function simulateUser(userIndex, apiKey, traceIdCollector = null) {
     convIndex++
   ) {
     try {
-      const convResults = await simulateConversation(userId, convIndex, apiKey, traceIdCollector);
+      const convResults = await simulateConversation(
+        userId,
+        convIndex,
+        apiKey,
+        traceIdCollector
+      );
       results.push(...convResults);
     } catch (error) {
       console.error(
@@ -580,7 +590,7 @@ async function runSimulation() {
 
   // Get or create API key first
   const apiKey = await getOrCreateApiKey();
-  
+
   // Track all trace IDs for output
   const allTraceIds = [];
 
@@ -689,7 +699,7 @@ async function runSimulation() {
   console.log(`   - llm_call event (main LLM request)`);
   console.log(`   - output event (final response)`);
   console.log(`   - trace_end event\n`);
-  
+
   // Output trace IDs for testing
   if (allTraceIds.length > 0) {
     console.log(`🔍 Trace IDs created (for testing):`);
@@ -701,7 +711,14 @@ async function runSimulation() {
     }
     console.log("");
     console.log(`💡 Test a trace directly:`);
-    console.log(`   curl "${dashboardUrl.replace('/dashboard/traces', '')}/api/v1/traces/${allTraceIds[0]}?format=tree" -H "Authorization: Bearer <token>"`);
+    console.log(
+      `   curl "${dashboardUrl.replace(
+        "/dashboard/traces",
+        ""
+      )}/api/v1/traces/${
+        allTraceIds[0]
+      }?format=tree" -H "Authorization: Bearer <token>"`
+    );
     console.log("");
   }
 }
