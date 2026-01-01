@@ -23,8 +23,17 @@ if (!JWT_TOKEN) {
   process.exit(1);
 }
 
+// Simple UUID v4 generator for test script
+function generateUUID() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
 async function sendWaterfallTestTrace() {
-  const traceId = `test-waterfall-${Date.now()}`;
+  const traceId = generateUUID(); // Use UUID format
   
   // Send a trace with context and response - this will show up in the waterfall view
   const traceData = {
@@ -44,9 +53,9 @@ async function sendWaterfallTestTrace() {
     status: 200,
     timestamp: new Date().toISOString(),
     environment: "dev",
-    conversationId: `conv-${Date.now()}`,
-    sessionId: `session-${Date.now()}`,
-    userId: `user-test-123`,
+    conversationId: generateUUID(),
+    sessionId: generateUUID(),
+    userId: generateUUID(),
     messageIndex: 1,
   };
 
