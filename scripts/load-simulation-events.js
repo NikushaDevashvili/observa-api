@@ -328,6 +328,7 @@ function generateCanonicalEvents(params) {
     attributes: {
       retrieval: {
         retrieval_context_ids: [`ctx-${generateUUID().substring(0, 8)}`],
+        retrieval_context: context, // Include actual retrieved context
         k: 5,
         top_k: 5,
         latency_ms: retrievalLatency,
