@@ -689,6 +689,9 @@ export class TraceQueryService {
       // Add type-specific data at the top level for easy access
       // This makes it easier for the frontend to display details when a span is clicked
       // We expose data in multiple formats to ensure frontend compatibility
+      span.hasDetails = true; // Flag to indicate this span has details to show
+      span.selectable = true; // Flag to indicate this span can be selected
+      
       if (span.llm_call) {
         span.type = 'llm_call';
         span.details = span.llm_call;
@@ -700,6 +703,9 @@ export class TraceQueryService {
         span.output_tokens = span.llm_call.output_tokens;
         span.total_tokens = span.llm_call.total_tokens;
         span.latency_ms = span.llm_call.latency_ms;
+        // Ensure these are not null/undefined so frontend can detect them
+        span.hasInput = !!span.llm_call.input;
+        span.hasOutput = !!span.llm_call.output;
       } else if (span.tool_call) {
         span.type = 'tool_call';
         span.details = span.tool_call;
@@ -708,6 +714,8 @@ export class TraceQueryService {
         span.tool_args = span.tool_call.args;
         span.tool_result = span.tool_call.result;
         span.tool_status = span.tool_call.result_status;
+        span.hasArgs = !!span.tool_call.args;
+        span.hasResult = !!span.tool_call.result;
       } else if (span.retrieval) {
         span.type = 'retrieval';
         span.details = span.retrieval;
@@ -715,15 +723,19 @@ export class TraceQueryService {
         span.top_k = span.retrieval.top_k;
         span.retrieval_context = span.retrieval.retrieval_context;
         span.similarity_scores = span.retrieval.similarity_scores;
+        span.hasContext = !!span.retrieval.retrieval_context;
       } else if (span.output) {
         span.type = 'output';
         span.details = span.output;
         // Also expose at top level
         span.final_output = span.output.final_output;
         span.output_length = span.output.output_length;
+        span.hasOutput = !!span.output.final_output;
       } else {
         span.type = 'trace';
         span.details = span.metadata;
+        // Root trace span might not have details, but children do
+        span.hasDetails = span.children && span.children.length > 0;
       }
       
       // Ensure events array has full attribute data for frontend that reads from events
