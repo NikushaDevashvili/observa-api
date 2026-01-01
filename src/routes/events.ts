@@ -18,12 +18,14 @@ import { EventTranslationService } from "../services/eventTranslationService.js"
 import { QuotaService } from "../services/quotaService.js";
 import { SecretsScrubbingService } from "../services/secretsScrubbingService.js";
 import { SignalsService } from "../services/signalsService.js";
+import { TraceService } from "../services/traceService.js";
 import {
   canonicalEventSchema,
   batchEventsSchema,
 } from "../validation/schemas.js";
-import { TinybirdCanonicalEvent } from "../types/events.js";
+import { TinybirdCanonicalEvent, CanonicalEvent } from "../types/events.js";
 import { isValidUUIDv4 } from "../utils/uuidValidation.js";
+import { TraceEvent } from "../types.js";
 
 const router = Router();
 
@@ -277,6 +279,18 @@ router.post(
       // Forward to Tinybird
       await CanonicalEventService.forwardToTinybird(tinybirdEvents);
 
+      // Store trace summaries in analysis_results for dashboard compatibility
+      // Extract llm_call events and create trace summaries
+      await storeTraceSummaries(validatedEvents, tenantId, projectId).catch(
+        (error) => {
+          console.error(
+            "[Events API] Failed to store trace summaries (non-fatal):",
+            error
+          );
+          // Don't fail the request if trace summary storage fails
+        }
+      );
+
       // Generate Layer 2 signals (async, non-blocking)
       SignalsService.processEvents(tinybirdEvents).catch((error) => {
         console.error(
@@ -318,5 +332,113 @@ router.post(
     }
   }
 );
+
+/**
+ * Store trace summaries in analysis_results table for dashboard compatibility
+ * Extracts llm_call events and creates summary records
+ */
+async function storeTraceSummaries(
+  events: CanonicalEvent[],
+  tenantId: string,
+  projectId: string | null
+): Promise<void> {
+  const { query } = await import("../db/client.js");
+
+  // Group events by trace_id
+  const tracesByTraceId = new Map<string, CanonicalEvent[]>();
+  for (const event of events) {
+    if (!tracesByTraceId.has(event.trace_id)) {
+      tracesByTraceId.set(event.trace_id, []);
+    }
+    tracesByTraceId.get(event.trace_id)!.push(event);
+  }
+
+  // Process each trace
+  for (const [traceId, traceEvents] of tracesByTraceId) {
+    // Find llm_call event (main event for trace summary)
+    const llmCallEvent = traceEvents.find(
+      (e) => e.event_type === "llm_call"
+    );
+    const outputEvent = traceEvents.find((e) => e.event_type === "output");
+    const traceStartEvent = traceEvents.find(
+      (e) => e.event_type === "trace_start"
+    );
+    const traceEndEvent = traceEvents.find((e) => e.event_type === "trace_end");
+
+    // Skip if no llm_call event (can't create meaningful summary)
+    if (!llmCallEvent) {
+      continue;
+    }
+
+    const llmAttrs = llmCallEvent.attributes.llm_call;
+    if (!llmAttrs) {
+      continue;
+    }
+
+    // Extract data from events
+    const rootSpanId = llmCallEvent.span_id;
+    const parentSpanId = llmCallEvent.parent_span_id;
+    const timestamp =
+      traceStartEvent?.timestamp ||
+      llmCallEvent.timestamp ||
+      new Date().toISOString();
+    const environment = llmCallEvent.environment;
+    const conversationId = llmCallEvent.conversation_id;
+    const sessionId = llmCallEvent.session_id;
+    const userId = llmCallEvent.user_id;
+
+    // Get message index from trace_start metadata if available
+    let messageIndex: number | null = null;
+    if (
+      traceStartEvent?.attributes.trace_start?.metadata?.message_index !==
+      undefined
+    ) {
+      messageIndex = traceStartEvent.attributes.trace_start.metadata
+        .message_index as number;
+    }
+
+    // Calculate total latency from trace_end if available
+    let latencyMs = llmAttrs.latency_ms || 0;
+    if (traceEndEvent?.attributes.trace_end?.total_latency_ms) {
+      latencyMs = traceEndEvent.attributes.trace_end.total_latency_ms;
+    }
+
+    // Create TraceEvent-like object for storage
+    const traceData: TraceEvent = {
+      traceId,
+      spanId: rootSpanId,
+      parentSpanId: parentSpanId || null,
+      timestamp,
+      tenantId,
+      projectId: projectId || "",
+      environment: environment as "dev" | "prod",
+      query: llmAttrs.input || "",
+      response: llmAttrs.output || outputEvent?.attributes.output?.final_output || "",
+      responseLength: llmAttrs.output?.length || outputEvent?.attributes.output?.output_length || 0,
+      model: llmAttrs.model || "",
+      tokensPrompt: llmAttrs.input_tokens || null,
+      tokensCompletion: llmAttrs.output_tokens || null,
+      tokensTotal: llmAttrs.total_tokens || null,
+      latencyMs,
+      timeToFirstTokenMs: null, // Not available in canonical events
+      streamingDurationMs: null, // Not available in canonical events
+      status: 200,
+      statusText: "OK",
+      finishReason: llmAttrs.finish_reason || null,
+      responseId: llmAttrs.response_id || null,
+      systemFingerprint: llmAttrs.system_fingerprint || null,
+      conversationId: conversationId || undefined,
+      sessionId: sessionId || undefined,
+      userId: userId || undefined,
+      messageIndex: messageIndex || undefined,
+    };
+
+    // Store in analysis_results using TraceService
+    await TraceService.storeTraceData(traceData);
+    console.log(
+      `[Events API] Stored trace summary for ${traceId} in analysis_results`
+    );
+  }
+}
 
 export default router;
