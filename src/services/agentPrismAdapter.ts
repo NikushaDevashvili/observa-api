@@ -115,6 +115,7 @@ export interface AgentPrismTraceSpan {
   endTime: number; // Unix timestamp in milliseconds
   duration: number; // Duration in milliseconds
   attributes: Record<string, any>;
+  type?: string; // TraceSpanCategory for SpanBadge
   children?: AgentPrismTraceSpan[];
 }
 
@@ -249,6 +250,26 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
     }
   }
 
+  // Map our span types to agent-prism TraceSpanCategory
+  // Valid categories: llm_call, tool_execution, agent_invocation, chain_operation, 
+  // retrieval, embedding, create_agent, span, event, guardrail, unknown
+  // IMPORTANT: Must match exactly - case sensitive!
+  let category: "llm_call" | "tool_execution" | "agent_invocation" | "chain_operation" | 
+                "retrieval" | "embedding" | "create_agent" | "span" | "event" | "guardrail" | "unknown" = "unknown";
+  
+  // Check in priority order (most specific first)
+  if (span.llm_call || span.event_type === "llm_call" || span.type === "llm_call") {
+    category = "llm_call";
+  } else if (span.tool_call || span.event_type === "tool_call" || span.type === "tool_call") {
+    category = "tool_execution"; // Note: tool_call maps to tool_execution
+  } else if (span.retrieval || span.event_type === "retrieval" || span.type === "retrieval") {
+    category = "retrieval";
+  } else if (span.output || span.event_type === "output" || span.type === "output") {
+    category = "event"; // Output events map to "event"
+  } else if (span.type === "trace" || span.name === "Trace" || span.name?.toLowerCase() === "trace") {
+    category = "span"; // Root trace spans
+  }
+
   // Build TraceSpan object
   const traceSpan: AgentPrismTraceSpan = {
     id: span.span_id || span.id,
@@ -258,6 +279,7 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
     endTime,
     duration: span.duration_ms,
     attributes,
+    type: category as any, // Set the type field for SpanBadge
     // Recursively transform children
     children: span.children?.map(transformSpan) || [],
   };
