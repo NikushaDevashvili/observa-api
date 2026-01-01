@@ -496,8 +496,30 @@ export class TraceQueryService {
       );
     }
 
+    // CRITICAL: Deduplicate events by creating a unique key
+    // This prevents processing the same event multiple times
+    const eventMap = new Map<string, any>();
+    for (const event of filteredEvents) {
+      // Create unique key: trace_id + span_id + event_type + timestamp
+      const eventKey = `${event.trace_id}-${event.span_id}-${event.event_type}-${event.timestamp}`;
+      if (!eventMap.has(eventKey)) {
+        eventMap.set(eventKey, event);
+      } else {
+        console.warn(
+          `[TraceQueryService] Duplicate event detected and skipped: ${eventKey}`
+        );
+      }
+    }
+    const uniqueEvents = Array.from(eventMap.values());
+    
+    if (uniqueEvents.length !== filteredEvents.length) {
+      console.warn(
+        `[TraceQueryService] Removed ${filteredEvents.length - uniqueEvents.length} duplicate events`
+      );
+    }
+
     // Parse events and extract attributes
-    const parsedEvents = filteredEvents.map((event: any) => {
+    const parsedEvents = uniqueEvents.map((event: any) => {
       let attributes = {};
       try {
         if (typeof event.attributes_json === "string") {
@@ -986,7 +1008,17 @@ export class TraceQueryService {
           if (!parentSpan.children) {
             parentSpan.children = [];
           }
-          parentSpan.children.push(span);
+          // CRITICAL: Check if span is already in children to prevent duplicates
+          const existingChild = parentSpan.children.find(
+            (c: any) => c.id === span.id || c.span_id === span.span_id
+          );
+          if (!existingChild) {
+            parentSpan.children.push(span);
+          } else {
+            console.warn(
+              `[TraceQueryService] Duplicate child span detected and skipped: ${span.id} in parent ${parentSpan.id}`
+            );
+          }
         } else {
           // Parent not found, treat as root
           rootSpans.push(span);
