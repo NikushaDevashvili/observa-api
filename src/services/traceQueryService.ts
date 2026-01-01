@@ -496,20 +496,37 @@ export class TraceQueryService {
     const spanEventsMap = new Map<string, any[]>();
 
     // First pass: create all spans
+    // For root span events (parent_span_id === null), create separate spans for each event type
+    // This allows the frontend to display and click on each event type separately
     for (const event of parsedEvents) {
-      const spanId = event.span_id;
+      let spanId = event.span_id;
+      let parentSpanId = event.parent_span_id;
+      
+      // If this is a root span event (parent_span_id === null), create a unique span for each event type
+      // This makes each event type (retrieval, llm_call, output, etc.) a separate clickable node
+      if (event.parent_span_id === null && 
+          (event.event_type === 'retrieval' || 
+           event.event_type === 'llm_call' || 
+           event.event_type === 'tool_call' || 
+           event.event_type === 'output')) {
+        // Create a unique span ID for this event type
+        spanId = `${event.span_id}-${event.event_type}`;
+        parentSpanId = event.span_id; // Make the original span_id the parent
+      }
       
       if (!spansMap.has(spanId)) {
         // Determine span name based on event type
         let spanName = 'Span';
         if (event.event_type === 'llm_call') {
           const model = event.attributes?.llm_call?.model || 'unknown';
-          spanName = `LLM Call ${model}`;
+          spanName = `LLM Call: ${model}`;
         } else if (event.event_type === 'tool_call') {
           const toolName = event.attributes?.tool_call?.tool_name || 'unknown';
           spanName = `Tool: ${toolName}`;
         } else if (event.event_type === 'retrieval') {
           spanName = 'Retrieval';
+        } else if (event.event_type === 'output') {
+          spanName = 'Output';
         } else if (event.parent_span_id === null) {
           spanName = 'Trace';
         }
@@ -517,7 +534,7 @@ export class TraceQueryService {
         spansMap.set(spanId, {
           id: spanId, // Add id field for frontend compatibility
           span_id: spanId,
-          parent_span_id: event.parent_span_id,
+          parent_span_id: parentSpanId,
           name: spanName,
           start_time: event.timestamp,
           end_time: event.timestamp,
@@ -535,13 +552,13 @@ export class TraceQueryService {
       }
 
       // Add event to span with unique ID
-      const eventId = `${event.span_id}-${event.event_type}-${event.timestamp}`;
+      const eventId = `${spanId}-${event.event_type}-${event.timestamp}`;
       spanEventsMap.get(spanId)!.push({
         id: eventId, // Add unique id for each event
         event_type: event.event_type,
         timestamp: event.timestamp,
         attributes: event.attributes,
-        span_id: event.span_id, // Include span_id for reference
+        span_id: event.span_id, // Include original span_id for reference
       });
     }
 
@@ -690,6 +707,32 @@ export class TraceQueryService {
     }
 
     // Third pass: build parent-child relationships
+    // First, ensure we have a root "Trace" span if events had parent_span_id === null
+    const originalRootSpanId = parsedEvents.find((e: any) => e.parent_span_id === null)?.span_id;
+    if (originalRootSpanId && !spansMap.has(originalRootSpanId)) {
+      // Create root trace span
+      const firstEvent = parsedEvents[0];
+      spansMap.set(originalRootSpanId, {
+        id: originalRootSpanId,
+        span_id: originalRootSpanId,
+        parent_span_id: null,
+        name: 'Trace',
+        start_time: firstEvent?.timestamp || new Date().toISOString(),
+        end_time: parsedEvents[parsedEvents.length - 1]?.timestamp || new Date().toISOString(),
+        duration_ms: 0,
+        events: [],
+        children: [],
+        metadata: {
+          environment: firstEvent?.environment,
+          conversation_id: firstEvent?.conversation_id,
+          session_id: firstEvent?.session_id,
+          user_id: firstEvent?.user_id,
+        },
+        type: 'trace',
+        details: {},
+      });
+    }
+
     const rootSpans: any[] = [];
     for (const [spanId, span] of spansMap.entries()) {
       if (span.parent_span_id === null) {
