@@ -1,502 +1,265 @@
-# QA Testing Guide - Observa Implementation
+# QA Testing Guide - Trace Summary Fixes
 
-This guide provides comprehensive testing instructions for all newly implemented features.
+**Date:** January 2026  
+**Purpose:** Verify that trace summary fixes are working correctly after deployment
 
 ## Prerequisites
 
-1. **Environment Variables Set:**
+1. **Code Deployed:** Ensure the latest code with fixes is deployed to Vercel
+2. **Session Token:** Get a valid session token by logging into the dashboard
+3. **Test Traces:** Generate new traces using the simulation script (old traces may not have the new fields)
 
-   - `DATABASE_URL` - PostgreSQL connection string
-   - `ANALYSIS_SERVICE_URL` - Python analysis service URL (e.g., Railway URL)
-   - `TINYBIRD_ADMIN_TOKEN` - Tinybird admin token
-   - `JWT_SECRET` - JWT signing secret
+## Quick Test
 
-2. **Services Running:**
+### Step 1: Generate New Test Traces
 
-   - `observa-api` deployed on Vercel
-   - `observa-analysis` deployed on Railway
-   - `observa-app` deployed on Vercel
-
-3. **Test Account:**
-   - Email and password for login
-   - API key from registration
-
-## Test 1: Conversation Tracking - Basic Flow
-
-### Step 1.1: Create a conversation with multiple messages
+Generate fresh traces that will use the new code:
 
 ```bash
-# Set your API key
-API_KEY="your-api-key-here"
-API_URL="https://observa-api.vercel.app"
+# Generate a small batch of test traces
+NUM_USERS=1 CONVERSATIONS_PER_USER=1 MIN_MESSAGES=1 MAX_MESSAGES=1 \
+API_URL="https://observa-api.vercel.app" \
+node scripts/load-simulation-events.js <JWT_TOKEN>
+```
 
-# Generate a conversation ID
-CONVERSATION_ID="conv-test-$(date +%s)"
-SESSION_ID="session-test-$(date +%s)"
-USER_ID="user-test-123"
+**Note:** Copy one of the trace IDs from the output for testing.
 
-# Send first message
-curl -X POST "$API_URL/api/v1/traces/ingest" \
+### Step 2: Test Trace Summary
+
+Use the test script to verify the summary includes all required fields:
+
+```bash
+# Get your session token from browser (dashboard login)
+# Then run:
+TRACE_ID=<trace-id-from-step-1> \
+SESSION_TOKEN=<your-session-token> \
+API_URL="https://observa-api.vercel.app" \
+node scripts/test-trace-summary.js
+```
+
+Or manually test with curl:
+
+```bash
+curl "https://observa-api.vercel.app/api/v1/traces/<TRACE_ID>?format=tree" \
+  -H "Authorization: Bearer <SESSION_TOKEN>" \
+  | jq '.trace.summary | {query, response, total_cost, finish_reason, model, total_tokens}'
+```
+
+## Expected Results
+
+### ✅ Summary Should Include:
+
+1. **`query`** (CRITICAL) - User's question from first LLM call
+   - Should be a string
+   - Should not be null or undefined
+   - Example: "I need help with my order #12345"
+
+2. **`response`** (CRITICAL) - Final response/output
+   - Should be a string
+   - Should not be null or undefined
+   - Can come from output event or last LLM call output
+
+3. **`total_cost`** (NICE TO HAVE) - Aggregated cost from all LLM calls
+   - Should be a number (or null if cost calculation disabled)
+   - Should sum all LLM call costs
+
+4. **`finish_reason`** (NICE TO HAVE) - Finish reason from last LLM call
+   - Should be a string (e.g., "stop", "length", "tool_calls")
+   - Can be null if not available
+
+5. **`model`** - LLM model name
+   - Should be a string (e.g., "gpt-4o", "claude-3-opus")
+
+6. **`total_tokens`** - Total tokens used
+   - Should be a number
+
+7. **`total_latency_ms`** - Total latency
+   - Should be a number
+
+## Test Scenarios
+
+### Test 1: Single LLM Call Trace
+
+**Expected:**
+- `query` = first (and only) LLM call's input
+- `response` = output event's final_output OR LLM call's output
+- `total_cost` = cost from the single LLM call
+- `finish_reason` = finish_reason from the LLM call
+
+### Test 2: Multiple LLM Call Trace (Agentic Workflow)
+
+Generate traces with multi-LLM enabled:
+
+```bash
+MULTI_LLM_RATE=1.0 \  # Force 100% multi-LLM
+NUM_USERS=1 CONVERSATIONS_PER_USER=1 MIN_MESSAGES=1 MAX_MESSAGES=1 \
+API_URL="https://observa-api.vercel.app" \
+node scripts/load-simulation-events.js <JWT_TOKEN>
+```
+
+**Expected:**
+- `query` = **first** LLM call's input (user's original question)
+- `response` = output event's final_output OR **last** LLM call's output
+- `total_cost` = sum of all LLM call costs
+- `finish_reason` = finish_reason from **last** LLM call
+
+### Test 3: Trace with Output Event
+
+**Expected:**
+- `response` should prefer output event's `final_output`
+- Should fallback to LLM call output if no output event
+
+### Test 4: Trace without Output Event
+
+**Expected:**
+- `response` should fallback to last LLM call's output
+
+## Frontend Verification
+
+After verifying the API returns the correct data, check the frontend:
+
+1. **Navigate to trace detail page:**
+   ```
+   https://observa-app.vercel.app/dashboard/traces/<TRACE_ID>
+   ```
+
+2. **Check Summary Section:**
+   - ✅ User question should be displayed
+   - ✅ Final response should be displayed
+   - ✅ Cost should be displayed (if available)
+   - ✅ Finish reason should be displayed (if available)
+
+3. **Check Browser Console:**
+   - Open DevTools → Console
+   - Look for any errors
+   - Verify the API response includes `summary.query` and `summary.response`
+
+4. **Check Network Tab:**
+   - Open DevTools → Network
+   - Find the trace API request
+   - Inspect response → `trace.summary`
+   - Verify `query` and `response` fields are present
+
+## Manual API Testing
+
+### Test with curl:
+
+```bash
+# Replace <TRACE_ID> and <SESSION_TOKEN>
+TRACE_ID="your-trace-id"
+SESSION_TOKEN="your-session-token"
+
+# Get trace with tree format
+curl "https://observa-api.vercel.app/api/v1/traces/${TRACE_ID}?format=tree" \
+  -H "Authorization: Bearer ${SESSION_TOKEN}" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $API_KEY" \
-  -d '{
-    "traceId": "trace-001",
-    "spanId": "span-001",
-    "timestamp": "'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'",
-    "query": "What is the capital of France?",
-    "context": "France is a country in Europe. The capital city of France is Paris.",
-    "response": "The capital of France is Paris.",
-    "model": "gpt-3.5-turbo",
-    "tokensPrompt": 20,
-    "tokensCompletion": 10,
-    "tokensTotal": 30,
-    "latencyMs": 500,
-    "responseLength": 30,
-    "conversationId": "'$CONVERSATION_ID'",
-    "sessionId": "'$SESSION_ID'",
-    "userId": "'$USER_ID'",
-    "messageIndex": 1
-  }'
-
-# Send second message (same conversation)
-curl -X POST "$API_URL/api/v1/traces/ingest" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $API_KEY" \
-  -d '{
-    "traceId": "trace-002",
-    "spanId": "span-002",
-    "timestamp": "'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'",
-    "query": "What is the population of Paris?",
-    "context": "Paris is the capital of France. The population of Paris is approximately 2.1 million people.",
-    "response": "The population of Paris is approximately 2.1 million people.",
-    "model": "gpt-3.5-turbo",
-    "tokensPrompt": 25,
-    "tokensCompletion": 15,
-    "tokensTotal": 40,
-    "latencyMs": 600,
-    "responseLength": 60,
-    "conversationId": "'$CONVERSATION_ID'",
-    "sessionId": "'$SESSION_ID'",
-    "userId": "'$USER_ID'",
-    "messageIndex": 2
-  }'
-
-# Send third message (same conversation)
-curl -X POST "$API_URL/api/v1/traces/ingest" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $API_KEY" \
-  -d '{
-    "traceId": "trace-003",
-    "spanId": "span-003",
-    "timestamp": "'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'",
-    "query": "What is the Eiffel Tower?",
-    "context": "The Eiffel Tower is a famous landmark in Paris, France. It was built in 1889.",
-    "response": "The Eiffel Tower is a famous landmark in Paris, France, built in 1889.",
-    "model": "gpt-3.5-turbo",
-    "tokensPrompt": 30,
-    "tokensCompletion": 20,
-    "tokensTotal": 50,
-    "latencyMs": 700,
-    "responseLength": 70,
-    "conversationId": "'$CONVERSATION_ID'",
-    "sessionId": "'$SESSION_ID'",
-    "userId": "'$USER_ID'",
-    "messageIndex": 3
-  }'
+  | jq '.trace.summary'
 ```
 
-**Expected Results:**
+### Expected JSON Structure:
 
-- All three requests return `{"success": true, "traceId": "...", "message": "Trace ingested successfully"}`
-- Wait 30-60 seconds for analysis to complete
-
-### Step 1.2: Verify conversation was created
-
-```bash
-# Get session token (login first)
-SESSION_TOKEN="your-session-token-here"
-
-# List conversations
-curl -X GET "$API_URL/api/v1/conversations" \
-  -H "Authorization: Bearer $SESSION_TOKEN"
-
-# Expected: Should see the conversation with:
-# - conversation_id: $CONVERSATION_ID
-# - message_count: 3
-# - total_tokens: 120 (30+40+50)
-# - user_id: $USER_ID
+```json
+{
+  "trace_id": "...",
+  "tenant_id": "...",
+  "project_id": "...",
+  "query": "I need help with my order #12345",  // ✅ Should be present
+  "response": "I can help you with order #12345...",  // ✅ Should be present
+  "total_cost": 0.000123,  // ✅ Should be a number (or null)
+  "finish_reason": "stop",  // ✅ Should be present
+  "model": "gpt-4o",
+  "total_tokens": 150,
+  "total_latency_ms": 1200,
+  "conversation_id": "...",
+  "session_id": "...",
+  "user_id": "...",
+  "environment": "prod",
+  "start_time": "2026-01-...",
+  "end_time": "2026-01-..."
+}
 ```
-
-### Step 1.3: Get conversation details
-
-```bash
-# Get specific conversation
-curl -X GET "$API_URL/api/v1/conversations/$CONVERSATION_ID" \
-  -H "Authorization: Bearer $SESSION_TOKEN"
-
-# Expected: Full conversation object with all metrics
-```
-
-### Step 1.4: Get conversation messages
-
-```bash
-# Get all messages in conversation
-curl -X GET "$API_URL/api/v1/conversations/$CONVERSATION_ID/messages" \
-  -H "Authorization: Bearer $SESSION_TOKEN"
-
-# Expected: Array of 3 messages, ordered by message_index
-```
-
-### Step 1.5: Get conversation analytics
-
-```bash
-# Get conversation analytics
-curl -X GET "$API_URL/api/v1/conversations/$CONVERSATION_ID/analytics" \
-  -H "Authorization: Bearer $SESSION_TOKEN"
-
-# Expected: Analytics object with:
-# - totalMessages: 3
-# - totalTokens: 120
-# - totalCost: > 0
-# - averageLatency: ~600ms
-```
-
-## Test 2: Frontend - Conversation Pages
-
-### Step 2.1: Access conversation list
-
-1. Go to `https://observa-app.vercel.app/dashboard/conversations`
-2. Login if needed
-3. **Expected:** See list of conversations with:
-   - Conversation ID (truncated)
-   - User ID
-   - Message count
-   - Total tokens
-   - Total cost
-   - Last message timestamp
-   - Status (OK/Issues)
-
-### Step 2.2: Filter conversations
-
-1. Click "With Issues" filter
-2. **Expected:** Only conversations with `has_issues: true` are shown
-
-### Step 2.3: View conversation detail
-
-1. Click "View →" on any conversation
-2. **Expected:** See:
-   - Conversation header with ID and user
-   - Analytics summary cards (Total Messages, Tokens, Cost, Issue Rate)
-   - Full message thread (all messages in order)
-   - Each message shows:
-     - Message number
-     - Query and Response
-     - Issue badges (if any)
-     - Link to trace details
-
-## Test 3: Model Preloading & Health Checks
-
-### Step 3.1: Check analysis service health
-
-```bash
-ANALYSIS_URL="https://your-railway-service.railway.app"
-
-# Check /health endpoint
-curl -X GET "$ANALYSIS_URL/health"
-
-# Expected:
-# {
-#   "status": "ok",
-#   "service": "observa-analysis",
-#   "models": {
-#     "hallucination": "loaded",
-#     "context": "loaded",
-#     "faithfulness": "loaded",
-#     "drift": "loaded",
-#     "cost": "loaded"
-#   }
-# }
-```
-
-### Step 3.2: Check readiness endpoint
-
-```bash
-# Check /ready endpoint
-curl -X GET "$ANALYSIS_URL/ready"
-
-# Expected (if models loaded):
-# {
-#   "status": "ready",
-#   "service": "observa-analysis",
-#   "models": { ... }
-# }
-
-# Expected (if models not loaded):
-# 503 status with details about which models are loading
-```
-
-### Step 3.3: Test cold start (if possible)
-
-1. Restart Railway service
-2. Immediately check `/ready` endpoint
-3. **Expected:** Returns 503 until models are loaded
-4. Wait 30-60 seconds
-5. Check again
-6. **Expected:** Returns 200 with all models ready
-
-## Test 4: Parallel Processing Performance
-
-### Step 4.1: Measure analysis time
-
-```bash
-# Send a trace with all analysis types
-START_TIME=$(date +%s%N)
-
-curl -X POST "$API_URL/api/v1/traces/ingest" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $API_KEY" \
-  -d '{
-    "traceId": "trace-performance-test",
-    "spanId": "span-perf",
-    "timestamp": "'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'",
-    "query": "What is machine learning?",
-    "context": "Machine learning is a subset of artificial intelligence that enables systems to learn from data.",
-    "response": "Machine learning is a subset of AI that enables systems to learn from data without explicit programming.",
-    "model": "gpt-4",
-    "tokensPrompt": 50,
-    "tokensCompletion": 30,
-    "tokensTotal": 80,
-    "latencyMs": 1000,
-    "responseLength": 100
-  }'
-
-# Wait for analysis to complete (check in dashboard)
-# Then check processing_time_ms in analysis_results
-
-# Expected: processing_time_ms should be < 30 seconds (previously was 120+ seconds)
-```
-
-### Step 4.2: Verify all detectors ran
-
-1. Go to trace detail page in dashboard
-2. **Expected:** See results from:
-   - Hallucination detection
-   - Context drop detection
-   - Faithfulness detection
-   - Cost anomaly detection
-   - Model drift detection
-
-## Test 5: Error Handling & Retry Logic
-
-### Step 5.1: Test timeout handling
-
-```bash
-# Temporarily set ANALYSIS_SERVICE_URL to invalid URL
-# (This will cause timeout)
-
-# Send a trace
-curl -X POST "$API_URL/api/v1/traces/ingest" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $API_KEY" \
-  -d '{ ... }'
-
-# Expected:
-# - Trace ingestion succeeds (non-blocking)
-# - Analysis fails gracefully
-# - Error logged but doesn't break trace ingestion
-```
-
-### Step 5.2: Test 503 retry logic
-
-1. Restart analysis service (models will be loading)
-2. Send a trace immediately
-3. **Expected:**
-   - Analysis service retries up to 3 times
-   - Exponential backoff between retries
-   - Eventually succeeds when service is ready
-
-## Test 6: Conversation Analytics Accuracy
-
-### Step 6.1: Create conversation with issues
-
-```bash
-# Send trace with hallucination
-curl -X POST "$API_URL/api/v1/traces/ingest" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $API_KEY" \
-  -d '{
-    "traceId": "trace-hallucination",
-    "spanId": "span-hall",
-    "timestamp": "'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'",
-    "query": "What is the capital of France?",
-    "context": "France is a country in Europe. The capital city of France is Paris.",
-    "response": "The capital of France is London.",  // WRONG - should trigger hallucination
-    "model": "gpt-3.5-turbo",
-    "tokensPrompt": 20,
-    "tokensCompletion": 10,
-    "tokensTotal": 30,
-    "latencyMs": 500,
-    "responseLength": 30,
-    "conversationId": "'$CONVERSATION_ID'",
-    "messageIndex": 4
-  }'
-```
-
-### Step 6.2: Verify conversation has_issues flag
-
-```bash
-# Wait for analysis
-sleep 60
-
-# Get conversation
-curl -X GET "$API_URL/api/v1/conversations/$CONVERSATION_ID" \
-  -H "Authorization: Bearer $SESSION_TOKEN"
-
-# Expected: has_issues: true
-```
-
-### Step 6.3: Check analytics accuracy
-
-```bash
-# Get analytics
-curl -X GET "$API_URL/api/v1/conversations/$CONVERSATION_ID/analytics" \
-  -H "Authorization: Bearer $SESSION_TOKEN"
-
-# Expected:
-# - issueCount: > 0
-# - hallucinationRate: > 0 (if hallucination detected)
-```
-
-## Test 7: Edge Cases
-
-### Test 7.1: Trace without conversation fields
-
-```bash
-# Send trace without conversationId
-curl -X POST "$API_URL/api/v1/traces/ingest" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $API_KEY" \
-  -d '{
-    "traceId": "trace-no-conv",
-    "spanId": "span-no-conv",
-    "timestamp": "'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'",
-    "query": "Test query",
-    "response": "Test response",
-    "tokensTotal": 10,
-    "latencyMs": 100,
-    "responseLength": 20
-  }'
-
-# Expected: Trace ingestion succeeds (conversation fields are optional)
-```
-
-### Test 7.2: Multiple conversations for same user
-
-```bash
-# Create second conversation for same user
-CONVERSATION_ID_2="conv-test-2-$(date +%s)"
-
-curl -X POST "$API_URL/api/v1/traces/ingest" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $API_KEY" \
-  -d '{
-    "traceId": "trace-004",
-    "spanId": "span-004",
-    "timestamp": "'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'",
-    "query": "What is Python?",
-    "response": "Python is a programming language.",
-    "tokensTotal": 20,
-    "latencyMs": 200,
-    "responseLength": 40,
-    "conversationId": "'$CONVERSATION_ID_2'",
-    "userId": "'$USER_ID'",
-    "messageIndex": 1
-  }'
-
-# Expected: New conversation created, separate from first
-```
-
-### Test 7.3: Pagination
-
-```bash
-# List conversations with pagination
-curl -X GET "$API_URL/api/v1/conversations?limit=10&offset=0" \
-  -H "Authorization: Bearer $SESSION_TOKEN"
-
-# Expected: Returns first 10 conversations with pagination metadata
-```
-
-## Test 8: Integration - Full Flow
-
-### Step 8.1: Complete user journey
-
-1. **Login** to `observa-app.vercel.app`
-2. **Send traces** with conversation tracking using SDK or API
-3. **View conversations** in dashboard
-4. **Click conversation** to see full thread
-5. **Check analytics** for conversation-level insights
-6. **View individual traces** from conversation
-
-### Step 8.2: Verify data consistency
-
-1. Check that conversation metrics match sum of individual traces
-2. Verify message ordering (by message_index)
-3. Confirm issue flags are correctly aggregated
-
-## Success Criteria
-
-✅ **Conversation Tracking:**
-
-- Conversations are created and updated correctly
-- Messages are linked to conversations
-- Analytics are accurate
-
-✅ **Performance:**
-
-- Analysis completes in < 30 seconds (parallel processing)
-- Models preload on startup (< 60 seconds)
-- No cold start delays after initial load
-
-✅ **Error Handling:**
-
-- Timeouts handled gracefully
-- Retries work correctly
-- Partial results returned on failures
-
-✅ **Frontend:**
-
-- Conversation list displays correctly
-- Conversation detail shows full thread
-- Analytics are visible and accurate
-
-✅ **Health Checks:**
-
-- `/health` returns model status
-- `/ready` returns 503 until models loaded
-- Service recovers gracefully
 
 ## Troubleshooting
 
-### Issue: Conversations not appearing
+### Issue: `query` is null/undefined
 
-- Check database schema was initialized
-- Verify migration ran successfully
-- Check conversationId is being sent in traces
+**Possible Causes:**
+1. Trace was generated before the fix (old traces won't have query)
+2. No LLM call events in the trace
+3. LLM call events don't have `input` field
 
-### Issue: Analysis taking too long
+**Solution:**
+- Generate new traces using the simulation script
+- Verify LLM call events have `attributes.llm_call.input` field
 
-- Check Railway service logs
-- Verify models are preloaded (check /ready endpoint)
-- Check for errors in analysis service
+### Issue: `response` is null/undefined
 
-### Issue: Frontend not loading conversations
+**Possible Causes:**
+1. No output events and no LLM call output
+2. Trace was generated before the fix
 
-- Check API proxy routes are working
-- Verify session token is valid
-- Check browser console for errors
+**Solution:**
+- Generate new traces (they should have output events)
+- Check if output events exist: `jq '.trace.allSpans[] | select(.type == "output")'`
 
-### Issue: Models not loading
+### Issue: `total_cost` is null
 
-- Check Railway service has enough memory (8GB recommended)
-- Verify model files are downloading
-- Check Railway logs for OOM errors
+**Possible Causes:**
+1. Cost calculation disabled in simulation (`ENABLE_COST_CALCULATION=false`)
+2. LLM call events don't have `cost` attribute
+3. All costs are 0
+
+**Solution:**
+- This is okay - cost can be null if not calculated
+- Verify with: `jq '.trace.allSpans[] | select(.type == "llm_call") | .llm_call.cost'`
+
+### Issue: API returns 401 Unauthorized
+
+**Cause:** Invalid or expired session token
+
+**Solution:**
+- Log into the dashboard
+- Get session token from browser cookies/storage
+- Or use browser DevTools → Application → Cookies → find session token
+
+### Issue: API returns 404 Not Found
+
+**Cause:** Trace ID doesn't exist or doesn't belong to your tenant
+
+**Solution:**
+- Verify the trace ID is correct
+- Make sure you're using traces from your tenant
+- Check trace exists: Look in dashboard or query traces list
+
+## Success Criteria
+
+✅ **Critical Checks:**
+- [ ] `summary.query` is present and contains user's question
+- [ ] `summary.response` is present and contains final output
+- [ ] No errors in API response
+- [ ] Frontend can access `summary.query`
+- [ ] Frontend can access `summary.response`
+
+✅ **Nice to Have:**
+- [ ] `summary.total_cost` is calculated correctly
+- [ ] `summary.finish_reason` is present
+- [ ] Multiple LLM calls: query comes from first, response from last
+- [ ] Cost aggregation works for multiple LLM calls
+
+## Automated Testing
+
+The test script (`scripts/test-trace-summary.js`) will automatically:
+1. ✅ Check if `query` field is present (CRITICAL)
+2. ✅ Check if `response` field is present (CRITICAL)
+3. ⚠️  Check if `total_cost` field is present (optional)
+4. ⚠️  Check if `finish_reason` field is present (optional)
+5. Display all summary fields for verification
+
+Run it after deployment to quickly verify the fixes are working.
+
+## Next Steps After Verification
+
+1. ✅ If all tests pass: Fixes are working correctly
+2. ✅ Verify frontend displays query and response
+3. ✅ Monitor production for any issues
+4. ✅ Update documentation if needed

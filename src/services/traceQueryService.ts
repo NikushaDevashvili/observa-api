@@ -18,10 +18,14 @@ export interface TraceSummary {
 
   // Aggregated from events
   model?: string | null;
+  query?: string | null; // User query from first LLM call input
+  response?: string | null; // Final response from output event or last LLM call
+  finish_reason?: string | null; // Finish reason from last LLM call
   latency_ms?: number | null;
   tokens_total?: number | null;
   tokens_prompt?: number | null;
   tokens_completion?: number | null;
+  total_cost?: number | null; // Aggregated cost from all LLM calls
 
   // From analysis_results (if available)
   is_hallucination?: boolean | null;
@@ -382,9 +386,11 @@ export class TraceQueryService {
         total_tokens: traceData.tokens_total || 0,
         total_cost: null, // Not in analysis_results
         model: traceData.model,
+        query: traceData.query || null, // User query (from analysis_results)
+        response: traceData.response || null, // Final response (from analysis_results)
+        finish_reason: traceData.finish_reason,
         status: traceData.status,
         status_text: traceData.status_text,
-        finish_reason: traceData.finish_reason,
         response_length: traceData.response_length,
         time_to_first_token_ms: traceData.time_to_first_token_ms,
         streaming_duration_ms: traceData.streaming_duration_ms,
@@ -492,7 +498,9 @@ export class TraceQueryService {
 
     if (filteredEvents.length !== events.length) {
       console.warn(
-        `[TraceQueryService] Filtered ${events.length - filteredEvents.length} events that don't belong to trace ${traceId}`
+        `[TraceQueryService] Filtered ${
+          events.length - filteredEvents.length
+        } events that don't belong to trace ${traceId}`
       );
     }
 
@@ -511,10 +519,12 @@ export class TraceQueryService {
       }
     }
     const uniqueEvents = Array.from(eventMap.values());
-    
+
     if (uniqueEvents.length !== filteredEvents.length) {
       console.warn(
-        `[TraceQueryService] Removed ${filteredEvents.length - uniqueEvents.length} duplicate events`
+        `[TraceQueryService] Removed ${
+          filteredEvents.length - uniqueEvents.length
+        } duplicate events`
       );
     }
 
@@ -1029,6 +1039,24 @@ export class TraceQueryService {
     // Build summary from events
     const llmAttrs = llmCall?.attributes?.llm_call;
     const traceEndAttrs = traceEnd?.attributes?.trace_end;
+
+    // Find output event for response
+    const outputEvent = parsedEvents.find(
+      (e: any) => e.event_type === "output"
+    );
+
+    // Calculate total cost from all LLM calls
+    const allLLMEvents = parsedEvents.filter(
+      (e: any) => e.event_type === "llm_call"
+    );
+    let totalCost = 0;
+    allLLMEvents.forEach((event: any) => {
+      const attrs = event.attributes?.llm_call || {};
+      if (attrs.cost) {
+        totalCost += attrs.cost;
+      }
+    });
+
     const summary = {
       trace_id: traceId,
       tenant_id: tenantId,
@@ -1050,8 +1078,14 @@ export class TraceQueryService {
             new Date(traceStart.timestamp).getTime()
           : 0),
       total_tokens: traceEndAttrs?.total_tokens || llmAttrs?.total_tokens || 0,
-      total_cost: null,
+      total_cost: totalCost > 0 ? totalCost : null,
       model: llmAttrs?.model || null,
+      query: llmAttrs?.input || null, // User query from first LLM call input
+      response:
+        outputEvent?.attributes?.output?.final_output ||
+        llmAttrs?.output ||
+        null, // Final response
+      finish_reason: llmAttrs?.finish_reason || null, // Finish reason from LLM call
     };
 
     // Get analysis results if available
@@ -1255,17 +1289,32 @@ export class TraceQueryService {
     // Find LLM call events
     const llmEvents = events.filter((e: any) => e.event_type === "llm_call");
 
+    // Find output events
+    const outputEvents = events.filter((e: any) => e.event_type === "output");
+
     // Aggregate LLM call data
     let model: string | null = null;
+    let query: string | null = null; // User query from first LLM call input
+    let response: string | null = null; // Final response
+    let finishReason: string | null = null; // Finish reason from last LLM call
     let totalLatency = 0;
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
     let totalTokens = 0;
+    let totalCost = 0;
 
-    llmEvents.forEach((event: any) => {
+    llmEvents.forEach((event: any, index: number) => {
       const attrs = event.attributes?.llm_call || {};
       if (attrs.model && !model) {
         model = attrs.model;
+      }
+      // Extract query from FIRST LLM call input (user's question)
+      if (index === 0 && attrs.input && !query) {
+        query = attrs.input;
+      }
+      // Extract finish reason from LAST LLM call
+      if (index === llmEvents.length - 1 && attrs.finish_reason) {
+        finishReason = attrs.finish_reason;
       }
       if (attrs.latency_ms) {
         totalLatency += attrs.latency_ms;
@@ -1279,7 +1328,21 @@ export class TraceQueryService {
       if (attrs.total_tokens) {
         totalTokens += attrs.total_tokens;
       }
+      if (attrs.cost) {
+        totalCost += attrs.cost;
+      }
     });
+
+    // Extract response from output events (prefer output event over LLM output)
+    if (outputEvents.length > 0) {
+      const lastOutput = outputEvents[outputEvents.length - 1];
+      response = lastOutput.attributes?.output?.final_output || null;
+    }
+    // Fallback to last LLM call output if no output event
+    if (!response && llmEvents.length > 0) {
+      const lastLLM = llmEvents[llmEvents.length - 1];
+      response = lastLLM.attributes?.llm_call?.output || null;
+    }
 
     // Get earliest timestamp
     const timestamps = events.map((e: any) => e.timestamp).sort();
@@ -1295,10 +1358,14 @@ export class TraceQueryService {
       project_id: projectId || metadata.project_id || "",
       timestamp,
       model,
+      query: query, // User query from first LLM call
+      response: response, // Final response from output event or last LLM call
+      finish_reason: finishReason, // Finish reason from last LLM call
       latency_ms: totalLatency > 0 ? totalLatency : null,
       tokens_total: totalTokens > 0 ? totalTokens : null,
       tokens_prompt: totalInputTokens > 0 ? totalInputTokens : null,
       tokens_completion: totalOutputTokens > 0 ? totalOutputTokens : null,
+      total_cost: totalCost > 0 ? totalCost : null,
       conversation_id: metadata.conversation_id || null,
       session_id: metadata.session_id || null,
       user_id: metadata.user_id || null,

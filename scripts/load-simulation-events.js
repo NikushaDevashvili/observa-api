@@ -26,6 +26,14 @@ const CONFIG = {
   enableErrors: process.env.ENABLE_ERRORS !== "false",
   enableHallucinations: process.env.ENABLE_HALLUCINATIONS !== "false",
   concurrentRequests: parseInt(process.env.CONCURRENT_REQUESTS || "5"),
+  // Phase 4: Enhanced configuration
+  errorRate: parseFloat(process.env.ERROR_RATE || "0.05"), // 5% error rate
+  feedbackRate: parseFloat(process.env.FEEDBACK_RATE || "0.10"), // 10% feedback
+  multiLLMRate: parseFloat(process.env.MULTI_LLM_RATE || "0.20"), // 20% multi-LLM traces
+  maxToolsPerTrace: parseInt(process.env.MAX_TOOLS_PER_TRACE || "4"),
+  maxRetrievalsPerTrace: parseInt(process.env.MAX_RETRIEVALS_PER_TRACE || "3"),
+  enableStreaming: process.env.ENABLE_STREAMING !== "false",
+  enableCostCalculation: process.env.ENABLE_COST_CALCULATION !== "false",
 };
 
 if (!JWT_TOKEN) {
@@ -139,7 +147,7 @@ async function getOrCreateApiKey() {
   }
 }
 
-// Statistics tracking
+// Statistics tracking (enhanced)
 const stats = {
   total: 0,
   success: 0,
@@ -148,6 +156,13 @@ const stats = {
   conversationIds: new Set(),
   userIds: new Set(),
   errorsByType: {},
+  // Phase 4: Enhanced statistics
+  errorEventsByType: {},
+  feedbackEventsByType: {},
+  toolCounts: [],
+  llmCallCounts: [],
+  finishReasonDistribution: {},
+  retrievalCounts: [],
 };
 
 // Conversation templates
@@ -224,11 +239,144 @@ const CONVERSATION_TEMPLATES = [
   },
 ];
 
+// Extended tool types for multiple tool calls
+const EXTENDED_TOOLS = [
+  "database_query",
+  "api_call",
+  "calculator",
+  "file_reader",
+  "email_sender",
+  "web_search",
+  "get_order_status",
+  "update_shipping",
+  "process_refund",
+  "cancel_order",
+  "verify_user",
+  "check_api_usage",
+  "generate_docs_link",
+  "get_pricing_info",
+  "fetch_feature_list",
+  "check_integrations",
+];
+
+// Error templates for error event generation
+const ERROR_TEMPLATES = {
+  tool_error: {
+    error_type: "tool_error",
+    messages: [
+      "Database connection timeout",
+      "API endpoint returned 503",
+      "File not found",
+      "Invalid parameters",
+      "Rate limit exceeded",
+    ],
+    stack_traces: [
+      "Error: Connection timeout\n    at Database.query (db.js:45:12)\n    at Tool.call (tool.js:23:5)",
+      "Error: API Error 503\n    at fetch (api.js:67:8)\n    at Tool.execute (tool.js:34:2)",
+    ],
+  },
+  llm_error: {
+    error_type: "llm_error",
+    messages: [
+      "OpenAI API error: Rate limit exceeded",
+      "Anthropic API error: Invalid request",
+      "Model overloaded, please retry",
+      "Authentication failed",
+    ],
+    stack_traces: [
+      "Error: Rate limit exceeded\n    at LLMClient.call (llm.js:123:45)",
+      "Error: Invalid request\n    at AnthropicClient.generate (client.js:89:12)",
+    ],
+  },
+  retrieval_error: {
+    error_type: "retrieval_error",
+    messages: [
+      "Vector database query failed",
+      "Embedding service unavailable",
+      "No matching documents found",
+      "Index corruption detected",
+    ],
+    stack_traces: [
+      "Error: Query failed\n    at VectorDB.query (vectordb.js:78:12)",
+      "Error: Service unavailable\n    at EmbeddingService.get (embedding.js:45:8)",
+    ],
+  },
+  timeout_error: {
+    error_type: "timeout_error",
+    messages: [
+      "Request timeout after 30s",
+      "Operation timed out",
+      "Connection timeout",
+    ],
+    stack_traces: [
+      "Error: Timeout after 30000ms\n    at setTimeout (timers.js:456:11)",
+      "Error: Connection timeout\n    at Socket.connect (net.js:234:15)",
+    ],
+  },
+};
+
+// Agent names and metadata
+const AGENT_NAMES = [
+  "customer_support_agent",
+  "code_assistant",
+  "data_analyst",
+  "product_inquiry_agent",
+  "technical_support_agent",
+];
+
+const VERSIONS = ["v1.0.0", "v1.2.3", "v2.0.0", "v2.1.0"];
+
+const ROUTES = ["/api/chat", "/api/agent", "/api/assistant", "/api/v1/chat"];
+
+// Finish reasons with distribution
+const FINISH_REASONS = [
+  { reason: "stop", weight: 90 },
+  { reason: "length", weight: 5 },
+  { reason: "tool_calls", weight: 3 },
+  { reason: "content_filter", weight: 1 },
+  { reason: "error", weight: 1 },
+];
+
+function selectFinishReason() {
+  const total = FINISH_REASONS.reduce((sum, r) => sum + r.weight, 0);
+  let random = Math.random() * total;
+  for (const item of FINISH_REASONS) {
+    random -= item.weight;
+    if (random <= 0) return item.reason;
+  }
+  return "stop";
+}
+
+// Model configuration with pricing (for cost calculation)
 const MODELS = [
-  { name: "gpt-4o-mini", avgPromptTokens: 150, avgCompletionTokens: 80 },
-  { name: "gpt-4o", avgPromptTokens: 300, avgCompletionTokens: 200 },
-  { name: "gpt-4-turbo", avgPromptTokens: 400, avgCompletionTokens: 300 },
-  { name: "claude-3-opus", avgPromptTokens: 350, avgCompletionTokens: 250 },
+  {
+    name: "gpt-4o-mini",
+    avgPromptTokens: 150,
+    avgCompletionTokens: 80,
+    inputPricePer1K: 0.15 / 1000, // $0.15 per 1M tokens = $0.00015 per 1K
+    outputPricePer1K: 0.6 / 1000, // $0.6 per 1M tokens = $0.0006 per 1K
+  },
+  {
+    name: "gpt-4o",
+    avgPromptTokens: 300,
+    avgCompletionTokens: 200,
+    inputPricePer1K: 0.005, // $5 per 1M tokens
+    outputPricePer1K: 0.015, // $15 per 1M tokens
+  },
+  {
+    name: "gpt-4-turbo",
+    avgPromptTokens: 400,
+    avgCompletionTokens: 300,
+    inputPricePer1K: 0.01,
+    outputPricePer1K: 0.03,
+  },
+  {
+    name: "claude-3-opus",
+    avgPromptTokens: 350,
+    avgCompletionTokens: 250,
+    inputPricePer1K: 0.015,
+    outputPricePer1K: 0.075,
+  },
 ];
 
 // Utility functions
@@ -252,6 +400,161 @@ function addMilliseconds(isoString, ms) {
   return new Date(new Date(isoString).getTime() + ms).toISOString();
 }
 
+// Phase 1.5 & Phase 3.3: Cost calculation
+function calculateCost(tokensPrompt, tokensCompletion, modelName) {
+  if (!CONFIG.enableCostCalculation) return null;
+
+  const modelConfig = MODELS.find((m) => m.name === modelName) || MODELS[0];
+  if (!modelConfig.inputPricePer1K || !modelConfig.outputPricePer1K) {
+    return null;
+  }
+
+  const inputCost = (tokensPrompt / 1000) * modelConfig.inputPricePer1K;
+  const outputCost = (tokensCompletion / 1000) * modelConfig.outputPricePer1K;
+  return parseFloat((inputCost + outputCost).toFixed(6));
+}
+
+// Phase 1.1: Generate error event
+function generateErrorEvent(params) {
+  const {
+    traceId,
+    spanId,
+    parentSpanId,
+    timestamp,
+    errorType,
+    conversationId,
+    sessionId,
+    userId,
+    agentName,
+    version,
+    route,
+  } = params;
+
+  const template = ERROR_TEMPLATES[errorType] || ERROR_TEMPLATES.tool_error;
+  const errorMessage = randomChoice(template.messages);
+  const stackTrace = randomChoice(template.stack_traces);
+
+  return {
+    tenant_id: tenantId,
+    project_id: projectId,
+    environment: Math.random() > 0.2 ? "prod" : "dev",
+    trace_id: traceId,
+    span_id: generateUUID(),
+    parent_span_id: spanId,
+    timestamp: timestamp,
+    event_type: "error",
+    conversation_id: conversationId,
+    session_id: sessionId,
+    user_id: userId,
+    agent_name: agentName,
+    version: version,
+    route: route,
+    attributes: {
+      error: {
+        error_type: template.error_type,
+        error_message: errorMessage,
+        stack_trace: stackTrace,
+        context: {
+          span_id: spanId,
+          parent_span_id: parentSpanId,
+          occurred_at: timestamp,
+        },
+      },
+    },
+  };
+}
+
+// Phase 1.2: Generate feedback event
+function generateFeedbackEvent(params) {
+  const {
+    traceId,
+    spanId,
+    timestamp,
+    conversationId,
+    sessionId,
+    userId,
+    agentName,
+    version,
+    route,
+  } = params;
+
+  const feedbackTypes = ["like", "dislike", "rating", "correction"];
+  const feedbackType = randomChoice(feedbackTypes);
+  const outcome = randomChoice(["success", "failure", "partial"]);
+
+  const attributes = {
+    feedback: {
+      type: feedbackType,
+      outcome: outcome,
+      comment: Math.random() > 0.5 ? "User feedback comment" : null,
+    },
+  };
+
+  if (feedbackType === "rating") {
+    attributes.feedback.rating = randomInt(1, 5);
+  }
+
+  return {
+    tenant_id: tenantId,
+    project_id: projectId,
+    environment: Math.random() > 0.2 ? "prod" : "dev",
+    trace_id: traceId,
+    span_id: spanId,
+    parent_span_id: null,
+    timestamp: timestamp,
+    event_type: "feedback",
+    conversation_id: conversationId,
+    session_id: sessionId,
+    user_id: userId,
+    agent_name: agentName,
+    version: version,
+    route: route,
+    attributes: attributes,
+  };
+}
+
+// Helper to create base event metadata
+function createBaseEventMetadata(
+  traceId,
+  spanId,
+  parentSpanId,
+  timestamp,
+  conversationId,
+  sessionId,
+  userId,
+  agentName,
+  version,
+  route,
+  environment
+) {
+  return {
+    tenant_id: tenantId,
+    project_id: projectId,
+    environment: environment || (Math.random() > 0.2 ? "prod" : "dev"),
+    trace_id: traceId,
+    span_id: spanId,
+    parent_span_id: parentSpanId,
+    timestamp: timestamp,
+    conversation_id: conversationId,
+    session_id: sessionId,
+    user_id: userId,
+    agent_name: agentName,
+    version: version,
+    route: route,
+  };
+}
+
+// Simple hash function for simulating hashes
+function simpleHash(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return Math.abs(hash).toString(16).substring(0, 16);
+}
+
 function generateCanonicalEvents(params) {
   const {
     traceId,
@@ -265,42 +568,73 @@ function generateCanonicalEvents(params) {
   } = params;
 
   const query = template.queries[queryIndex % template.queries.length];
-  const context = randomChoice(template.contexts);
+  const contexts = template.contexts || [];
   let response = template.responses[queryIndex % template.responses.length];
+
+  // Phase 2.4: Add metadata
+  const agentName = randomChoice(AGENT_NAMES);
+  const version = randomChoice(VERSIONS);
+  const route = randomChoice(ROUTES);
+  const environment = Math.random() > 0.2 ? "prod" : "dev";
 
   // Check for hallucination
   if (CONFIG.enableHallucinations && Math.random() < 0.03) {
     response = "Your order #12345 has been delivered yesterday."; // Wrong answer
   }
 
-  const modelConfig = MODELS.find((m) => m.name === model) || MODELS[0];
-  const tokensPrompt = modelConfig.avgPromptTokens + randomInt(-50, 100);
-  const tokensCompletion = modelConfig.avgCompletionTokens + randomInt(-30, 80);
-  const tokensTotal = tokensPrompt + tokensCompletion;
-  const totalLatency = randomInt(800, 2000);
-  const retrievalLatency = randomInt(50, 200);
-  const toolCallLatency = randomInt(100, 500);
-  const llmLatency = totalLatency - retrievalLatency - toolCallLatency;
+  // Phase 2: Determine if multi-LLM trace
+  const isMultiLLM = Math.random() < CONFIG.multiLLMRate;
+  const numLLMCalls = isMultiLLM ? randomInt(2, 3) : 1;
+
+  // Phase 1.4: Determine number of retrievals (1-3)
+  const numRetrievals = randomInt(1, CONFIG.maxRetrievalsPerTrace);
+
+  // Phase 1.3: Determine number of tools (1-4)
+  const numTools = randomInt(1, CONFIG.maxToolsPerTrace);
+  const useParallelTools = Math.random() > 0.5 && numTools > 1;
 
   const rootSpanId = generateUUID();
-  const toolSpanId = generateUUID();
   const baseTime = new Date().toISOString();
-
   const events = [];
 
-  // 1. trace_start event
+  // Phase 1.1: Track errors for statistics
+  let hasError = false;
+  let errorType = null;
+
+  // Phase 1.5: Calculate base latencies
+  const baseTotalLatency = randomInt(800, 2000);
+  const baseRetrievalLatency = randomInt(50, 200);
+  const baseToolCallLatency = randomInt(100, 500);
+  const baseLLMLatency =
+    baseTotalLatency - baseRetrievalLatency - baseToolCallLatency;
+
+  // Calculate total latency accounting for multiple operations
+  const totalRetrievalLatency = baseRetrievalLatency * numRetrievals;
+  const totalToolLatency =
+    baseToolCallLatency * (useParallelTools ? 1 : numTools);
+  const totalLLMLatency = baseLLMLatency * numLLMCalls;
+  const totalLatency =
+    totalRetrievalLatency + totalToolLatency + totalLLMLatency + 100; // buffer
+
+  let currentTime = baseTime;
+  let cumulativeLatency = 0;
+
+  // 1. trace_start event (Phase 2.4: with metadata)
   events.push({
-    tenant_id: tenantId,
-    project_id: projectId,
-    environment: Math.random() > 0.2 ? "prod" : "dev",
-    trace_id: traceId,
-    span_id: rootSpanId,
-    parent_span_id: null,
-    timestamp: baseTime,
+    ...createBaseEventMetadata(
+      traceId,
+      rootSpanId,
+      null,
+      currentTime,
+      conversationId,
+      sessionId,
+      userId,
+      agentName,
+      version,
+      route,
+      environment
+    ),
     event_type: "trace_start",
-    conversation_id: conversationId,
-    session_id: sessionId,
-    user_id: userId,
     attributes: {
       trace_start: {
         name: `Conversation Message ${messageIndex}`,
@@ -311,136 +645,496 @@ function generateCanonicalEvents(params) {
     },
   });
 
-  // 2. Retrieval event (fetch context)
-  const retrievalTime = addMilliseconds(baseTime, 10);
-  events.push({
-    tenant_id: tenantId,
-    project_id: projectId,
-    environment: Math.random() > 0.2 ? "prod" : "dev",
-    trace_id: traceId,
-    span_id: rootSpanId,
-    parent_span_id: null,
-    timestamp: retrievalTime,
-    event_type: "retrieval",
-    conversation_id: conversationId,
-    session_id: sessionId,
-    user_id: userId,
-    attributes: {
-      retrieval: {
-        retrieval_context_ids: [`ctx-${generateUUID().substring(0, 8)}`],
-        retrieval_context: context, // Include actual retrieved context
-        k: 5,
-        top_k: 5,
-        latency_ms: retrievalLatency,
-        similarity_scores: [0.95, 0.89, 0.87, 0.85, 0.82],
+  // Phase 1.4: Multiple retrieval events
+  const retrievalSpanIds = [];
+  const retrievalResults = [];
+  for (let i = 0; i < numRetrievals; i++) {
+    const retrievalSpanId = i === 0 ? rootSpanId : generateUUID();
+    retrievalSpanIds.push(retrievalSpanId);
+
+    const retrievalLatency = baseRetrievalLatency + randomInt(-20, 20);
+    currentTime = addMilliseconds(baseTime, cumulativeLatency + 10);
+    cumulativeLatency += retrievalLatency;
+
+    const context = randomChoice(
+      contexts.length > 0 ? contexts : ["[CONTEXT] Default context text"]
+    );
+    const contextIds = [
+      `ctx-${generateUUID().substring(0, 8)}`,
+      `ctx-${generateUUID().substring(0, 8)}`,
+    ];
+    const contextHashes = contextIds.map((id) => simpleHash(id + context));
+    const k = randomInt(3, 8);
+    const similarityScores = Array.from(
+      { length: k },
+      () => Math.random() * 0.3 + 0.7
+    ).sort((a, b) => b - a);
+
+    retrievalResults.push({ context, contextIds, contextHashes });
+
+    // Phase 1.1: Check for retrieval error
+    const retrievalError =
+      CONFIG.enableErrors && Math.random() < CONFIG.errorRate * 0.4; // 40% of error rate for retrieval
+
+    if (!retrievalError) {
+      events.push({
+        ...createBaseEventMetadata(
+          traceId,
+          retrievalSpanId,
+          i === 0 ? null : rootSpanId,
+          currentTime,
+          conversationId,
+          sessionId,
+          userId,
+          agentName,
+          version,
+          route,
+          environment
+        ),
+        event_type: "retrieval",
+        attributes: {
+          retrieval: {
+            retrieval_context_ids: contextIds,
+            retrieval_context_hashes: contextHashes,
+            k: k,
+            top_k: k,
+            latency_ms: retrievalLatency,
+            similarity_scores: similarityScores,
+          },
+        },
+      });
+    } else {
+      hasError = true;
+      errorType = "retrieval_error";
+      const errorEvent = generateErrorEvent({
+        traceId,
+        spanId: retrievalSpanId,
+        parentSpanId: i === 0 ? null : rootSpanId,
+        timestamp: currentTime,
+        errorType: "retrieval_error",
+        conversationId,
+        sessionId,
+        userId,
+        agentName,
+        version,
+        route,
+      });
+      events.push(errorEvent);
+    }
+  }
+
+  // Phase 1.3: Multiple tool calls
+  const toolSpanIds = [];
+  const toolResults = [];
+  let toolStartOffset = cumulativeLatency + 20;
+
+  for (let i = 0; i < numTools; i++) {
+    const toolSpanId = generateUUID();
+    toolSpanIds.push(toolSpanId);
+
+    const toolLatency = baseToolCallLatency + randomInt(-50, 50);
+    const toolStartTime = addMilliseconds(baseTime, toolStartOffset);
+    const toolEndTime = addMilliseconds(toolStartTime, toolLatency);
+
+    if (!useParallelTools) {
+      toolStartOffset += toolLatency + 10;
+    }
+
+    const toolName = randomChoice(EXTENDED_TOOLS);
+    const toolArgs = {
+      query: query.substring(0, 50),
+      limit: randomInt(5, 20),
+      ...(toolName === "database_query" ? { table: "orders" } : {}),
+      ...(toolName === "api_call" ? { endpoint: "/api/v1/data" } : {}),
+    };
+
+    // Phase 1.1: Check for tool error or timeout
+    const toolErrorProb = CONFIG.enableErrors ? CONFIG.errorRate * 0.5 : 0; // 50% of error rate for tools
+    const toolError = Math.random() < toolErrorProb;
+    const toolTimeout = toolError && Math.random() < 0.4; // 40% of tool errors are timeouts
+    const resultStatus = toolTimeout
+      ? "timeout"
+      : toolError
+      ? "error"
+      : "success";
+
+    if (toolError) {
+      hasError = true;
+      errorType = toolTimeout ? "timeout_error" : "tool_error";
+    }
+
+    const toolResult = toolError
+      ? null
+      : {
+          data: retrievalResults[0]?.context || "[DATA] Tool result data",
+          items_found: randomInt(1, 10),
+        };
+
+    events.push({
+      ...createBaseEventMetadata(
+        traceId,
+        toolSpanId,
+        rootSpanId,
+        toolStartTime,
+        conversationId,
+        sessionId,
+        userId,
+        agentName,
+        version,
+        route,
+        environment
+      ),
+      event_type: "tool_call",
+      attributes: {
+        tool_call: {
+          tool_name: toolName,
+          args: toolArgs,
+          args_hash: simpleHash(JSON.stringify(toolArgs)),
+          result_status: resultStatus,
+          result: toolResult,
+          latency_ms: toolLatency,
+          error_message: toolError
+            ? toolTimeout
+              ? "Request timeout after 30s"
+              : "Tool execution failed"
+            : null,
+        },
       },
-    },
-  });
+    });
 
-  // 3. Tool call event (as a child span) - simulate calling a tool before LLM
-  const toolStartTime = addMilliseconds(baseTime, retrievalLatency + 20);
-  const toolName = randomChoice(template.tools || ["lookup_data"]);
-  const toolArgs = { query: query.substring(0, 50), limit: 10 };
+    // Phase 1.1: Generate error event if tool failed
+    if (toolError) {
+      const errorEvent = generateErrorEvent({
+        traceId,
+        spanId: toolSpanId,
+        parentSpanId: rootSpanId,
+        timestamp: toolEndTime,
+        errorType: toolTimeout ? "timeout_error" : "tool_error",
+        conversationId,
+        sessionId,
+        userId,
+        agentName,
+        version,
+        route,
+      });
+      events.push(errorEvent);
+    }
 
-  events.push({
-    tenant_id: tenantId,
-    project_id: projectId,
-    environment: Math.random() > 0.2 ? "prod" : "dev",
-    trace_id: traceId,
-    span_id: toolSpanId,
-    parent_span_id: rootSpanId,
-    timestamp: toolStartTime,
-    event_type: "tool_call",
-    conversation_id: conversationId,
-    session_id: sessionId,
-    user_id: userId,
-    attributes: {
-      tool_call: {
-        tool_name: toolName,
-        args: toolArgs,
-        result_status: "success",
-        result: { data: context, items_found: 5 },
-        latency_ms: toolCallLatency,
-      },
-    },
-  });
+    toolResults.push(toolResult);
+  }
 
-  // 4. LLM call event (main event)
-  const llmStartTime = addMilliseconds(
-    baseTime,
-    retrievalLatency + toolCallLatency + 30
-  );
-  events.push({
-    tenant_id: tenantId,
-    project_id: projectId,
-    environment: Math.random() > 0.2 ? "prod" : "dev",
-    trace_id: traceId,
-    span_id: rootSpanId,
-    parent_span_id: null,
-    timestamp: llmStartTime,
-    event_type: "llm_call",
-    conversation_id: conversationId,
-    session_id: sessionId,
-    user_id: userId,
-    attributes: {
-      llm_call: {
-        model: model,
-        input: query,
-        output: response,
-        input_tokens: tokensPrompt,
-        output_tokens: tokensCompletion,
-        total_tokens: tokensTotal,
-        latency_ms: llmLatency,
-        finish_reason: "stop",
-        temperature: 0.7,
-        max_tokens: 1000,
-      },
-    },
-  });
+  // Phase 2.1: Multiple LLM calls (agentic workflows)
+  let llmStartOffset = toolStartOffset + 30;
+  const llmCallResults = [];
+  let totalTokensAll = 0;
+  let totalCostAll = 0;
 
-  // 5. Output event (final output)
+  for (let llmIndex = 0; llmIndex < numLLMCalls; llmIndex++) {
+    const llmSpanId = llmIndex === 0 ? rootSpanId : generateUUID();
+    const llmModel =
+      llmIndex === 0
+        ? model
+        : llmIndex === 1 && numLLMCalls > 1
+        ? randomChoice(MODELS).name
+        : model;
+    const modelConfig = MODELS.find((m) => m.name === llmModel) || MODELS[0];
+
+    // Phase 2.2: Complex span hierarchies - nested tools within LLM calls (30% chance)
+    const hasNestedTools = Math.random() < 0.3 && llmIndex > 0;
+    const numNestedTools = hasNestedTools ? randomInt(1, 2) : 0;
+    const nestedToolSpanIds = [];
+
+    const tokensPrompt = modelConfig.avgPromptTokens + randomInt(-50, 100);
+    const tokensCompletion =
+      modelConfig.avgCompletionTokens + randomInt(-30, 80);
+    const tokensTotal = tokensPrompt + tokensCompletion;
+    totalTokensAll += tokensTotal;
+
+    // Phase 1.5 & Phase 3.3: Cost calculation
+    const cost = calculateCost(tokensPrompt, tokensCompletion, llmModel);
+    if (cost) totalCostAll += cost;
+
+    const llmLatency = baseLLMLatency + randomInt(-100, 100);
+
+    // Phase 3.2: Streaming simulation
+    const timeToFirstToken = CONFIG.enableStreaming ? randomInt(50, 300) : null;
+    const streamingDuration =
+      timeToFirstToken && CONFIG.enableStreaming
+        ? Math.max(llmLatency - timeToFirstToken, 0)
+        : null;
+
+    // Phase 2.3: Different finish reasons
+    const finishReason = selectFinishReason();
+
+    const llmInput =
+      llmIndex === 0 ? query : llmCallResults[llmIndex - 1]?.output || query;
+    const llmOutput =
+      llmIndex === numLLMCalls - 1
+        ? response
+        : `Intermediate response ${llmIndex + 1}: ${response.substring(
+            0,
+            100
+          )}...`;
+
+    llmCallResults.push({ output: llmOutput, tokens: tokensTotal });
+
+    const llmStartTime = addMilliseconds(baseTime, llmStartOffset);
+
+    // Phase 2.2: Generate nested tools within LLM call (complex hierarchy level 2-3)
+    if (hasNestedTools) {
+      const nestedToolStartOffset = llmStartOffset + 50;
+      for (let nestedIdx = 0; nestedIdx < numNestedTools; nestedIdx++) {
+        const nestedToolSpanId = generateUUID();
+        nestedToolSpanIds.push(nestedToolSpanId);
+        const nestedToolLatency = randomInt(50, 200);
+        const nestedToolStartTime = addMilliseconds(
+          baseTime,
+          nestedToolStartOffset + nestedIdx * 60
+        );
+        const nestedToolName = randomChoice(EXTENDED_TOOLS);
+        const nestedToolArgs = {
+          query: llmInput.substring(0, 30),
+          nested: true,
+        };
+
+        // Phase 2.2: Nested retrieval within nested tool (complex hierarchy level 3-4, 20% chance)
+        const hasNestedRetrieval = Math.random() < 0.2;
+        if (hasNestedRetrieval) {
+          const nestedRetrievalSpanId = generateUUID();
+          const nestedRetrievalTime = addMilliseconds(nestedToolStartTime, 5);
+          const nestedRetrievalLatency = randomInt(20, 100);
+          const nestedContext = randomChoice(
+            contexts.length > 0
+              ? contexts
+              : ["[NESTED_CONTEXT] Nested retrieval context"]
+          );
+          const nestedContextIds = [
+            `nested-ctx-${generateUUID().substring(0, 8)}`,
+          ];
+
+          events.push({
+            ...createBaseEventMetadata(
+              traceId,
+              nestedRetrievalSpanId,
+              nestedToolSpanId,
+              nestedRetrievalTime,
+              conversationId,
+              sessionId,
+              userId,
+              agentName,
+              version,
+              route,
+              environment
+            ),
+            event_type: "retrieval",
+            attributes: {
+              retrieval: {
+                retrieval_context_ids: nestedContextIds,
+                retrieval_context_hashes: [
+                  simpleHash(nestedContextIds[0] + nestedContext),
+                ],
+                k: 3,
+                top_k: 3,
+                latency_ms: nestedRetrievalLatency,
+                similarity_scores: [0.92, 0.88, 0.85],
+              },
+            },
+          });
+        }
+
+        events.push({
+          ...createBaseEventMetadata(
+            traceId,
+            nestedToolSpanId,
+            llmSpanId,
+            nestedToolStartTime,
+            conversationId,
+            sessionId,
+            userId,
+            agentName,
+            version,
+            route,
+            environment
+          ),
+          event_type: "tool_call",
+          attributes: {
+            tool_call: {
+              tool_name: nestedToolName,
+              args: nestedToolArgs,
+              args_hash: simpleHash(JSON.stringify(nestedToolArgs)),
+              result_status: "success",
+              result: { nested_data: "[DATA] Nested tool result" },
+              latency_ms: nestedToolLatency,
+            },
+          },
+        });
+      }
+    }
+
+    llmStartOffset += llmLatency + 20;
+
+    // Phase 1.1: Check for LLM error
+    const llmError =
+      CONFIG.enableErrors &&
+      Math.random() < CONFIG.errorRate * 0.3 &&
+      finishReason === "error";
+
+    if (!llmError) {
+      events.push({
+        ...createBaseEventMetadata(
+          traceId,
+          llmSpanId,
+          llmIndex === 0 ? null : rootSpanId,
+          llmStartTime,
+          conversationId,
+          sessionId,
+          userId,
+          agentName,
+          version,
+          route,
+          environment
+        ),
+        event_type: "llm_call",
+        attributes: {
+          llm_call: {
+            model: llmModel,
+            prompt_template_id: `template_v${randomInt(1, 3)}`,
+            input: llmInput,
+            output: llmOutput,
+            input_tokens: tokensPrompt,
+            output_tokens: tokensCompletion,
+            total_tokens: tokensTotal,
+            latency_ms: llmLatency,
+            cost: cost,
+            temperature: 0.7,
+            max_tokens: 1000,
+            finish_reason: finishReason,
+            response_id: `resp_${generateUUID().substring(0, 16)}`,
+            system_fingerprint: `fp_${simpleHash(llmModel)}`,
+            time_to_first_token_ms: timeToFirstToken,
+            streaming_duration_ms: streamingDuration,
+            input_hash: Math.random() > 0.8 ? simpleHash(llmInput) : null,
+            output_hash: Math.random() > 0.8 ? simpleHash(llmOutput) : null,
+          },
+        },
+      });
+    } else {
+      hasError = true;
+      errorType = "llm_error";
+      const errorEvent = generateErrorEvent({
+        traceId,
+        spanId: llmSpanId,
+        parentSpanId: llmIndex === 0 ? null : rootSpanId,
+        timestamp: llmStartTime,
+        errorType: "llm_error",
+        conversationId,
+        sessionId,
+        userId,
+        agentName,
+        version,
+        route,
+      });
+      events.push(errorEvent);
+    }
+  }
+
+  // Phase 1.2: Output event
   const outputTime = addMilliseconds(baseTime, totalLatency - 50);
+  const finalOutput =
+    llmCallResults.length > 0
+      ? llmCallResults[llmCallResults.length - 1].output
+      : response;
+
   events.push({
-    tenant_id: tenantId,
-    project_id: projectId,
-    environment: Math.random() > 0.2 ? "prod" : "dev",
-    trace_id: traceId,
-    span_id: rootSpanId,
-    parent_span_id: null,
-    timestamp: outputTime,
+    ...createBaseEventMetadata(
+      traceId,
+      rootSpanId,
+      null,
+      outputTime,
+      conversationId,
+      sessionId,
+      userId,
+      agentName,
+      version,
+      route,
+      environment
+    ),
     event_type: "output",
-    conversation_id: conversationId,
-    session_id: sessionId,
-    user_id: userId,
     attributes: {
       output: {
-        final_output: response,
-        output_length: response.length,
+        final_output: finalOutput,
+        final_output_hash: Math.random() > 0.8 ? simpleHash(finalOutput) : null,
+        output_length: finalOutput.length,
       },
     },
   });
 
-  // 6. trace_end event
+  // Phase 1.2: Feedback event (conditional)
+  if (Math.random() < CONFIG.feedbackRate) {
+    const feedbackTime = addMilliseconds(outputTime, 100);
+    const feedbackEvent = generateFeedbackEvent({
+      traceId,
+      spanId: rootSpanId,
+      timestamp: feedbackTime,
+      conversationId,
+      sessionId,
+      userId,
+      agentName,
+      version,
+      route,
+    });
+    events.push(feedbackEvent);
+
+    // Phase 4: Track feedback statistics
+    const feedbackType = feedbackEvent.attributes.feedback.type;
+    stats.feedbackEventsByType[feedbackType] =
+      (stats.feedbackEventsByType[feedbackType] || 0) + 1;
+  }
+
+  // Phase 1.1 & Phase 2.3: trace_end event with outcome
   const endTime = addMilliseconds(baseTime, totalLatency);
+  const traceOutcome = hasError ? "error" : "success";
+
   events.push({
-    tenant_id: tenantId,
-    project_id: projectId,
-    environment: Math.random() > 0.2 ? "prod" : "dev",
-    trace_id: traceId,
-    span_id: rootSpanId,
-    parent_span_id: null,
-    timestamp: endTime,
+    ...createBaseEventMetadata(
+      traceId,
+      rootSpanId,
+      null,
+      endTime,
+      conversationId,
+      sessionId,
+      userId,
+      agentName,
+      version,
+      route,
+      environment
+    ),
     event_type: "trace_end",
-    conversation_id: conversationId,
-    session_id: sessionId,
-    user_id: userId,
     attributes: {
       trace_end: {
         total_latency_ms: totalLatency,
-        total_tokens: tokensTotal,
+        total_cost:
+          totalCostAll > 0 ? parseFloat(totalCostAll.toFixed(6)) : null,
+        total_tokens: totalTokensAll,
+        outcome: traceOutcome,
       },
     },
   });
+
+  // Phase 4: Update statistics
+  stats.toolCounts.push(numTools);
+  stats.llmCallCounts.push(numLLMCalls);
+  stats.retrievalCounts.push(numRetrievals);
+  if (errorType) {
+    stats.errorEventsByType[errorType] =
+      (stats.errorEventsByType[errorType] || 0) + 1;
+  }
+  const lastLLMCall = events.filter((e) => e.event_type === "llm_call").pop();
+  if (lastLLMCall?.attributes?.llm_call?.finish_reason) {
+    const reason = lastLLMCall.attributes.llm_call.finish_reason;
+    stats.finishReasonDistribution[reason] =
+      (stats.finishReasonDistribution[reason] || 0) + 1;
+  }
 
   return events;
 }
@@ -601,12 +1295,22 @@ async function runSimulation() {
     `  Messages per conversation: ${CONFIG.minMessagesPerConversation}-${CONFIG.maxMessagesPerConversation}`
   );
   console.log(
-    `  Events per message: 6 (trace_start, retrieval, tool_call, llm_call, output, trace_end)`
+    `  Events per message: Variable (trace_start, retrievals, tool_calls, llm_calls, output, trace_end, errors, feedback)`
   );
   console.log(`  Rate limit: ${CONFIG.rateLimitMs}ms between requests`);
   console.log(`  Concurrent requests: ${CONFIG.concurrentRequests}`);
-  console.log(`  Errors enabled: ${CONFIG.enableErrors}`);
+  console.log(
+    `  Errors enabled: ${CONFIG.enableErrors} (rate: ${(
+      CONFIG.errorRate * 100
+    ).toFixed(1)}%)`
+  );
   console.log(`  Hallucinations enabled: ${CONFIG.enableHallucinations}`);
+  console.log(`  Feedback rate: ${(CONFIG.feedbackRate * 100).toFixed(1)}%`);
+  console.log(`  Multi-LLM rate: ${(CONFIG.multiLLMRate * 100).toFixed(1)}%`);
+  console.log(`  Max tools per trace: ${CONFIG.maxToolsPerTrace}`);
+  console.log(`  Max retrievals per trace: ${CONFIG.maxRetrievalsPerTrace}`);
+  console.log(`  Streaming enabled: ${CONFIG.enableStreaming}`);
+  console.log(`  Cost calculation enabled: ${CONFIG.enableCostCalculation}`);
   console.log(`  API URL: ${API_URL}`);
   console.log(`  Tenant ID: ${tenantId}`);
   console.log(`  Project ID: ${projectId}\n`);
@@ -643,7 +1347,7 @@ async function runSimulation() {
 
   const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
 
-  // Final statistics
+  // Final statistics (enhanced)
   console.log("\n✅ Simulation Complete!");
   console.log("=======================\n");
   console.log("Statistics:");
@@ -668,13 +1372,68 @@ async function runSimulation() {
     )} events/sec\n`
   );
 
+  // Phase 4: Enhanced statistics
+  if (stats.toolCounts.length > 0) {
+    const avgTools = (
+      stats.toolCounts.reduce((a, b) => a + b, 0) / stats.toolCounts.length
+    ).toFixed(2);
+    const maxTools = Math.max(...stats.toolCounts);
+    console.log(`  Average tools per trace: ${avgTools} (max: ${maxTools})`);
+  }
+
+  if (stats.llmCallCounts.length > 0) {
+    const avgLLMs = (
+      stats.llmCallCounts.reduce((a, b) => a + b, 0) /
+      stats.llmCallCounts.length
+    ).toFixed(2);
+    const maxLLMs = Math.max(...stats.llmCallCounts);
+    console.log(`  Average LLM calls per trace: ${avgLLMs} (max: ${maxLLMs})`);
+  }
+
+  if (stats.retrievalCounts.length > 0) {
+    const avgRetrievals = (
+      stats.retrievalCounts.reduce((a, b) => a + b, 0) /
+      stats.retrievalCounts.length
+    ).toFixed(2);
+    const maxRetrievals = Math.max(...stats.retrievalCounts);
+    console.log(
+      `  Average retrievals per trace: ${avgRetrievals} (max: ${maxRetrievals})`
+    );
+  }
+
   if (Object.keys(stats.errorsByType).length > 0) {
-    console.log("Error breakdown:");
+    console.log("\nNetwork/API Error breakdown:");
     for (const [errorType, count] of Object.entries(stats.errorsByType)) {
       console.log(`  ${errorType}: ${count}`);
     }
-    console.log("");
   }
+
+  if (Object.keys(stats.errorEventsByType).length > 0) {
+    console.log("\nSimulated Error Events breakdown:");
+    for (const [errorType, count] of Object.entries(stats.errorEventsByType)) {
+      console.log(`  ${errorType}: ${count}`);
+    }
+  }
+
+  if (Object.keys(stats.feedbackEventsByType).length > 0) {
+    console.log("\nFeedback Events breakdown:");
+    for (const [feedbackType, count] of Object.entries(
+      stats.feedbackEventsByType
+    )) {
+      console.log(`  ${feedbackType}: ${count}`);
+    }
+  }
+
+  if (Object.keys(stats.finishReasonDistribution).length > 0) {
+    console.log("\nFinish Reason Distribution:");
+    for (const [reason, count] of Object.entries(
+      stats.finishReasonDistribution
+    )) {
+      console.log(`  ${reason}: ${count}`);
+    }
+  }
+
+  console.log("");
 
   // Determine dashboard URL based on API URL
   let dashboardUrl = API_URL;
@@ -692,13 +1451,21 @@ async function runSimulation() {
     `  2. View conversations at: ${dashboardUrl}/dashboard/conversations`
   );
   console.log(`  3. Check analytics at: ${dashboardUrl}/dashboard/analytics`);
-  console.log(`\n📝 Each trace now includes:`);
+  console.log(`\n📝 Each trace can include:`);
   console.log(`   - trace_start event`);
-  console.log(`   - retrieval event (context fetching)`);
-  console.log(`   - tool_call event (child span)`);
-  console.log(`   - llm_call event (main LLM request)`);
+  console.log(
+    `   - 1-${CONFIG.maxRetrievalsPerTrace} retrieval events (with context hashes)`
+  );
+  console.log(
+    `   - 1-${CONFIG.maxToolsPerTrace} tool_call events (parallel/sequential, with args_hash)`
+  );
+  console.log(
+    `   - 1-3 llm_call events (agentic workflows, with all attributes)`
+  );
+  console.log(`   - error events (tool/LLM/retrieval errors, timeouts)`);
   console.log(`   - output event (final response)`);
-  console.log(`   - trace_end event\n`);
+  console.log(`   - feedback events (like/dislike/rating/correction)`);
+  console.log(`   - trace_end event (with cost, tokens, outcome)\n`);
 
   // Output trace IDs for testing
   if (allTraceIds.length > 0) {
