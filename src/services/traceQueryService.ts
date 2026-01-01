@@ -232,6 +232,14 @@ export class TraceQueryService {
           conversation_id: traceData.conversation_id,
           session_id: traceData.session_id,
           user_id: traceData.user_id,
+          message_index: traceData.message_index,
+          status: traceData.status,
+          status_text: traceData.status_text,
+          finish_reason: traceData.finish_reason,
+          response_id: traceData.response_id,
+          system_fingerprint: traceData.system_fingerprint,
+          metadata: traceData.metadata_json ? JSON.parse(traceData.metadata_json) : null,
+          headers: traceData.headers_json ? JSON.parse(traceData.headers_json) : null,
         },
       };
 
@@ -254,6 +262,8 @@ export class TraceQueryService {
               finish_reason: traceData.finish_reason,
               response_id: traceData.response_id,
               system_fingerprint: traceData.system_fingerprint,
+              // Include context if available
+              context: traceData.context || null,
             },
           },
         });
@@ -267,6 +277,8 @@ export class TraceQueryService {
           attributes: {
             retrieval: {
               retrieval_context_ids: null,
+              retrieval_context: traceData.context, // Include actual context
+              context_length: traceData.context.length,
               latency_ms: 0, // Unknown from analysis_results
             },
           },
@@ -296,6 +308,7 @@ export class TraceQueryService {
         conversation_id: traceData.conversation_id,
         session_id: traceData.session_id,
         user_id: traceData.user_id,
+        message_index: traceData.message_index,
         start_time: traceData.timestamp || traceData.analyzed_at,
         end_time: traceData.timestamp ?
           new Date(new Date(traceData.timestamp).getTime() + (traceData.latency_ms || 0)).toISOString() :
@@ -304,6 +317,13 @@ export class TraceQueryService {
         total_tokens: traceData.tokens_total || 0,
         total_cost: null, // Not in analysis_results
         model: traceData.model,
+        status: traceData.status,
+        status_text: traceData.status_text,
+        finish_reason: traceData.finish_reason,
+        response_length: traceData.response_length,
+        time_to_first_token_ms: traceData.time_to_first_token_ms,
+        streaming_duration_ms: traceData.streaming_duration_ms,
+        analyzed_at: traceData.analyzed_at?.toISOString() || null,
       };
 
       // Build analysis/signals
