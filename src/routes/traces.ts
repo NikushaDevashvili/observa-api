@@ -415,6 +415,7 @@ router.get("/", async (req: Request, res: Response) => {
 router.get("/:traceId", async (req: Request, res: Response) => {
   try {
     const { traceId } = req.params;
+    const format = req.query.format as string | undefined; // Support ?format=tree for new format
 
     // Get user from session
     const authHeader = req.headers.authorization;
@@ -433,7 +434,27 @@ router.get("/:traceId", async (req: Request, res: Response) => {
       });
     }
 
-    // Get trace detail using TraceQueryService
+    // If format=tree requested, return new tree structure
+    if (format === "tree") {
+      const traceTree = await TraceQueryService.getTraceDetailTree(
+        traceId,
+        user.tenantId,
+        (req.query.projectId as string | undefined) || null
+      );
+
+      if (!traceTree) {
+        return res.status(404).json({
+          error: "Trace not found",
+        });
+      }
+
+      return res.json({
+        success: true,
+        trace: traceTree,
+      });
+    }
+
+    // Legacy format (backward compatibility)
     const analysisResult = await TraceQueryService.getTraceDetail(
       traceId,
       user.tenantId,

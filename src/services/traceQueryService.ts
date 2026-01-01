@@ -197,6 +197,191 @@ export class TraceQueryService {
   }
 
   /**
+   * Get trace detail with tree structure (spans and events)
+   * Returns structured data for waterfall/timeline view
+   */
+  static async getTraceDetailTree(
+    traceId: string,
+    tenantId: string,
+    projectId?: string | null
+  ): Promise<any | null> {
+    try {
+      // First, try to get events from Tinybird (if available)
+      // For now, fall back to analysis_results for backward compatibility
+      let traceData = await this.getTraceDetail(traceId, tenantId, projectId);
+      
+      if (!traceData) {
+        return null;
+      }
+
+      // Build tree structure from the trace data
+      // For now, we have one span (the main trace), but structure supports multiple spans
+      const rootSpan = {
+        span_id: traceData.span_id || traceData.trace_id,
+        parent_span_id: traceData.parent_span_id || null,
+        name: traceData.query ? "LLM Call" : "Trace",
+        start_time: traceData.timestamp || traceData.analyzed_at,
+        end_time: traceData.timestamp ? 
+          new Date(new Date(traceData.timestamp).getTime() + (traceData.latency_ms || 0)).toISOString() :
+          traceData.analyzed_at,
+        duration_ms: traceData.latency_ms || 0,
+        events: [] as any[],
+        metadata: {
+          model: traceData.model,
+          environment: traceData.environment,
+          conversation_id: traceData.conversation_id,
+          session_id: traceData.session_id,
+          user_id: traceData.user_id,
+        },
+      };
+
+      // Add LLM call event if model/query/response present
+      if (traceData.model || traceData.query || traceData.response) {
+        rootSpan.events.push({
+          event_type: "llm_call",
+          timestamp: traceData.timestamp || traceData.analyzed_at,
+          attributes: {
+            llm_call: {
+              model: traceData.model,
+              input: traceData.query,
+              output: traceData.response,
+              input_tokens: traceData.tokens_prompt,
+              output_tokens: traceData.tokens_completion,
+              total_tokens: traceData.tokens_total,
+              latency_ms: traceData.latency_ms,
+              time_to_first_token_ms: traceData.time_to_first_token_ms,
+              streaming_duration_ms: traceData.streaming_duration_ms,
+              finish_reason: traceData.finish_reason,
+              response_id: traceData.response_id,
+              system_fingerprint: traceData.system_fingerprint,
+            },
+          },
+        });
+      }
+
+      // Add retrieval event if context present
+      if (traceData.context) {
+        rootSpan.events.push({
+          event_type: "retrieval",
+          timestamp: traceData.timestamp || traceData.analyzed_at,
+          attributes: {
+            retrieval: {
+              retrieval_context_ids: null,
+              latency_ms: 0, // Unknown from analysis_results
+            },
+          },
+        });
+      }
+
+      // Add output event if response present
+      if (traceData.response) {
+        rootSpan.events.push({
+          event_type: "output",
+          timestamp: traceData.timestamp || traceData.analyzed_at,
+          attributes: {
+            output: {
+              final_output: traceData.response,
+              output_length: traceData.response_length,
+            },
+          },
+        });
+      }
+
+      // Build summary metadata
+      const summary = {
+        trace_id: traceData.trace_id,
+        tenant_id: traceData.tenant_id,
+        project_id: traceData.project_id,
+        environment: traceData.environment,
+        conversation_id: traceData.conversation_id,
+        session_id: traceData.session_id,
+        user_id: traceData.user_id,
+        start_time: traceData.timestamp || traceData.analyzed_at,
+        end_time: traceData.timestamp ?
+          new Date(new Date(traceData.timestamp).getTime() + (traceData.latency_ms || 0)).toISOString() :
+          traceData.analyzed_at,
+        total_latency_ms: traceData.latency_ms || 0,
+        total_tokens: traceData.tokens_total || 0,
+        total_cost: null, // Not in analysis_results
+        model: traceData.model,
+      };
+
+      // Build analysis/signals
+      const signals = [];
+      if (traceData.is_hallucination === true) {
+        signals.push({
+          signal_type: "hallucination",
+          severity: "high",
+          confidence: traceData.hallucination_confidence,
+          reasoning: traceData.hallucination_reasoning,
+        });
+      }
+      if (traceData.has_context_drop) {
+        signals.push({
+          signal_type: "context_drop",
+          severity: "medium",
+          score: traceData.context_relevance_score,
+        });
+      }
+      if (traceData.has_faithfulness_issue) {
+        signals.push({
+          signal_type: "faithfulness",
+          severity: "medium",
+          score: traceData.answer_faithfulness_score,
+        });
+      }
+      if (traceData.has_model_drift) {
+        signals.push({
+          signal_type: "model_drift",
+          severity: "low",
+          score: traceData.drift_score,
+        });
+      }
+      if (traceData.has_cost_anomaly) {
+        signals.push({
+          signal_type: "cost_anomaly",
+          severity: "medium",
+          score: traceData.anomaly_score,
+        });
+      }
+
+      return {
+        summary,
+        spans: [rootSpan],
+        signals,
+        // Legacy analysis data for backward compatibility
+        analysis: {
+          isHallucination: traceData.is_hallucination,
+          hallucinationConfidence: traceData.hallucination_confidence,
+          hallucinationReasoning: traceData.hallucination_reasoning,
+          qualityScore: traceData.quality_score,
+          coherenceScore: traceData.coherence_score,
+          relevanceScore: traceData.relevance_score,
+          helpfulnessScore: traceData.helpfulness_score,
+          hasContextDrop: traceData.has_context_drop,
+          hasModelDrift: traceData.has_model_drift,
+          hasPromptInjection: traceData.has_prompt_injection,
+          hasContextOverflow: traceData.has_context_overflow,
+          hasFaithfulnessIssue: traceData.has_faithfulness_issue,
+          hasCostAnomaly: traceData.has_cost_anomaly,
+          hasLatencyAnomaly: traceData.has_latency_anomaly,
+          hasQualityDegradation: traceData.has_quality_degradation,
+          contextRelevanceScore: traceData.context_relevance_score,
+          answerFaithfulnessScore: traceData.answer_faithfulness_score,
+          driftScore: traceData.drift_score,
+          anomalyScore: traceData.anomaly_score,
+          analysisModel: traceData.analysis_model,
+          analysisVersion: traceData.analysis_version,
+          processingTimeMs: traceData.processing_time_ms,
+        },
+      };
+    } catch (error) {
+      console.error("[TraceQueryService] Error querying trace detail tree:", error);
+      throw error;
+    }
+  }
+
+  /**
    * Aggregate canonical events into a trace summary
    */
   private static aggregateEventsToTrace(
