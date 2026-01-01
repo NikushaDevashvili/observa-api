@@ -541,7 +541,7 @@ export class TraceQueryService {
       });
     }
 
-    // Second pass: calculate span durations and attach events
+    // Second pass: calculate span durations, attach events, and extract detailed information
     for (const [spanId, span] of spansMap.entries()) {
       const spanEvents = spanEventsMap.get(spanId)!;
       
@@ -550,8 +550,89 @@ export class TraceQueryService {
         new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
       );
 
-      // Attach events to span
+      // Attach events to span with full details
       span.events = spanEvents;
+
+      // Extract detailed information from events based on type
+      const llmCallEvent = spanEvents.find((e: any) => e.event_type === 'llm_call');
+      const toolCallEvent = spanEvents.find((e: any) => e.event_type === 'tool_call');
+      const retrievalEvent = spanEvents.find((e: any) => e.event_type === 'retrieval');
+      const outputEvent = spanEvents.find((e: any) => e.event_type === 'output');
+      const traceStartEvent = spanEvents.find((e: any) => e.event_type === 'trace_start');
+      const traceEndEvent = spanEvents.find((e: any) => e.event_type === 'trace_end');
+
+      // Extract LLM call details
+      if (llmCallEvent?.attributes?.llm_call) {
+        const llmAttrs = llmCallEvent.attributes.llm_call;
+        span.llm_call = {
+          model: llmAttrs.model,
+          input: llmAttrs.input || null,
+          output: llmAttrs.output || null,
+          input_tokens: llmAttrs.input_tokens || null,
+          output_tokens: llmAttrs.output_tokens || null,
+          total_tokens: llmAttrs.total_tokens || null,
+          latency_ms: llmAttrs.latency_ms || null,
+          time_to_first_token_ms: llmAttrs.time_to_first_token_ms || null,
+          streaming_duration_ms: llmAttrs.streaming_duration_ms || null,
+          finish_reason: llmAttrs.finish_reason || null,
+          response_id: llmAttrs.response_id || null,
+          system_fingerprint: llmAttrs.system_fingerprint || null,
+          temperature: llmAttrs.temperature || null,
+          max_tokens: llmAttrs.max_tokens || null,
+          cost: llmAttrs.cost || null,
+        };
+      }
+
+      // Extract tool call details
+      if (toolCallEvent?.attributes?.tool_call) {
+        const toolAttrs = toolCallEvent.attributes.tool_call;
+        span.tool_call = {
+          tool_name: toolAttrs.tool_name,
+          args: toolAttrs.args || null,
+          result: toolAttrs.result || null,
+          result_status: toolAttrs.result_status,
+          latency_ms: toolAttrs.latency_ms || null,
+          error_message: toolAttrs.error_message || null,
+        };
+      }
+
+      // Extract retrieval details
+      if (retrievalEvent?.attributes?.retrieval) {
+        const retrievalAttrs = retrievalEvent.attributes.retrieval;
+        span.retrieval = {
+          k: retrievalAttrs.k || retrievalAttrs.top_k || null,
+          top_k: retrievalAttrs.top_k || retrievalAttrs.k || null,
+          latency_ms: retrievalAttrs.latency_ms || null,
+          retrieval_context_ids: retrievalAttrs.retrieval_context_ids || null,
+          similarity_scores: retrievalAttrs.similarity_scores || null,
+          // Note: retrieval_context might be in a different field or redacted
+          retrieval_context: retrievalAttrs.retrieval_context || null,
+        };
+      }
+
+      // Extract output details
+      if (outputEvent?.attributes?.output) {
+        const outputAttrs = outputEvent.attributes.output;
+        span.output = {
+          final_output: outputAttrs.final_output || null,
+          output_length: outputAttrs.output_length || null,
+        };
+      }
+
+      // Extract trace lifecycle details
+      if (traceStartEvent?.attributes?.trace_start) {
+        span.trace_start = {
+          name: traceStartEvent.attributes.trace_start.name || null,
+          metadata: traceStartEvent.attributes.trace_start.metadata || null,
+        };
+      }
+
+      if (traceEndEvent?.attributes?.trace_end) {
+        span.trace_end = {
+          total_latency_ms: traceEndEvent.attributes.trace_end.total_latency_ms || null,
+          total_tokens: traceEndEvent.attributes.trace_end.total_tokens || null,
+        };
+      }
 
       // Calculate span duration from events
       if (spanEvents.length > 0) {
@@ -559,33 +640,15 @@ export class TraceQueryService {
         const endTime = new Date(spanEvents[spanEvents.length - 1].timestamp);
         
         // For tool_call events, use latency from attributes
-        if (spanEvents.some((e: any) => e.event_type === 'tool_call')) {
-          const toolCallEvent = spanEvents.find((e: any) => e.event_type === 'tool_call');
-          if (toolCallEvent?.attributes?.tool_call?.latency_ms) {
-            span.duration_ms = toolCallEvent.attributes.tool_call.latency_ms;
-            span.end_time = new Date(startTime.getTime() + span.duration_ms).toISOString();
-          } else {
-            span.duration_ms = endTime.getTime() - startTime.getTime();
-            span.end_time = endTime.toISOString();
-          }
-        } else if (spanEvents.some((e: any) => e.event_type === 'llm_call')) {
-          const llmEvent = spanEvents.find((e: any) => e.event_type === 'llm_call');
-          if (llmEvent?.attributes?.llm_call?.latency_ms) {
-            span.duration_ms = llmEvent.attributes.llm_call.latency_ms;
-            span.end_time = new Date(startTime.getTime() + span.duration_ms).toISOString();
-          } else {
-            span.duration_ms = endTime.getTime() - startTime.getTime();
-            span.end_time = endTime.toISOString();
-          }
-        } else if (spanEvents.some((e: any) => e.event_type === 'retrieval')) {
-          const retrievalEvent = spanEvents.find((e: any) => e.event_type === 'retrieval');
-          if (retrievalEvent?.attributes?.retrieval?.latency_ms) {
-            span.duration_ms = retrievalEvent.attributes.retrieval.latency_ms;
-            span.end_time = new Date(startTime.getTime() + span.duration_ms).toISOString();
-          } else {
-            span.duration_ms = endTime.getTime() - startTime.getTime();
-            span.end_time = endTime.toISOString();
-          }
+        if (toolCallEvent?.attributes?.tool_call?.latency_ms) {
+          span.duration_ms = toolCallEvent.attributes.tool_call.latency_ms;
+          span.end_time = new Date(startTime.getTime() + span.duration_ms).toISOString();
+        } else if (llmCallEvent?.attributes?.llm_call?.latency_ms) {
+          span.duration_ms = llmCallEvent.attributes.llm_call.latency_ms;
+          span.end_time = new Date(startTime.getTime() + span.duration_ms).toISOString();
+        } else if (retrievalEvent?.attributes?.retrieval?.latency_ms) {
+          span.duration_ms = retrievalEvent.attributes.retrieval.latency_ms;
+          span.end_time = new Date(startTime.getTime() + span.duration_ms).toISOString();
         } else {
           span.duration_ms = endTime.getTime() - startTime.getTime();
           span.end_time = endTime.toISOString();
@@ -593,6 +656,13 @@ export class TraceQueryService {
 
         span.start_time = startTime.toISOString();
       }
+
+      // Add all event timestamps for timeline visualization
+      span.event_timestamps = spanEvents.map((e: any) => ({
+        event_type: e.event_type,
+        timestamp: e.timestamp,
+        relative_time_ms: new Date(e.timestamp).getTime() - new Date(span.start_time).getTime(),
+      }));
     }
 
     // Third pass: build parent-child relationships
