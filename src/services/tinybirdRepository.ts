@@ -152,13 +152,33 @@ export class TinybirdRepository {
 
   /**
    * Get events for a trace (with tenant isolation)
+   * 
+   * Note: Using string interpolation for parameters because Tinybird's {param:Type} syntax
+   * requires secrets configuration. We validate tenant_id before interpolation for security.
    */
   static async getTraceEvents(
     traceId: string,
     tenantId: string,
     projectId?: string | null
   ): Promise<any[]> {
-    // Query canonical_events datasource from Tinybird
+    // Validate UUIDs to prevent SQL injection
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
+      throw new Error("Invalid tenant_id format");
+    }
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(traceId)) {
+      throw new Error("Invalid trace_id format");
+    }
+    if (projectId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(projectId)) {
+      throw new Error("Invalid project_id format");
+    }
+
+    // Escape single quotes in UUIDs (though UUIDs shouldn't contain them)
+    const escapedTenantId = tenantId.replace(/'/g, "''");
+    const escapedTraceId = traceId.replace(/'/g, "''");
+    const escapedProjectId = projectId ? projectId.replace(/'/g, "''") : null;
+
+    // Query canonical_events datasource from Tinybird using direct value interpolation
+    // We validate UUIDs above to prevent SQL injection
     const sql = `
       SELECT 
         tenant_id,
@@ -177,17 +197,18 @@ export class TinybirdRepository {
         route,
         attributes_json
       FROM canonical_events
-      WHERE tenant_id = {tenant_id:String}
-        AND trace_id = {trace_id:String}
-        ${projectId ? "AND project_id = {project_id:String}" : ""}
+      WHERE tenant_id = '${escapedTenantId}'
+        AND trace_id = '${escapedTraceId}'
+        ${escapedProjectId ? `AND project_id = '${escapedProjectId}'` : ""}
       ORDER BY timestamp ASC
     `;
 
     try {
+      // Use rawQuery but with the SQL already having values interpolated
+      // We still pass tenantId for the validation check in rawQuery
       const result = await this.rawQuery(sql, {
         tenantId,
         projectId,
-        params: { trace_id: traceId },
       });
 
       console.log(
