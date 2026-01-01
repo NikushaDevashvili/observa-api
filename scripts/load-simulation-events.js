@@ -500,7 +500,7 @@ async function sendEvents(events, apiKey, retries = 3) {
   }
 }
 
-async function simulateConversation(userId, conversationIndex, apiKey) {
+async function simulateConversation(userId, conversationIndex, apiKey, traceIdCollector = null) {
   const conversationId = generateUUID();
   const sessionId = generateUUID();
   const template = randomChoice(CONVERSATION_TEMPLATES);
@@ -517,6 +517,9 @@ async function simulateConversation(userId, conversationIndex, apiKey) {
 
   for (let messageIndex = 1; messageIndex <= numMessages; messageIndex++) {
     const traceId = generateUUID();
+    if (traceIdCollector) {
+      traceIdCollector.push(traceId);
+    }
     const events = generateCanonicalEvents({
       traceId,
       conversationId,
@@ -530,7 +533,7 @@ async function simulateConversation(userId, conversationIndex, apiKey) {
 
     stats.total += events.length;
     const result = await sendEvents(events, apiKey);
-    results.push(result);
+    results.push({ ...result, traceId }); // Include traceId in result
 
     // Rate limiting
     if (messageIndex < numMessages) {
@@ -546,7 +549,7 @@ async function simulateConversation(userId, conversationIndex, apiKey) {
   return results;
 }
 
-async function simulateUser(userIndex, apiKey) {
+async function simulateUser(userIndex, apiKey, traceIdCollector = null) {
   const userId = generateUUID(); // Use proper UUID format
   const results = [];
 
@@ -556,7 +559,7 @@ async function simulateUser(userIndex, apiKey) {
     convIndex++
   ) {
     try {
-      const convResults = await simulateConversation(userId, convIndex, apiKey);
+      const convResults = await simulateConversation(userId, convIndex, apiKey, traceIdCollector);
       results.push(...convResults);
     } catch (error) {
       console.error(
@@ -577,6 +580,9 @@ async function runSimulation() {
 
   // Get or create API key first
   const apiKey = await getOrCreateApiKey();
+  
+  // Track all trace IDs for output
+  const allTraceIds = [];
 
   console.log("Configuration:");
   console.log(`  Users: ${CONFIG.numUsers}`);
@@ -605,7 +611,7 @@ async function runSimulation() {
       j < CONFIG.concurrentRequests && i + j < CONFIG.numUsers;
       j++
     ) {
-      batch.push(simulateUser(i + j, apiKey));
+      batch.push(simulateUser(i + j, apiKey, allTraceIds));
     }
 
     const batchResults = await Promise.all(batch);
@@ -683,6 +689,21 @@ async function runSimulation() {
   console.log(`   - llm_call event (main LLM request)`);
   console.log(`   - output event (final response)`);
   console.log(`   - trace_end event\n`);
+  
+  // Output trace IDs for testing
+  if (allTraceIds.length > 0) {
+    console.log(`🔍 Trace IDs created (for testing):`);
+    allTraceIds.slice(0, 5).forEach((id, idx) => {
+      console.log(`   ${idx + 1}. ${id}`);
+    });
+    if (allTraceIds.length > 5) {
+      console.log(`   ... and ${allTraceIds.length - 5} more`);
+    }
+    console.log("");
+    console.log(`💡 Test a trace directly:`);
+    console.log(`   curl "${dashboardUrl.replace('/dashboard/traces', '')}/api/v1/traces/${allTraceIds[0]}?format=tree" -H "Authorization: Bearer <token>"`);
+    console.log("");
+  }
 }
 
 // Run the simulation
