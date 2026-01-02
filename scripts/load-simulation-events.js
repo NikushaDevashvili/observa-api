@@ -737,14 +737,6 @@ function generateCanonicalEvents(params) {
     const toolSpanId = generateUUID();
     toolSpanIds.push(toolSpanId);
 
-    const toolLatency = baseToolCallLatency + randomInt(-50, 50);
-    const toolStartTime = addMilliseconds(baseTime, toolStartOffset);
-    const toolEndTime = addMilliseconds(toolStartTime, toolLatency);
-
-    if (!useParallelTools) {
-      toolStartOffset += toolLatency + 10;
-    }
-
     const toolName = randomChoice(EXTENDED_TOOLS);
     const toolArgs = {
       query: query.substring(0, 50),
@@ -775,6 +767,10 @@ function generateCanonicalEvents(params) {
       : baseToolCallLatency + randomInt(-50, 50);
     const toolStartTime = addMilliseconds(baseTime, toolStartOffset);
     const toolEndTime = addMilliseconds(toolStartTime, toolLatency);
+
+    if (!useParallelTools) {
+      toolStartOffset += toolLatency + 10;
+    }
 
     if (toolError) {
       hasError = true;
