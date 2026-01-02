@@ -464,7 +464,10 @@ async function storeTraceSummaries(
       if (event.attributes && typeof event.attributes === "object") {
         return event.attributes;
       }
-      if ((event as any).attributes_json && typeof (event as any).attributes_json === "string") {
+      if (
+        (event as any).attributes_json &&
+        typeof (event as any).attributes_json === "string"
+      ) {
         try {
           return JSON.parse((event as any).attributes_json);
         } catch (e) {
@@ -499,7 +502,7 @@ async function storeTraceSummaries(
     // --- Basic "issues" detection (10-minute dashboard path) ---
     // We compute a minimal issues summary from canonical events and store it into Postgres
     // so the dashboard can show non-zero counts even if Tinybird signals/queries lag.
-    
+
     // Helper function to safely get attributes from event
     // CanonicalEvent has attributes as object, but we handle both cases for safety
     const getAttributes = (event: CanonicalEvent | any): any => {
@@ -508,7 +511,10 @@ async function storeTraceSummaries(
         return event.attributes;
       }
       // Otherwise, try to parse attributes_json (for events that might come from Tinybird)
-      if ((event as any).attributes_json && typeof (event as any).attributes_json === "string") {
+      if (
+        (event as any).attributes_json &&
+        typeof (event as any).attributes_json === "string"
+      ) {
         try {
           return JSON.parse((event as any).attributes_json);
         } catch (e) {
@@ -556,9 +562,7 @@ async function storeTraceSummaries(
     let messageIndex: number | null = null;
     if (traceStartEvent) {
       const traceStartAttrs = getEventAttributes(traceStartEvent);
-      if (
-        traceStartAttrs?.trace_start?.metadata?.message_index !== undefined
-      ) {
+      if (traceStartAttrs?.trace_start?.metadata?.message_index !== undefined) {
         messageIndex = traceStartAttrs.trace_start.metadata
           .message_index as number;
       }
@@ -584,10 +588,16 @@ async function storeTraceSummaries(
       environment: environment as "dev" | "prod",
       query: llmAttrs.input || "",
       response:
-        llmAttrs.output || (outputEvent ? getEventAttributes(outputEvent)?.output?.final_output : "") || "",
+        llmAttrs.output ||
+        (outputEvent
+          ? getEventAttributes(outputEvent)?.output?.final_output
+          : "") ||
+        "",
       responseLength:
         llmAttrs.output?.length ||
-        (outputEvent ? getEventAttributes(outputEvent)?.output?.output_length : null) ||
+        (outputEvent
+          ? getEventAttributes(outputEvent)?.output?.output_length
+          : null) ||
         0,
       model: llmAttrs.model || "",
       tokensPrompt: llmAttrs.input_tokens || null,
