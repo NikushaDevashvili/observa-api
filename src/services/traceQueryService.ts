@@ -712,6 +712,9 @@ export class TraceQueryService {
       const traceEndEvent = spanEvents.find(
         (e: any) => e.event_type === "trace_end"
       );
+      const errorEvent = spanEvents.find(
+        (e: any) => e.event_type === "error"
+      );
 
       // Extract LLM call details
       if (llmCallEvent?.attributes?.llm_call) {
@@ -792,6 +795,16 @@ export class TraceQueryService {
           total_latency_ms:
             traceEndEvent.attributes.trace_end.total_latency_ms || null,
           total_tokens: traceEndEvent.attributes.trace_end.total_tokens || null,
+        };
+      }
+
+      // Extract error details
+      if (errorEvent?.attributes?.error) {
+        span.error = {
+          error_type: errorEvent.attributes.error.error_type || null,
+          error_message: errorEvent.attributes.error.error_message || null,
+          stack_trace: errorEvent.attributes.error.stack_trace || null,
+          context: errorEvent.attributes.error.context || null,
         };
       }
 

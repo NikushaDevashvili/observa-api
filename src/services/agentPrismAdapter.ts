@@ -89,6 +89,12 @@ export interface ObservaSpan {
     final_output?: string | null;
     output_length?: number | null;
   };
+  error?: {
+    error_type?: string | null;
+    error_message?: string | null;
+    stack_trace?: string | null;
+    context?: Record<string, any> | null;
+  };
   type?: string;
   event_type?: string;
 }
@@ -425,9 +431,22 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
 
   // Determine status from span data
   let status: "success" | "error" | "pending" | "warning" = "success";
-  if (span.tool_call?.result_status === "error") {
+  
+  // Check for error events associated with this span
+  const hasErrorEvent = span.events?.some(
+    (e: any) => e.event_type === "error"
+  );
+  
+  if (hasErrorEvent || span.error) {
+    status = "error";
+  } else if (span.tool_call?.result_status === "error" || span.tool_call?.result_status === "timeout") {
     status = "error";
   } else if (span.tool_call?.error_message) {
+    status = "error";
+  } else if (span.llm_call?.finish_reason === "error") {
+    status = "error";
+  } else if (span.metadata?.status && (span.metadata.status < 200 || span.metadata.status >= 400)) {
+    // Check HTTP status codes for errors (if stored in metadata)
     status = "error";
   }
 
