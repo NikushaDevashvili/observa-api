@@ -533,15 +533,29 @@ export class TraceQueryService {
       let attributes = {};
       try {
         if (typeof event.attributes_json === "string") {
-          attributes = JSON.parse(event.attributes_json);
+          // Validate JSON string before parsing
+          const jsonStr = event.attributes_json.trim();
+          if (jsonStr && jsonStr.length > 0) {
+            attributes = JSON.parse(jsonStr);
+          }
         } else if (event.attributes) {
           attributes = event.attributes;
         }
       } catch (e) {
-        console.warn(
-          `[TraceQueryService] Failed to parse attributes for event:`,
-          e
+        const errorMsg = e instanceof Error ? e.message : String(e);
+        const jsonPreview = typeof event.attributes_json === "string" 
+          ? event.attributes_json.substring(0, 200) 
+          : "not a string";
+        console.error(
+          `[TraceQueryService] Failed to parse attributes_json for event ${event.event_type} (trace: ${event.trace_id}, span: ${event.span_id}):`,
+          errorMsg
         );
+        console.error(
+          `[TraceQueryService] Invalid JSON preview (first 200 chars):`,
+          jsonPreview
+        );
+        // Set empty attributes to prevent downstream errors
+        attributes = {};
       }
 
       return {

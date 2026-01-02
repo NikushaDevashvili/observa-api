@@ -126,6 +126,18 @@ export interface AgentPrismTraceSpanAttribute {
 }
 
 /**
+ * Error information for a span
+ */
+export interface SpanErrorInfo {
+  type: string;
+  message: string;
+  fullMessage: string;
+  stackTrace?: string;
+  context?: Record<string, any>;
+  timestamp?: string;
+}
+
+/**
  * Agent-Prism TraceSpan format
  * Note: Components use 'title' not 'name', and accept startTime/endTime as numbers
  */
@@ -157,6 +169,18 @@ export interface AgentPrismTraceSpan {
   output?: string; // Output data for In/Out tab (JSON string or plain string)
   raw: string; // Raw JSON representation of span for RAW tab
   children?: AgentPrismTraceSpan[];
+  errorInfo?: SpanErrorInfo; // Error information for this span
+  errorCount?: number; // Number of errors in this span and its children
+}
+
+/**
+ * Error summary for a trace
+ */
+export interface ErrorSummary {
+  totalErrors: number;
+  errorTypes: Record<string, number>;
+  errorSpans: string[];
+  hasErrors: boolean;
 }
 
 /**
@@ -175,6 +199,7 @@ export interface AgentPrismTraceData {
       | "warning"
       | "error";
   }>;
+  errorSummary?: ErrorSummary;
 }
 
 /**
@@ -429,25 +454,67 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
     }
   }
 
-  // Determine status from span data
+  // Determine status from span data and extract error information
   let status: "success" | "error" | "pending" | "warning" = "success";
+  let errorInfo: SpanErrorInfo | undefined;
   
   // Check for error events associated with this span
-  const hasErrorEvent = span.events?.some(
-    (e: any) => e.event_type === "error"
-  );
+  const errorEvent = span.events?.find((e: any) => e.event_type === "error");
+  const hasErrorEvent = !!errorEvent;
   
-  if (hasErrorEvent || span.error) {
+  // Extract error information
+  if (span.error || errorEvent) {
     status = "error";
+    const errorData = span.error || errorEvent?.attributes?.error;
+    
+    if (errorData) {
+      const errorMessage = errorData.error_message || "Unknown error";
+      const errorType = errorData.error_type || "error";
+      
+      errorInfo = {
+        type: errorType,
+        message: errorMessage.length > 100 ? errorMessage.substring(0, 100) + "..." : errorMessage,
+        fullMessage: errorMessage,
+        stackTrace: errorData.stack_trace || undefined,
+        context: errorData.context || undefined,
+        timestamp: errorEvent?.timestamp || span.start_time || undefined,
+      };
+    }
   } else if (span.tool_call?.result_status === "error" || span.tool_call?.result_status === "timeout") {
     status = "error";
+    const errorMessage = span.tool_call.error_message || `Tool call failed with status: ${span.tool_call.result_status}`;
+    errorInfo = {
+      type: span.tool_call.result_status === "timeout" ? "timeout_error" : "tool_error",
+      message: errorMessage.length > 100 ? errorMessage.substring(0, 100) + "..." : errorMessage,
+      fullMessage: errorMessage,
+      timestamp: span.start_time,
+    };
   } else if (span.tool_call?.error_message) {
     status = "error";
+    const errorMessage = span.tool_call.error_message;
+    errorInfo = {
+      type: "tool_error",
+      message: errorMessage.length > 100 ? errorMessage.substring(0, 100) + "..." : errorMessage,
+      fullMessage: errorMessage,
+      timestamp: span.start_time,
+    };
   } else if (span.llm_call?.finish_reason === "error") {
     status = "error";
+    errorInfo = {
+      type: "llm_error",
+      message: "LLM call finished with error",
+      fullMessage: "LLM call finished with error status",
+      timestamp: span.start_time,
+    };
   } else if (span.metadata?.status && (span.metadata.status < 200 || span.metadata.status >= 400)) {
     // Check HTTP status codes for errors (if stored in metadata)
     status = "error";
+    errorInfo = {
+      type: "http_error",
+      message: `HTTP ${span.metadata.status} error`,
+      fullMessage: `HTTP error with status code: ${span.metadata.status}`,
+      timestamp: span.start_time,
+    };
   }
 
   // Extract tokensCount and cost for badges
@@ -522,6 +589,34 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
   // Convert attributes object to array format (required by DetailsViewAttributesTab)
   const attributesArray = convertAttributesToArray(attributes);
 
+  // Recursively transform children first to calculate error count
+  const transformedChildren = span.children?.map(transformSpan) || [];
+  
+  // Calculate error count (errors in this span + errors in children)
+  let errorCount = errorInfo ? 1 : 0;
+  for (const child of transformedChildren) {
+    if (child.errorCount) {
+      errorCount += child.errorCount;
+    } else if (child.errorInfo) {
+      errorCount += 1;
+    }
+  }
+  
+  // Add error attributes to attributes for backward compatibility
+  if (errorInfo) {
+    attributes["error.type"] = errorInfo.type;
+    attributes["error.message"] = errorInfo.fullMessage;
+    if (errorInfo.stackTrace) {
+      attributes["error.stack_trace"] = errorInfo.stackTrace;
+    }
+    if (errorInfo.context) {
+      attributes["error.context"] = errorInfo.context;
+    }
+  }
+  
+  // Reconvert attributes array since we added error fields
+  const finalAttributesArray = convertAttributesToArray(attributes);
+  
   // Build TraceSpan object
   // Note: Agent-prism components expect 'title' not 'name', and startTime/endTime as numbers
   const traceSpan: AgentPrismTraceSpan = {
@@ -532,7 +627,7 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
     startTime, // Number (Unix ms) - components accept this format
     endTime, // Number (Unix ms) - components accept this format
     duration: span.duration_ms,
-    attributes: attributesArray, // Array format required by DetailsViewAttributesTab
+    attributes: finalAttributesArray, // Array format required by DetailsViewAttributesTab
     type: category, // Set the type field for SpanBadge (valid TraceSpanCategory)
     status, // Status for status badge
     tokensCount: tokensCount !== null ? tokensCount : undefined, // Optional tokens count
@@ -540,8 +635,9 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
     input, // Input for In/Out tab
     output, // Output for In/Out tab
     raw, // Raw JSON representation for RAW tab
-    // Recursively transform children
-    children: span.children?.map(transformSpan) || [],
+    errorInfo, // Error information for this span
+    errorCount: errorCount > 0 ? errorCount : undefined, // Error count including children
+    children: transformedChildren,
   };
 
   return traceSpan;
@@ -604,6 +700,39 @@ function countAllSpansRecursively(spans: AgentPrismTraceSpan[]): number {
 }
 
 /**
+ * Calculate error summary from spans recursively
+ */
+function calculateErrorSummary(spans: AgentPrismTraceSpan[]): ErrorSummary {
+  const errorTypes: Record<string, number> = {};
+  const errorSpans: string[] = [];
+  
+  function traverseSpans(spans: AgentPrismTraceSpan[]) {
+    for (const span of spans) {
+      if (span.errorInfo) {
+        errorSpans.push(span.id);
+        const errorType = span.errorInfo.type || "error";
+        errorTypes[errorType] = (errorTypes[errorType] || 0) + 1;
+      }
+      
+      if (span.children && span.children.length > 0) {
+        traverseSpans(span.children);
+      }
+    }
+  }
+  
+  traverseSpans(spans);
+  
+  const totalErrors = errorSpans.length;
+  
+  return {
+    totalErrors,
+    errorTypes,
+    errorSpans,
+    hasErrors: totalErrors > 0,
+  };
+}
+
+/**
  * Main adapter function: Convert Observa trace format to Agent-Prism format
  *
  * @param observaTrace - Trace data from TraceQueryService.getTraceDetailTree
@@ -619,6 +748,9 @@ export function adaptObservaTraceToAgentPrism(
 
   // Count all spans recursively (including nested children)
   const totalSpansCount = countAllSpansRecursively(transformedSpans);
+
+  // Calculate error summary
+  const errorSummary = calculateErrorSummary(transformedSpans);
 
   // Transform summary to TraceRecord
   const traceRecord: AgentPrismTraceRecord = {
@@ -636,6 +768,7 @@ export function adaptObservaTraceToAgentPrism(
     traceRecord,
     spans: transformedSpans,
     badges: badges.length > 0 ? badges : undefined,
+    errorSummary: errorSummary.hasErrors ? errorSummary : undefined,
   };
 }
 

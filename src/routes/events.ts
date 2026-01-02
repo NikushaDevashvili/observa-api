@@ -294,7 +294,27 @@ router.post(
             version: event.version ?? null,
             route: event.route ?? null,
             // Clean null values from attributes before stringifying (for Tinybird strict type checking)
-            attributes_json: JSON.stringify(cleanNullValues(event.attributes)),
+            // Validate JSON is valid before storing
+            attributes_json: (() => {
+              try {
+                const cleaned = cleanNullValues(event.attributes);
+                const jsonStr = JSON.stringify(cleaned);
+                // Validate it can be parsed back
+                JSON.parse(jsonStr);
+                return jsonStr;
+              } catch (e) {
+                console.error(
+                  `[Events API] Failed to stringify attributes for event ${event.event_type}:`,
+                  e instanceof Error ? e.message : String(e)
+                );
+                console.error(
+                  `[Events API] Attributes that failed:`,
+                  JSON.stringify(event.attributes, null, 2).substring(0, 500)
+                );
+                // Return empty JSON object as fallback
+                return "{}";
+              }
+            })(),
           };
         }
       );
@@ -439,7 +459,27 @@ async function storeTraceSummaries(
       continue;
     }
 
-    const llmAttrs = llmCallEvent.attributes.llm_call;
+    // Helper function to safely get attributes (parse from attributes_json if needed)
+    const getEventAttributes = (event: CanonicalEvent | any): any => {
+      if (event.attributes && typeof event.attributes === "object") {
+        return event.attributes;
+      }
+      if ((event as any).attributes_json && typeof (event as any).attributes_json === "string") {
+        try {
+          return JSON.parse((event as any).attributes_json);
+        } catch (e) {
+          console.warn(
+            `[storeTraceSummaries] Failed to parse attributes_json for ${event.event_type}:`,
+            e instanceof Error ? e.message : String(e)
+          );
+          return {};
+        }
+      }
+      return {};
+    };
+
+    const llmCallAttrs = getEventAttributes(llmCallEvent);
+    const llmAttrs = llmCallAttrs?.llm_call;
     if (!llmAttrs) {
       continue;
     }
@@ -459,22 +499,49 @@ async function storeTraceSummaries(
     // --- Basic "issues" detection (10-minute dashboard path) ---
     // We compute a minimal issues summary from canonical events and store it into Postgres
     // so the dashboard can show non-zero counts even if Tinybird signals/queries lag.
+    
+    // Helper function to safely get attributes from event
+    // CanonicalEvent has attributes as object, but we handle both cases for safety
+    const getAttributes = (event: CanonicalEvent | any): any => {
+      // If attributes already exists (from incoming event), use it
+      if (event.attributes && typeof event.attributes === "object") {
+        return event.attributes;
+      }
+      // Otherwise, try to parse attributes_json (for events that might come from Tinybird)
+      if ((event as any).attributes_json && typeof (event as any).attributes_json === "string") {
+        try {
+          return JSON.parse((event as any).attributes_json);
+        } catch (e) {
+          console.warn(
+            `[storeTraceSummaries] Failed to parse attributes_json for event ${event.event_type}:`,
+            e instanceof Error ? e.message : String(e)
+          );
+          return {};
+        }
+      }
+      return {};
+    };
+
     const errorEvents = traceEvents.filter((e) => e.event_type === "error");
     const errorTypes: Record<string, number> = {};
     for (const e of errorEvents) {
-      const t = e.attributes?.error?.error_type || "error";
+      const attrs = getAttributes(e);
+      const t = attrs?.error?.error_type || "error";
       errorTypes[t] = (errorTypes[t] || 0) + 1;
     }
 
     const toolCalls = traceEvents.filter((e) => e.event_type === "tool_call");
-    const toolFailures = toolCalls.filter(
-      (e) =>
-        e.attributes?.tool_call?.result_status &&
-        e.attributes.tool_call.result_status !== "success"
-    );
-    const toolTimeouts = toolCalls.filter(
-      (e) => e.attributes?.tool_call?.result_status === "timeout"
-    );
+    const toolFailures = toolCalls.filter((e) => {
+      const attrs = getAttributes(e);
+      return (
+        attrs?.tool_call?.result_status &&
+        attrs.tool_call.result_status !== "success"
+      );
+    });
+    const toolTimeouts = toolCalls.filter((e) => {
+      const attrs = getAttributes(e);
+      return attrs?.tool_call?.result_status === "timeout";
+    });
 
     const hasIssues =
       errorEvents.length > 0 ||
@@ -487,18 +554,23 @@ async function storeTraceSummaries(
 
     // Get message index from trace_start metadata if available
     let messageIndex: number | null = null;
-    if (
-      traceStartEvent?.attributes.trace_start?.metadata?.message_index !==
-      undefined
-    ) {
-      messageIndex = traceStartEvent.attributes.trace_start.metadata
-        .message_index as number;
+    if (traceStartEvent) {
+      const traceStartAttrs = getEventAttributes(traceStartEvent);
+      if (
+        traceStartAttrs?.trace_start?.metadata?.message_index !== undefined
+      ) {
+        messageIndex = traceStartAttrs.trace_start.metadata
+          .message_index as number;
+      }
     }
 
     // Calculate total latency from trace_end if available
     let latencyMs = llmAttrs.latency_ms || 0;
-    if (traceEndEvent?.attributes.trace_end?.total_latency_ms) {
-      latencyMs = traceEndEvent.attributes.trace_end.total_latency_ms;
+    if (traceEndEvent) {
+      const traceEndAttrs = getEventAttributes(traceEndEvent);
+      if (traceEndAttrs?.trace_end?.total_latency_ms) {
+        latencyMs = traceEndAttrs.trace_end.total_latency_ms;
+      }
     }
 
     // Create TraceEvent-like object for storage
@@ -512,10 +584,10 @@ async function storeTraceSummaries(
       environment: environment as "dev" | "prod",
       query: llmAttrs.input || "",
       response:
-        llmAttrs.output || outputEvent?.attributes.output?.final_output || "",
+        llmAttrs.output || (outputEvent ? getEventAttributes(outputEvent)?.output?.final_output : "") || "",
       responseLength:
         llmAttrs.output?.length ||
-        outputEvent?.attributes.output?.output_length ||
+        (outputEvent ? getEventAttributes(outputEvent)?.output?.output_length : null) ||
         0,
       model: llmAttrs.model || "",
       tokensPrompt: llmAttrs.input_tokens || null,
