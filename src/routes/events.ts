@@ -265,15 +265,16 @@ router.post(
         (event) => {
           // Preserve actual values when they exist, only use empty string as fallback
           // This ensures we track which conversation/session/user each event belongs to
-          const conversationId = event.conversation_id && event.conversation_id.trim() !== "" 
-            ? event.conversation_id 
-            : "";
-          const sessionId = event.session_id && event.session_id.trim() !== "" 
-            ? event.session_id 
-            : "";
-          const userId = event.user_id && event.user_id.trim() !== "" 
-            ? event.user_id 
-            : "";
+          const conversationId =
+            event.conversation_id && event.conversation_id.trim() !== ""
+              ? event.conversation_id
+              : "";
+          const sessionId =
+            event.session_id && event.session_id.trim() !== ""
+              ? event.session_id
+              : "";
+          const userId =
+            event.user_id && event.user_id.trim() !== "" ? event.user_id : "";
 
           return {
             tenant_id: event.tenant_id,
