@@ -10,19 +10,22 @@ import { TinybirdCanonicalEvent } from "../types/events.js";
 export class CanonicalEventService {
   /**
    * Forward canonical events to Tinybird (batch)
+   * 
+   * Note: Events should already be formatted (null fields omitted) before calling this method.
+   * The formatting is done in the route handler to ensure attributes_json is also cleaned.
    */
   static async forwardToTinybird(
-    events: TinybirdCanonicalEvent[]
+    events: any[] // Already formatted events (null fields omitted)
   ): Promise<void> {
     if (events.length === 0) {
       return;
     }
 
     const url = `${env.TINYBIRD_HOST}/v0/events?name=${encodeURIComponent(
-      "canonical_events" // New datasource name for canonical events
+      "canonical_events" // Datasource name
     )}&format=ndjson`;
-
-    // Convert events to NDJSON
+    
+    // Convert formatted events to NDJSON
     const ndjson = events
       .map((event) => JSON.stringify(event))
       .join("\n") + "\n";
@@ -42,6 +45,17 @@ export class CanonicalEventService {
         console.error(
           `[CanonicalEventService] Tinybird API error: ${response.status} ${response.statusText} - ${errorText}`
         );
+        
+        // Log the first event for debugging
+        if (events.length > 0) {
+          console.error(
+            `[CanonicalEventService] First event that failed:\n${JSON.stringify(events[0], null, 2)}`
+          );
+          console.error(
+            `[CanonicalEventService] First event NDJSON:\n${JSON.stringify(events[0])}`
+          );
+        }
+        
         throw new Error(
           `Tinybird API error: ${response.status} ${response.statusText} - ${errorText}`
         );
@@ -62,11 +76,11 @@ export class CanonicalEventService {
 
   /**
    * Forward single event (convenience method)
+   * Note: Event should already be formatted before calling this method.
    */
   static async forwardSingleEvent(
-    event: TinybirdCanonicalEvent
+    event: any // Already formatted event
   ): Promise<void> {
     return this.forwardToTinybird([event]);
   }
 }
-

@@ -257,6 +257,10 @@ router.post(
       }
 
       // Convert to Tinybird format
+      // Use utility function to handle nullable field formatting for strict type checking
+      const { formatTinybirdEvents, cleanNullValues } = await import(
+        "../utils/tinybirdEventFormatter.js"
+      );
       const tinybirdEvents: TinybirdCanonicalEvent[] = validatedEvents.map(
         (event) => ({
           tenant_id: event.tenant_id,
@@ -273,12 +277,16 @@ router.post(
           agent_name: event.agent_name ?? null,
           version: event.version ?? null,
           route: event.route ?? null,
-          attributes_json: JSON.stringify(event.attributes),
+          // Clean null values from attributes before stringifying (for Tinybird strict type checking)
+          attributes_json: JSON.stringify(cleanNullValues(event.attributes)),
         })
       );
 
-      // Forward to Tinybird
-      await CanonicalEventService.forwardToTinybird(tinybirdEvents);
+      // Format events to omit null fields (for Tinybird strict type checking)
+      const formattedEvents = formatTinybirdEvents(tinybirdEvents);
+
+      // Forward to Tinybird (use formatted events, not raw tinybirdEvents)
+      await CanonicalEventService.forwardToTinybird(formattedEvents);
 
       // Store trace summaries in analysis_results for dashboard compatibility
       // Extract llm_call events and create trace summaries

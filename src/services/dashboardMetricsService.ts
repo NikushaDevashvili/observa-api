@@ -1,6 +1,6 @@
 /**
  * Dashboard Metrics Service
- * 
+ *
  * SOTA: Aggregates metrics from PostgreSQL analysis_results for dashboard display
  * Provides latency percentiles, error rates, cost metrics, etc.
  */
@@ -56,7 +56,7 @@ export class DashboardMetricsService {
 
     // Build WHERE clause
     let whereClause = "WHERE tenant_id = $1";
-    
+
     if (projectId) {
       paramIndex++;
       params.push(projectId);
@@ -66,13 +66,13 @@ export class DashboardMetricsService {
     if (startTime) {
       paramIndex++;
       params.push(startTime);
-      whereClause += ` AND COALESCE(timestamp, analyzed_at) >= $${paramIndex}`;
+      whereClause += ` AND COALESCE(timestamp, analyzed_at) >= $${paramIndex}::timestamp`;
     }
 
     if (endTime) {
       paramIndex++;
       params.push(endTime);
-      whereClause += ` AND COALESCE(timestamp, analyzed_at) <= $${paramIndex}`;
+      whereClause += ` AND COALESCE(timestamp, analyzed_at) <= $${paramIndex}::timestamp`;
     }
 
     whereClause += " AND latency_ms IS NOT NULL AND latency_ms > 0";
@@ -80,7 +80,9 @@ export class DashboardMetricsService {
     if (groupBy) {
       // Only support grouping by "model" for now (route column doesn't exist in analysis_results)
       if (groupBy !== "model") {
-        console.warn(`[DashboardMetricsService] Grouping by "${groupBy}" is not supported, falling back to ungrouped query`);
+        console.warn(
+          `[DashboardMetricsService] Grouping by "${groupBy}" is not supported, falling back to ungrouped query`
+        );
         // Fall through to ungrouped query below
       } else {
         // Grouped query by model
@@ -117,7 +119,10 @@ export class DashboardMetricsService {
           }
           return grouped;
         } catch (error) {
-          console.error("[DashboardMetricsService] Failed to get latency metrics:", error);
+          console.error(
+            "[DashboardMetricsService] Failed to get latency metrics:",
+            error
+          );
           return {};
         }
       }
@@ -152,7 +157,10 @@ export class DashboardMetricsService {
         count: parseInt(row.count) || 0,
       };
     } catch (error) {
-      console.error("[DashboardMetricsService] Failed to get latency metrics:", error);
+      console.error(
+        "[DashboardMetricsService] Failed to get latency metrics:",
+        error
+      );
       return {
         p50: 0,
         p95: 0,
@@ -179,7 +187,7 @@ export class DashboardMetricsService {
 
     // Build WHERE clause
     let whereClause = "WHERE tenant_id = $1";
-    
+
     if (projectId) {
       paramIndex++;
       params.push(projectId);
@@ -189,13 +197,13 @@ export class DashboardMetricsService {
     if (startTime) {
       paramIndex++;
       params.push(startTime);
-      whereClause += ` AND COALESCE(timestamp, analyzed_at) >= $${paramIndex}`;
+      whereClause += ` AND COALESCE(timestamp, analyzed_at) >= $${paramIndex}::timestamp`;
     }
 
     if (endTime) {
       paramIndex++;
       params.push(endTime);
-      whereClause += ` AND COALESCE(timestamp, analyzed_at) <= $${paramIndex}`;
+      whereClause += ` AND COALESCE(timestamp, analyzed_at) <= $${paramIndex}::timestamp`;
     }
 
     try {
@@ -215,13 +223,16 @@ export class DashboardMetricsService {
           OR (status_text IS NOT NULL AND LOWER(status_text) LIKE '%error%')
         )
       `;
-      const errorResult = await query<{ error_count: string }>(errorSql, params);
+      const errorResult = await query<{ error_count: string }>(
+        errorSql,
+        params
+      );
       const errors = parseInt(errorResult[0]?.error_count || "0", 10);
 
       // For error types, we can use status codes or status_text patterns
       // This is simplified - in a real system, you might want to parse status_text more carefully
       const errorTypes: Record<string, number> = {};
-      
+
       // Count by status code ranges
       const errorTypeSql = `
         SELECT 
@@ -240,14 +251,20 @@ export class DashboardMetricsService {
         )
         GROUP BY error_type
       `;
-      
+
       try {
-        const errorTypeResults = await query<{ error_type: string; count: string }>(errorTypeSql, params);
+        const errorTypeResults = await query<{
+          error_type: string;
+          count: string;
+        }>(errorTypeSql, params);
         for (const row of errorTypeResults) {
           errorTypes[row.error_type] = parseInt(row.count) || 0;
         }
       } catch (err) {
-        console.warn("[DashboardMetricsService] Failed to get error types:", err);
+        console.warn(
+          "[DashboardMetricsService] Failed to get error types:",
+          err
+        );
       }
 
       return {
@@ -257,7 +274,10 @@ export class DashboardMetricsService {
         error_types: errorTypes,
       };
     } catch (error) {
-      console.error("[DashboardMetricsService] Failed to get error rate metrics:", error);
+      console.error(
+        "[DashboardMetricsService] Failed to get error rate metrics:",
+        error
+      );
       return {
         total: 0,
         errors: 0,
@@ -303,7 +323,7 @@ export class DashboardMetricsService {
 
     // Build WHERE clause
     let whereClause = "WHERE tenant_id = $1";
-    
+
     if (projectId) {
       paramIndex++;
       params.push(projectId);
@@ -313,13 +333,13 @@ export class DashboardMetricsService {
     if (startTime) {
       paramIndex++;
       params.push(startTime);
-      whereClause += ` AND COALESCE(timestamp, analyzed_at) >= $${paramIndex}`;
+      whereClause += ` AND COALESCE(timestamp, analyzed_at) >= $${paramIndex}::timestamp`;
     }
 
     if (endTime) {
       paramIndex++;
       params.push(endTime);
-      whereClause += ` AND COALESCE(timestamp, analyzed_at) <= $${paramIndex}`;
+      whereClause += ` AND COALESCE(timestamp, analyzed_at) <= $${paramIndex}::timestamp`;
     }
 
     whereClause += " AND tokens_total IS NOT NULL";
@@ -372,7 +392,10 @@ export class DashboardMetricsService {
         tokens_by_model: tokensByModel,
       };
     } catch (error) {
-      console.error("[DashboardMetricsService] Failed to get token metrics:", error);
+      console.error(
+        "[DashboardMetricsService] Failed to get token metrics:",
+        error
+      );
       return {
         total_tokens: 0,
         avg_tokens_per_trace: 0,
@@ -397,7 +420,7 @@ export class DashboardMetricsService {
 
     // Build WHERE clause
     let whereClause = "WHERE tenant_id = $1";
-    
+
     if (projectId) {
       paramIndex++;
       params.push(projectId);
@@ -407,22 +430,26 @@ export class DashboardMetricsService {
     if (startTime) {
       paramIndex++;
       params.push(startTime);
-      whereClause += ` AND COALESCE(timestamp, analyzed_at) >= $${paramIndex}`;
+      whereClause += ` AND COALESCE(timestamp, analyzed_at) >= $${paramIndex}::timestamp`;
     }
 
     if (endTime) {
       paramIndex++;
       params.push(endTime);
-      whereClause += ` AND COALESCE(timestamp, analyzed_at) <= $${paramIndex}`;
+      whereClause += ` AND COALESCE(timestamp, analyzed_at) <= $${paramIndex}::timestamp`;
     }
 
     const sql = `SELECT COUNT(DISTINCT trace_id) as count FROM analysis_results ${whereClause}`;
 
     try {
       const result = await query<{ count: string }>(sql, params);
-      return parseInt(result[0]?.count || "0", 10);
+      const count = parseInt(result[0]?.count || "0", 10);
+      return count;
     } catch (error) {
-      console.error("[DashboardMetricsService] Failed to get trace count:", error);
+      console.error(
+        "[DashboardMetricsService] Failed to get trace count:",
+        error
+      );
       return 0;
     }
   }
