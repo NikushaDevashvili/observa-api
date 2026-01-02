@@ -27,7 +27,7 @@ const CONFIG = {
   enableHallucinations: process.env.ENABLE_HALLUCINATIONS !== "false",
   concurrentRequests: parseInt(process.env.CONCURRENT_REQUESTS || "5"),
   // Phase 4: Enhanced configuration
-  errorRate: parseFloat(process.env.ERROR_RATE || "0.05"), // 5% error rate
+  errorRate: parseFloat(process.env.ERROR_RATE || "0.25"), // 25% error rate (increased for better visibility)
   feedbackRate: parseFloat(process.env.FEEDBACK_RATE || "0.10"), // 10% feedback
   multiLLMRate: parseFloat(process.env.MULTI_LLM_RATE || "0.20"), // 20% multi-LLM traces
   maxToolsPerTrace: parseInt(process.env.MAX_TOOLS_PER_TRACE || "4"),
@@ -674,7 +674,7 @@ function generateCanonicalEvents(params) {
 
     // Phase 1.1: Check for retrieval error
     const retrievalError =
-      CONFIG.enableErrors && Math.random() < CONFIG.errorRate * 0.4; // 40% of error rate for retrieval
+      CONFIG.enableErrors && Math.random() < CONFIG.errorRate * 0.6; // 60% of error rate for retrieval (15% at 25% base)
 
     if (!retrievalError) {
       events.push({
@@ -749,7 +749,7 @@ function generateCanonicalEvents(params) {
     };
 
     // Phase 1.1: Check for tool error or timeout
-    const toolErrorProb = CONFIG.enableErrors ? CONFIG.errorRate * 0.5 : 0; // 50% of error rate for tools
+    const toolErrorProb = CONFIG.enableErrors ? CONFIG.errorRate * 0.7 : 0; // 70% of error rate for tools (17.5% at 25% base)
     const toolError = Math.random() < toolErrorProb;
     const toolTimeout = toolError && Math.random() < 0.4; // 40% of tool errors are timeouts
     const resultStatus = toolTimeout
@@ -973,11 +973,9 @@ function generateCanonicalEvents(params) {
 
     llmStartOffset += llmLatency + 20;
 
-    // Phase 1.1: Check for LLM error
+    // Phase 1.1: Check for LLM error (don't require finish_reason === "error" for better visibility)
     const llmError =
-      CONFIG.enableErrors &&
-      Math.random() < CONFIG.errorRate * 0.3 &&
-      finishReason === "error";
+      CONFIG.enableErrors && Math.random() < CONFIG.errorRate * 0.5; // 50% of error rate for LLM (12.5% at 25% base)
 
     if (!llmError) {
       events.push({

@@ -39,6 +39,9 @@ const envSchema = z.object({
     })
     .optional(),
   SENTRY_ENVIRONMENT: z.string().default("production"),
+  REDIS_URL: z.string().url().optional(),
+  UPSTASH_REDIS_URL: z.string().url().optional(),
+  ANALYSIS_SERVICE_URL: z.string().url().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

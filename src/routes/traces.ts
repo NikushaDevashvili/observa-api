@@ -1,7 +1,8 @@
 import { Router, Request, Response } from "express";
 import { TokenService } from "../services/tokenService.js";
 import { TraceService } from "../services/traceService.js";
-import { AnalysisService } from "../services/analysisService.js";
+// AnalysisService no longer used - analysis is now event-driven via SignalsService
+// import { AnalysisService } from "../services/analysisService.js";
 import { AuthService } from "../services/authService.js";
 import { TraceQueryService } from "../services/traceQueryService.js";
 import { AgentPrismAdapterService } from "../services/agentPrismAdapter.js";
@@ -282,13 +283,9 @@ router.post("/ingest", async (req: Request, res: Response) => {
         // Don't throw - Tinybird failure shouldn't break trace ingestion
       });
 
-    // Trigger ML analysis asynchronously (don't block response)
-    AnalysisService.analyzeTrace(trace).catch((error) => {
-      console.error(
-        `[Analysis] Failed to analyze trace ${trace.traceId}:`,
-        error
-      );
-    });
+    // SOTA: Analysis is now event-driven via SignalsService
+    // Analysis jobs are queued when high-severity signals are detected
+    // No direct analysis calls here - let signals trigger analysis
 
     // Log success (in dev mode)
     if (process.env.NODE_ENV !== "production") {

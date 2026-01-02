@@ -103,6 +103,13 @@ This is part of a multi-repo architecture:
 - **`observa-api`** (this repo): Backend API service
 - **`observa-app`**: Customer-facing web app (signup UI, dashboard)
 
+## SDK Migration
+
+If you're updating the SDK to use canonical events, see:
+- **[SDK_MIGRATION_GUIDE.md](./SDK_MIGRATION_GUIDE.md)** - Step-by-step migration guide
+- **[SDK_CANONICAL_EVENTS_REFERENCE.md](./SDK_CANONICAL_EVENTS_REFERENCE.md)** - Complete event format reference
+- **[SDK_IMPLEMENTATION_EXAMPLE.md](./SDK_IMPLEMENTATION_EXAMPLE.md)** - Example implementation code
+
 ## Security
 
 - Per-tenant Tinybird tokens for isolation

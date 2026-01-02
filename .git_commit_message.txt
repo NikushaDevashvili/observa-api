@@ -1,0 +1,43 @@
+fix: Add query and response fields to trace summary
+
+Critical fix to ensure trace summaries include user queries and responses,
+enabling the frontend to properly display this essential information.
+
+Changes:
+- Extract query from first LLM call input (user's question)
+- Extract response from output events or last LLM call output
+- Aggregate total_cost from all LLM call events
+- Add finish_reason to summary from last LLM call
+- Update TraceSummary interface with new optional fields
+
+Fixes:
+- Frontend can now display user question in trace summary
+- Frontend can now display final response in trace summary
+- Cost information now available in summary
+- Finish reason now included in summary
+
+Technical:
+- Modified TraceQueryService.aggregateEventsToTrace()
+- Modified TraceQueryService.buildTreeFromCanonicalEvents()
+- Updated TraceSummary TypeScript interface
+- Added comprehensive test script for verification
+- All changes are backward compatible (fields are optional)
+
+Testing:
+- Created automated test script (scripts/test-trace-summary.js)
+- Added comprehensive QA documentation
+- TypeScript compilation passes
+- No breaking changes
+
+Files modified:
+- src/services/traceQueryService.ts
+- scripts/load-simulation-events.js (comprehensive enhancements)
+- scripts/test-trace-summary.js (new test script)
+
+Documentation:
+- QA_COMPREHENSIVE_ANALYSIS.md
+- QA_FIXES_APPLIED.md
+- QA_TESTING_GUIDE.md
+- QA_DEPLOYMENT_CHECKLIST.md
+- QA_SUMMARY.md
+

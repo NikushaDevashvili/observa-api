@@ -230,10 +230,13 @@ export class SignalsService {
     // In a full implementation, you might want a dedicated "signal" event_type
     // For now, we'll use a metadata approach or store as error events with signal attributes
     if (signals.length > 0) {
-      const signalEvents: TinybirdCanonicalEvent[] = signals.map((signal) => ({
+        // Get environment from first event (all events in batch should have same env)
+        const environment = events.length > 0 ? events[0].environment : "prod";
+
+        const signalEvents: TinybirdCanonicalEvent[] = signals.map((signal) => ({
         tenant_id: signal.tenant_id,
         project_id: signal.project_id,
-        environment: "dev", // TODO: Derive from parent event if available
+        environment: environment,
         trace_id: signal.trace_id,
         span_id: signal.span_id,
         parent_span_id: null,
@@ -262,6 +265,70 @@ export class SignalsService {
       } catch (error) {
         console.error("[SignalsService] Failed to store signals:", error);
         // Don't throw - signal storage failure shouldn't break ingestion
+      }
+
+      // SOTA: Trigger Layer 3/4 analysis for high-severity signals
+      // This is the event-driven approach - analysis only runs when needed
+      const highSeveritySignals = signals.filter(
+        (s) => s.signal_severity === "high"
+      );
+      const mediumSeveritySignals = signals.filter(
+        (s) => s.signal_severity === "medium"
+      );
+
+      if (highSeveritySignals.length > 0 || mediumSeveritySignals.length > 0) {
+        // Get trace data from events (find LLM call or output event)
+        const traceEvent = events.find(
+          (e) => e.event_type === "llm_call" || e.event_type === "output"
+        );
+
+        if (traceEvent) {
+          const attributes = JSON.parse(traceEvent.attributes_json);
+          const llmCall = attributes.llm_call || attributes.output;
+
+          // Queue analysis job for high-severity signals
+          try {
+            const { queueAnalysisForHighSeveritySignal } = await import(
+              "./analysisDispatcher.js"
+            );
+
+            const signalNames = [
+              ...highSeveritySignals,
+              ...mediumSeveritySignals,
+            ].map((s) => s.signal_name);
+
+            await queueAnalysisForHighSeveritySignal(
+              traceEvent.trace_id,
+              traceEvent.tenant_id,
+              traceEvent.project_id,
+              signalNames,
+              highSeveritySignals.length > 0 ? "high" : "medium",
+              {
+                span_id: traceEvent.span_id || undefined,
+                conversation_id: traceEvent.conversation_id || undefined,
+                session_id: traceEvent.session_id || undefined,
+                user_id: traceEvent.user_id || undefined,
+                query: llmCall?.input || undefined,
+                context: undefined, // TODO: Extract from retrieval events
+                response: llmCall?.output || llmCall?.final_output || undefined,
+                model: llmCall?.model || undefined,
+                tokens_total: llmCall?.total_tokens || undefined,
+                latency_ms: llmCall?.latency_ms || undefined,
+                cost: llmCall?.cost || undefined,
+                environment: traceEvent.environment,
+                route: traceEvent.route || undefined,
+                agent_name: traceEvent.agent_name || undefined,
+                version: traceEvent.version || undefined,
+              }
+            );
+          } catch (error) {
+            console.error(
+              "[SignalsService] Failed to queue analysis job (non-fatal):",
+              error
+            );
+            // Don't throw - analysis queue failure shouldn't break ingestion
+          }
+        }
       }
     }
   }

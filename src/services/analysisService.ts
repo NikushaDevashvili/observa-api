@@ -3,9 +3,19 @@ import { query } from "../db/client.js";
 import { TraceEvent } from "../types.js";
 
 /**
- * Analysis Service
- * Orchestrates ML analysis by calling the Python analysis service
- * and storing results in the database
+ * Analysis Service (DEPRECATED)
+ * 
+ * ⚠️ DEPRECATED: This service is deprecated in favor of the event-driven
+ * analysis system (AnalysisDispatcher + AnalysisWorker).
+ * 
+ * This class is kept for backward compatibility:
+ * - getAnalysisResults() - Still used to read old analysis_results table
+ * - getAnalysisResultsBatch() - Still used by TraceQueryService
+ * 
+ * New analysis results are stored as signals (Layer 3/4) via AnalysisWorker.
+ * See: src/services/analysisDispatcher.ts and src/services/analysisWorker.ts
+ * 
+ * @deprecated Use AnalysisDispatcher for queuing new analysis jobs
  */
 export class AnalysisService {
   private static analysisServiceUrl: string =

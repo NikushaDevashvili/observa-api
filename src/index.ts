@@ -36,8 +36,13 @@ import analyticsRouter from "./routes/analytics.js";
 import conversationsRouter from "./routes/conversations.js";
 import eventsRouter from "./routes/events.js";
 import sessionsRouter from "./routes/sessions.js";
+import analysisRouter from "./routes/analysis.js";
+import dashboardRouter from "./routes/dashboard.js";
+import issuesRouter from "./routes/issues.js";
+import costsRouter from "./routes/costs.js";
 import { initializeSchema } from "./db/schema.js";
 import { testConnection } from "./db/client.js";
+import { initializeAnalysisQueue } from "./services/analysisDispatcher.js";
 
 const app = express();
 
@@ -102,6 +107,9 @@ async function ensureSchemaInitialized(): Promise<void> {
 
       schemaInitialized = true;
       console.log("✅ Database connected and schema initialized");
+
+      // Initialize analysis job queue (optional, graceful degradation if Redis not available)
+      initializeAnalysisQueue();
     } catch (error: any) {
       console.error(
         "❌ Database initialization error:",
@@ -389,6 +397,10 @@ app.use("/api/v1/metrics", metricsRouter);
 app.use("/api/v1/analytics", analyticsRouter);
 app.use("/api/v1/conversations", conversationsRouter);
 app.use("/api/v1/sessions", sessionsRouter);
+app.use("/api/v1/analysis", analysisRouter);
+app.use("/api/v1/dashboard", dashboardRouter);
+app.use("/api/v1/issues", issuesRouter);
+app.use("/api/v1/costs", costsRouter);
 
 // Error handler middleware (must be last)
 app.use(
