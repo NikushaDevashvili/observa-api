@@ -82,10 +82,13 @@ export class DashboardMetricsService {
     `;
 
     try {
-      const results = await TinybirdRepository.rawQuery(sql, {
+      const result = await TinybirdRepository.rawQuery(sql, {
         tenantId,
         projectId: projectId || undefined,
       });
+
+      // Handle Tinybird response format: could be array or { data: [...], meta: [...] }
+      const results = Array.isArray(result) ? result : (result?.data || []);
 
       if (groupBy) {
         // Return grouped metrics
@@ -178,10 +181,12 @@ export class DashboardMetricsService {
     `;
 
     try {
-      const results = await TinybirdRepository.rawQuery(sql, {
+      const result = await TinybirdRepository.rawQuery(sql, {
         tenantId,
         projectId: projectId || undefined,
       });
+      // Handle Tinybird response format: could be array or { data: [...], meta: [...] }
+      const results = Array.isArray(result) ? result : (result?.data || []);
       const total = parseInt(results[0]?.total || "0", 10);
 
       return {
@@ -231,10 +236,12 @@ export class DashboardMetricsService {
     `;
 
     try {
-      const results = await TinybirdRepository.rawQuery(sql, {
+      const result = await TinybirdRepository.rawQuery(sql, {
         tenantId,
         projectId: projectId || undefined,
       });
+      // Handle Tinybird response format
+      const results = Array.isArray(result) ? result : (result?.data || []);
 
       let totalCost = 0;
       let totalTraces = 0;
@@ -301,10 +308,12 @@ export class DashboardMetricsService {
     `;
 
     try {
-      const results = await TinybirdRepository.rawQuery(sql, {
+      const result = await TinybirdRepository.rawQuery(sql, {
         tenantId,
         projectId: projectId || undefined,
       });
+      // Handle Tinybird response format
+      const results = Array.isArray(result) ? result : (result?.data || []);
 
       let totalTokens = 0;
       let totalInputTokens = 0;
@@ -372,10 +381,12 @@ export class DashboardMetricsService {
     `;
 
     try {
-      const results = await TinybirdRepository.rawQuery(sql, {
+      const result = await TinybirdRepository.rawQuery(sql, {
         tenantId,
         projectId: projectId || undefined,
       });
+      // Handle Tinybird response format
+      const results = Array.isArray(result) ? result : (result?.data || []);
       return parseInt(results[0]?.count || "0", 10);
     } catch (error) {
       console.error("[DashboardMetricsService] Failed to get trace count:", error);

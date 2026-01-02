@@ -81,10 +81,12 @@ export class SignalsQueryService {
     sql += ` ORDER BY timestamp DESC LIMIT ${limit} OFFSET ${offset}`;
 
     try {
-      const events = await TinybirdRepository.rawQuery(sql, {
+      const result = await TinybirdRepository.rawQuery(sql, {
         tenantId,
         projectId: projectId || undefined,
       });
+      // Handle Tinybird response format: could be array or { data: [...], meta: [...] }
+      const events = Array.isArray(result) ? result : (result?.data || []);
 
       // Parse signals from events
       const signals: Signal[] = [];
