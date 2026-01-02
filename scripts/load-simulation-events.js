@@ -758,14 +758,23 @@ function generateCanonicalEvents(params) {
     const toolErrorProb = CONFIG.enableErrors ? CONFIG.errorRate * 0.7 : 0; // 70% of error rate for tools (17.5% at 25% base)
     const toolError = Math.random() < toolErrorProb;
     // Use dedicated tool timeout rate if configured, otherwise use error-based logic
-    const toolTimeout = toolError 
-      ? (CONFIG.toolTimeoutRate > 0 ? Math.random() < CONFIG.toolTimeoutRate : Math.random() < 0.4)
+    const toolTimeout = toolError
+      ? CONFIG.toolTimeoutRate > 0
+        ? Math.random() < CONFIG.toolTimeoutRate
+        : Math.random() < 0.4
       : Math.random() < CONFIG.toolTimeoutRate; // Can have timeouts without errors
     const resultStatus = toolTimeout
       ? "timeout"
       : toolError
       ? "error"
       : "success";
+
+    // Tool timeout: if timeout, use very high latency (30s+)
+    const toolLatency = toolTimeout
+      ? randomInt(30000, 35000) // 30-35 seconds for timeout
+      : baseToolCallLatency + randomInt(-50, 50);
+    const toolStartTime = addMilliseconds(baseTime, toolStartOffset);
+    const toolEndTime = addMilliseconds(toolStartTime, toolLatency);
 
     if (toolError) {
       hasError = true;
@@ -874,8 +883,9 @@ function generateCanonicalEvents(params) {
       // Use most expensive model for cost spikes
       selectedModel = "gpt-4o"; // Most expensive
     }
-    const modelConfigForCost = MODELS.find((m) => m.name === selectedModel) || modelConfig;
-    
+    const modelConfigForCost =
+      MODELS.find((m) => m.name === selectedModel) || modelConfig;
+
     // Phase 1.5 & Phase 3.3: Cost calculation
     let cost = calculateCost(tokensPrompt, tokensCompletion, selectedModel);
     if (hasCostSpike && cost) {
