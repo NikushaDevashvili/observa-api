@@ -22,7 +22,7 @@ export class CanonicalEventService {
     }
 
     const url = `${env.TINYBIRD_HOST}/v0/events?name=${encodeURIComponent(
-      "canonical_events" // Datasource name
+      env.TINYBIRD_CANONICAL_EVENTS_DATASOURCE
     )}&format=ndjson`;
     
     // Convert formatted events to NDJSON
@@ -31,6 +31,10 @@ export class CanonicalEventService {
       .join("\n") + "\n";
 
     try {
+      console.log(
+        `[CanonicalEventService] Forwarding ${events.length} events to Tinybird at ${url}`
+      );
+      
       const response = await fetch(url, {
         method: "POST",
         headers: {
@@ -40,30 +44,56 @@ export class CanonicalEventService {
         body: ndjson,
       });
 
+      const responseText = await response.text().catch(() => "Could not read response");
+      
+      // Check if response is OK
       if (!response.ok) {
-        const errorText = await response.text().catch(() => "Unknown error");
         console.error(
-          `[CanonicalEventService] Tinybird API error: ${response.status} ${response.statusText} - ${errorText}`
+          `[CanonicalEventService] Tinybird API error: ${response.status} ${response.statusText}`
         );
+        console.error(`[CanonicalEventService] Response body: ${responseText}`);
         
         // Log the first event for debugging
         if (events.length > 0) {
           console.error(
             `[CanonicalEventService] First event that failed:\n${JSON.stringify(events[0], null, 2)}`
           );
-          console.error(
-            `[CanonicalEventService] First event NDJSON:\n${JSON.stringify(events[0])}`
-          );
         }
         
         throw new Error(
-          `Tinybird API error: ${response.status} ${response.statusText} - ${errorText}`
+          `Tinybird API error: ${response.status} ${response.statusText} - ${responseText}`
         );
       }
 
-      console.log(
-        `[CanonicalEventService] Successfully forwarded ${events.length} events to Tinybird`
-      );
+      // Parse response to check for errors in body (Tinybird sometimes returns 200 with errors)
+      try {
+        const responseJson = JSON.parse(responseText);
+        if (responseJson.error || responseJson.errors) {
+          const errorMsg = responseJson.error || JSON.stringify(responseJson.errors);
+          console.error(
+            `[CanonicalEventService] Tinybird returned error in response body: ${errorMsg}`
+          );
+          throw new Error(`Tinybird ingestion error: ${errorMsg}`);
+        }
+        
+        // Check for success indicators
+        const ingested = responseJson.ingested || responseJson.successful_inserts || events.length;
+        console.log(
+          `[CanonicalEventService] Successfully forwarded ${events.length} events to Tinybird (ingested: ${ingested})`
+        );
+      } catch (parseError) {
+        // If response is not JSON, check if it's a success message
+        if (responseText.includes("error") || responseText.includes("Error")) {
+          console.error(
+            `[CanonicalEventService] Tinybird response indicates error: ${responseText}`
+          );
+          throw new Error(`Tinybird ingestion error: ${responseText}`);
+        }
+        // If it's not JSON but doesn't contain "error", assume success
+        console.log(
+          `[CanonicalEventService] Successfully forwarded ${events.length} events to Tinybird (response: ${responseText.substring(0, 100)})`
+        );
+      }
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";

@@ -45,8 +45,7 @@ export function cleanNullValues(obj: any): any {
  * IMPORTANT: Based on the actual Tinybird schema:
  * - Required fields (nullable: false): tenant_id, project_id, environment, trace_id, span_id,
  *   timestamp, event_type, conversation_id, session_id, user_id, attributes_json
- * - Nullable fields: parent_span_id (can be null or omitted)
- * - Fields NOT in schema: agent_name, version, route (should NOT be sent)
+ * - Nullable fields: parent_span_id, agent_name, version, route (can be null or omitted)
  * - timestamp must be in DateTime64(3) format (ISO 8601 string works)
  * 
  * CRITICAL: conversation_id, session_id, and user_id are REQUIRED (not nullable),
@@ -87,7 +86,16 @@ export function formatTinybirdEvent(event: TinybirdCanonicalEvent): any {
     formatted.parent_span_id = event.parent_span_id;
   }
 
-  // DO NOT include agent_name, version, or route - they're not in the schema
+  // agent_name, version, and route are nullable fields in the schema - include if they have values
+  if (event.agent_name !== null && event.agent_name !== undefined) {
+    formatted.agent_name = event.agent_name;
+  }
+  if (event.version !== null && event.version !== undefined) {
+    formatted.version = event.version;
+  }
+  if (event.route !== null && event.route !== undefined) {
+    formatted.route = event.route;
+  }
 
   return formatted;
 }

@@ -25,6 +25,7 @@ const envSchema = z.object({
     .url({ message: "TINYBIRD_HOST must be a valid URL" })
     .default("https://api.europe-west2.gcp.tinybird.co"),
   TINYBIRD_DATASOURCE_NAME: z.string().default("traces"),
+  TINYBIRD_CANONICAL_EVENTS_DATASOURCE: z.string().default("canonical_events"),
   JWT_SECRET: z.string().min(32, {
     message: "JWT_SECRET must be at least 32 characters for security",
   }),

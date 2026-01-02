@@ -303,7 +303,29 @@ router.post(
       const formattedEvents = formatTinybirdEvents(tinybirdEvents);
 
       // Forward to Tinybird (use formatted events, not raw tinybirdEvents)
-      await CanonicalEventService.forwardToTinybird(formattedEvents);
+      // CRITICAL: This must succeed - if it fails, the request should fail
+      try {
+        await CanonicalEventService.forwardToTinybird(formattedEvents);
+        console.log(
+          `[Events API] Successfully forwarded ${formattedEvents.length} events to Tinybird`
+        );
+      } catch (tinybirdError) {
+        const errorMessage =
+          tinybirdError instanceof Error
+            ? tinybirdError.message
+            : "Unknown Tinybird error";
+        console.error(
+          `[Events API] CRITICAL: Failed to forward events to Tinybird: ${errorMessage}`
+        );
+        console.error(
+          `[Events API] Event count: ${formattedEvents.length}, First event:`,
+          formattedEvents[0]
+            ? JSON.stringify(formattedEvents[0], null, 2)
+            : "none"
+        );
+        // Re-throw to fail the request - events must be stored in Tinybird
+        throw new Error(`Failed to store events in Tinybird: ${errorMessage}`);
+      }
 
       // Store trace summaries in analysis_results for dashboard compatibility
       // Extract llm_call events and create trace summaries
@@ -455,7 +477,9 @@ async function storeTraceSummaries(
     );
 
     const hasIssues =
-      errorEvents.length > 0 || toolFailures.length > 0 || toolTimeouts.length > 0;
+      errorEvents.length > 0 ||
+      toolFailures.length > 0 ||
+      toolTimeouts.length > 0;
     const derivedStatus = hasIssues ? 500 : 200;
     const derivedStatusText = hasIssues
       ? `error:${Object.keys(errorTypes)[0] || "unknown"}`
