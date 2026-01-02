@@ -71,11 +71,13 @@ export class SignalsQueryService {
     }
 
     if (startTime) {
-      sql += ` AND timestamp >= '${startTime.replace(/'/g, "''")}'`;
+      // Convert ISO 8601 string to DateTime64(3) using toDateTime
+      sql += ` AND timestamp >= toDateTime('${startTime.replace(/'/g, "''")}')`;
     }
 
     if (endTime) {
-      sql += ` AND timestamp <= '${endTime.replace(/'/g, "''")}'`;
+      // Convert ISO 8601 string to DateTime64(3) using toDateTime
+      sql += ` AND timestamp <= toDateTime('${endTime.replace(/'/g, "''")}')`;
     }
 
     sql += ` ORDER BY timestamp DESC LIMIT ${limit} OFFSET ${offset}`;

@@ -57,26 +57,28 @@ export class DashboardMetricsService {
 
     // Build WHERE clause for Tinybird
     let whereClause = `WHERE tenant_id = '${escapedTenantId}' AND event_type = 'llm_call'`;
-    
+
     if (escapedProjectId) {
       whereClause += ` AND project_id = '${escapedProjectId}'`;
     }
 
     if (startTime) {
-      whereClause += ` AND timestamp >= '${startTime.replace(/'/g, "''")}'`;
+      // Convert ISO 8601 string to DateTime64(3) using toDateTime
+      whereClause += ` AND timestamp >= toDateTime('${startTime.replace(/'/g, "''")}')`;
     }
 
     if (endTime) {
-      whereClause += ` AND timestamp <= '${endTime.replace(/'/g, "''")}'`;
+      // Convert ISO 8601 string to DateTime64(3) using toDateTime
+      whereClause += ` AND timestamp <= toDateTime('${endTime.replace(/'/g, "''")}')`;
     }
 
     // Extract latency_ms from attributes_json.llm_call.latency_ms
-    // ClickHouse/Tinybird JSON functions
-    const latencyExpr = `CAST(JSON_EXTRACT_STRING(attributes_json, '$.llm_call.latency_ms') AS Float64)`;
+    // ClickHouse/Tinybird JSON functions (use camelCase: JSONExtractString, not JSONExtractString)
+    const latencyExpr = `CAST(JSONExtractString(attributes_json, '$.llm_call.latency_ms') AS Float64)`;
 
     if (groupBy === "model") {
       // Grouped query by model
-      const modelExpr = `JSON_EXTRACT_STRING(attributes_json, '$.llm_call.model')`;
+      const modelExpr = `JSONExtractString(attributes_json, '$.llm_call.model')`;
       const sql = `
         SELECT 
           ${modelExpr} as model,
@@ -99,7 +101,7 @@ export class DashboardMetricsService {
           tenantId,
           projectId: projectId || undefined,
         });
-        const results = Array.isArray(result) ? result : (result?.data || []);
+        const results = Array.isArray(result) ? result : result?.data || [];
 
         const grouped: Record<string, LatencyMetrics> = {};
         for (const row of results) {
@@ -145,7 +147,7 @@ export class DashboardMetricsService {
         tenantId,
         projectId: projectId || undefined,
       });
-      const results = Array.isArray(result) ? result : (result?.data || []);
+      const results = Array.isArray(result) ? result : result?.data || [];
       const row = results[0] || {};
 
       return {
@@ -189,7 +191,7 @@ export class DashboardMetricsService {
 
     // Build WHERE clause for Tinybird
     let baseWhereClause = `WHERE tenant_id = '${escapedTenantId}'`;
-    
+
     if (escapedProjectId) {
       baseWhereClause += ` AND project_id = '${escapedProjectId}'`;
     }
@@ -214,7 +216,9 @@ export class DashboardMetricsService {
         tenantId,
         projectId: projectId || undefined,
       });
-      const totalResults = Array.isArray(totalResult) ? totalResult : (totalResult?.data || []);
+      const totalResults = Array.isArray(totalResult)
+        ? totalResult
+        : totalResult?.data || [];
       const total = parseInt(totalResults[0]?.total || "0", 10);
 
       // Get error count - errors are events with event_type='error'
@@ -228,14 +232,16 @@ export class DashboardMetricsService {
         tenantId,
         projectId: projectId || undefined,
       });
-      const errorResults = Array.isArray(errorResult) ? errorResult : (errorResult?.data || []);
+      const errorResults = Array.isArray(errorResult)
+        ? errorResult
+        : errorResult?.data || [];
       const errors = parseInt(errorResults[0]?.error_count || "0", 10);
 
       // Get error types from attributes_json.error.error_type
       const errorTypes: Record<string, number> = {};
       const errorTypeSql = `
         SELECT 
-          JSON_EXTRACT_STRING(attributes_json, '$.error.error_type') as error_type,
+          JSONExtractString(attributes_json, '$.error.error_type') as error_type,
           count(*) as count
         FROM canonical_events
         ${baseWhereClause}
@@ -244,11 +250,16 @@ export class DashboardMetricsService {
       `;
 
       try {
-        const errorTypeResult = await TinybirdRepository.rawQuery(errorTypeSql, {
-          tenantId,
-          projectId: projectId || undefined,
-        });
-        const errorTypeResults = Array.isArray(errorTypeResult) ? errorTypeResult : (errorTypeResult?.data || []);
+        const errorTypeResult = await TinybirdRepository.rawQuery(
+          errorTypeSql,
+          {
+            tenantId,
+            projectId: projectId || undefined,
+          }
+        );
+        const errorTypeResults = Array.isArray(errorTypeResult)
+          ? errorTypeResult
+          : errorTypeResult?.data || [];
         for (const row of errorTypeResults) {
           const errorType = row.error_type || "unknown_error";
           errorTypes[errorType] = parseInt(row.count) || 0;
@@ -295,22 +306,24 @@ export class DashboardMetricsService {
 
     // Build WHERE clause for Tinybird
     let whereClause = `WHERE tenant_id = '${escapedTenantId}' AND event_type = 'llm_call'`;
-    
+
     if (escapedProjectId) {
       whereClause += ` AND project_id = '${escapedProjectId}'`;
     }
 
     if (startTime) {
-      whereClause += ` AND timestamp >= '${startTime.replace(/'/g, "''")}'`;
+      // Convert ISO 8601 string to DateTime64(3) using toDateTime
+      whereClause += ` AND timestamp >= toDateTime('${startTime.replace(/'/g, "''")}')`;
     }
 
     if (endTime) {
-      whereClause += ` AND timestamp <= '${endTime.replace(/'/g, "''")}'`;
+      // Convert ISO 8601 string to DateTime64(3) using toDateTime
+      whereClause += ` AND timestamp <= toDateTime('${endTime.replace(/'/g, "''")}')`;
     }
 
     // Extract cost from attributes_json.llm_call.cost
-    const costExpr = `CAST(JSON_EXTRACT_STRING(attributes_json, '$.llm_call.cost') AS Float64)`;
-    const modelExpr = `JSON_EXTRACT_STRING(attributes_json, '$.llm_call.model')`;
+    const costExpr = `CAST(JSONExtractString(attributes_json, '$.llm_call.cost') AS Float64)`;
+    const modelExpr = `JSONExtractString(attributes_json, '$.llm_call.model')`;
 
     try {
       // Get total cost and cost by model
@@ -330,7 +343,7 @@ export class DashboardMetricsService {
         tenantId,
         projectId: projectId || undefined,
       });
-      const results = Array.isArray(result) ? result : (result?.data || []);
+      const results = Array.isArray(result) ? result : result?.data || [];
 
       let totalCost = 0;
       let totalTraces = 0;
@@ -340,7 +353,7 @@ export class DashboardMetricsService {
         const cost = parseFloat(row.total_cost) || 0;
         const traces = parseInt(row.trace_count) || 0;
         const model = row.model || "unknown";
-        
+
         totalCost += cost;
         totalTraces += traces;
         costByModel[model] = cost;
@@ -381,24 +394,26 @@ export class DashboardMetricsService {
 
     // Build WHERE clause for Tinybird
     let whereClause = `WHERE tenant_id = '${escapedTenantId}' AND event_type = 'llm_call'`;
-    
+
     if (escapedProjectId) {
       whereClause += ` AND project_id = '${escapedProjectId}'`;
     }
 
     if (startTime) {
-      whereClause += ` AND timestamp >= '${startTime.replace(/'/g, "''")}'`;
+      // Convert ISO 8601 string to DateTime64(3) using toDateTime
+      whereClause += ` AND timestamp >= toDateTime('${startTime.replace(/'/g, "''")}')`;
     }
 
     if (endTime) {
-      whereClause += ` AND timestamp <= '${endTime.replace(/'/g, "''")}'`;
+      // Convert ISO 8601 string to DateTime64(3) using toDateTime
+      whereClause += ` AND timestamp <= toDateTime('${endTime.replace(/'/g, "''")}')`;
     }
 
     // Extract token fields from attributes_json.llm_call
-    const totalTokensExpr = `CAST(JSON_EXTRACT_STRING(attributes_json, '$.llm_call.total_tokens') AS Int64)`;
-    const inputTokensExpr = `CAST(JSON_EXTRACT_STRING(attributes_json, '$.llm_call.input_tokens') AS Int64)`;
-    const outputTokensExpr = `CAST(JSON_EXTRACT_STRING(attributes_json, '$.llm_call.output_tokens') AS Int64)`;
-    const modelExpr = `JSON_EXTRACT_STRING(attributes_json, '$.llm_call.model')`;
+    const totalTokensExpr = `CAST(JSONExtractString(attributes_json, '$.llm_call.total_tokens') AS Int64)`;
+    const inputTokensExpr = `CAST(JSONExtractString(attributes_json, '$.llm_call.input_tokens') AS Int64)`;
+    const outputTokensExpr = `CAST(JSONExtractString(attributes_json, '$.llm_call.output_tokens') AS Int64)`;
+    const modelExpr = `JSONExtractString(attributes_json, '$.llm_call.model')`;
 
     const sql = `
       SELECT 
@@ -420,7 +435,7 @@ export class DashboardMetricsService {
         tenantId,
         projectId: projectId || undefined,
       });
-      const results = Array.isArray(result) ? result : (result?.data || []);
+      const results = Array.isArray(result) ? result : result?.data || [];
 
       let totalTokens = 0;
       let totalInputTokens = 0;
@@ -487,9 +502,9 @@ export class DashboardMetricsService {
         AND event_type IN ('trace_start', 'llm_call')
         ${escapedProjectId ? `AND project_id = '${escapedProjectId}'` : ""}
         ${
-          startTime ? `AND timestamp >= '${startTime.replace(/'/g, "''")}'` : ""
+          startTime ? `AND timestamp >= toDateTime('${startTime.replace(/'/g, "''")}')` : ""
         }
-        ${endTime ? `AND timestamp <= '${endTime.replace(/'/g, "''")}'` : ""}
+        ${endTime ? `AND timestamp <= toDateTime('${endTime.replace(/'/g, "''")}')` : ""}
     `;
 
     try {
