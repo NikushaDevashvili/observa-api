@@ -34,6 +34,11 @@ const CONFIG = {
   maxRetrievalsPerTrace: parseInt(process.env.MAX_RETRIEVALS_PER_TRACE || "3"),
   enableStreaming: process.env.ENABLE_STREAMING !== "false",
   enableCostCalculation: process.env.ENABLE_COST_CALCULATION !== "false",
+  // Issue generation rates (integrated from generate-issues-test-data.js)
+  highLatencyRate: parseFloat(process.env.HIGH_LATENCY_RATE || "0.15"), // 15% high latency LLM calls
+  costSpikeRate: parseFloat(process.env.COST_SPIKE_RATE || "0.10"), // 10% cost spikes
+  tokenSpikeRate: parseFloat(process.env.TOKEN_SPIKE_RATE || "0.10"), // 10% token spikes
+  toolTimeoutRate: parseFloat(process.env.TOOL_TIMEOUT_RATE || "0.15"), // 15% tool timeouts
 };
 
 if (!JWT_TOKEN) {
@@ -749,9 +754,13 @@ function generateCanonicalEvents(params) {
     };
 
     // Phase 1.1: Check for tool error or timeout
+    // Integrated issue generation: tool timeouts are now configurable
     const toolErrorProb = CONFIG.enableErrors ? CONFIG.errorRate * 0.7 : 0; // 70% of error rate for tools (17.5% at 25% base)
     const toolError = Math.random() < toolErrorProb;
-    const toolTimeout = toolError && Math.random() < 0.4; // 40% of tool errors are timeouts
+    // Use dedicated tool timeout rate if configured, otherwise use error-based logic
+    const toolTimeout = toolError 
+      ? (CONFIG.toolTimeoutRate > 0 ? Math.random() < CONFIG.toolTimeoutRate : Math.random() < 0.4)
+      : Math.random() < CONFIG.toolTimeoutRate; // Can have timeouts without errors
     const resultStatus = toolTimeout
       ? "timeout"
       : toolError
@@ -844,17 +853,41 @@ function generateCanonicalEvents(params) {
     const numNestedTools = hasNestedTools ? randomInt(1, 2) : 0;
     const nestedToolSpanIds = [];
 
-    const tokensPrompt = modelConfig.avgPromptTokens + randomInt(-50, 100);
-    const tokensCompletion =
-      modelConfig.avgCompletionTokens + randomInt(-30, 80);
+    // Integrated issue generation: token spikes, cost spikes, high latency
+    const hasTokenSpike = Math.random() < CONFIG.tokenSpikeRate;
+    const hasCostSpike = Math.random() < CONFIG.costSpikeRate;
+    const hasHighLatency = Math.random() < CONFIG.highLatencyRate;
+
+    // Token spike: dramatically increase token counts
+    const tokensPrompt = hasTokenSpike
+      ? randomInt(80000, 150000) // 80k-150k tokens for spike
+      : modelConfig.avgPromptTokens + randomInt(-50, 100);
+    const tokensCompletion = hasTokenSpike
+      ? randomInt(50000, 100000) // 50k-100k tokens for spike
+      : modelConfig.avgCompletionTokens + randomInt(-30, 80);
     const tokensTotal = tokensPrompt + tokensCompletion;
     totalTokensAll += tokensTotal;
 
+    // Cost spike: use expensive model and/or boost cost
+    let selectedModel = llmModel;
+    if (hasCostSpike) {
+      // Use most expensive model for cost spikes
+      selectedModel = "gpt-4o"; // Most expensive
+    }
+    const modelConfigForCost = MODELS.find((m) => m.name === selectedModel) || modelConfig;
+    
     // Phase 1.5 & Phase 3.3: Cost calculation
-    const cost = calculateCost(tokensPrompt, tokensCompletion, llmModel);
+    let cost = calculateCost(tokensPrompt, tokensCompletion, selectedModel);
+    if (hasCostSpike && cost) {
+      // Boost cost by 5-15x for spikes
+      cost = cost * randomInt(5, 15);
+    }
     if (cost) totalCostAll += cost;
 
-    const llmLatency = baseLLMLatency + randomInt(-100, 100);
+    // High latency: dramatically increase latency
+    const llmLatency = hasHighLatency
+      ? randomInt(6000, 12000) // 6-12 seconds for high latency
+      : baseLLMLatency + randomInt(-100, 100);
 
     // Phase 3.2: Streaming simulation
     const timeToFirstToken = CONFIG.enableStreaming ? randomInt(50, 300) : null;
@@ -995,7 +1028,7 @@ function generateCanonicalEvents(params) {
         event_type: "llm_call",
         attributes: {
           llm_call: {
-            model: llmModel,
+            model: selectedModel, // Use selectedModel (may be gpt-4o for cost spikes)
             prompt_template_id: `template_v${randomInt(1, 3)}`,
             input: llmInput,
             output: llmOutput,
