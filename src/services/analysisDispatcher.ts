@@ -54,6 +54,7 @@ export interface AnalysisJob {
 
 let analysisQueue: Queue<AnalysisJob> | null = null;
 let redisClient: Redis | null = null;
+let queueUnavailableLogged = false; // Track if we've already logged the warning
 
 /**
  * Initialize Redis connection and job queue
@@ -63,9 +64,15 @@ export function initializeAnalysisQueue(): void {
   const redisUrl = process.env.REDIS_URL || process.env.UPSTASH_REDIS_URL;
 
   if (!redisUrl) {
-    console.warn(
-      "[AnalysisDispatcher] REDIS_URL not set - analysis jobs will be queued in-memory (not persistent)"
-    );
+    if (!queueUnavailableLogged) {
+      console.log(
+        "[AnalysisDispatcher] ℹ️  REDIS_URL not set - analysis jobs will be skipped (optional feature)"
+      );
+      console.log(
+        "[AnalysisDispatcher] 💡 To enable analysis job queue, set REDIS_URL or UPSTASH_REDIS_URL environment variable"
+      );
+      queueUnavailableLogged = true;
+    }
     // For serverless, we can use in-memory queue or Postgres-based queue
     // For now, we'll just log and skip queue initialization
     return;
@@ -119,9 +126,13 @@ export function initializeAnalysisQueue(): void {
  */
 export async function queueAnalysisJob(job: AnalysisJob): Promise<boolean> {
   if (!analysisQueue) {
-    console.warn(
-      `[AnalysisDispatcher] Queue not available, skipping analysis for trace ${job.trace_id}`
-    );
+    // Only log once per process to avoid log spam
+    if (!queueUnavailableLogged) {
+      console.log(
+        `[AnalysisDispatcher] ℹ️  Analysis queue not available - skipping analysis jobs (this is expected if REDIS_URL is not set)`
+      );
+      queueUnavailableLogged = true;
+    }
     return false;
   }
 

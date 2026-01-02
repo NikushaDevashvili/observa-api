@@ -63,7 +63,7 @@ async function ensureSchemaInitialized(): Promise<void> {
       return;
     } catch (error) {
       // If previous initialization failed, try again
-      console.warn("Previous schema initialization failed, retrying...");
+      console.log("[Schema] Previous schema initialization failed, retrying...");
       schemaInitializationPromise = null;
     }
   }
