@@ -71,13 +71,19 @@ export class SignalsQueryService {
     }
 
     if (startTime) {
-      // Convert ISO 8601 string to DateTime64(3) using toDateTime
-      sql += ` AND timestamp >= toDateTime('${startTime.replace(/'/g, "''")}')`;
+      // Tinybird/ClickHouse: parse ISO 8601 (including milliseconds + Z) safely into DateTime64(3)
+      sql += ` AND timestamp >= parseDateTime64BestEffort('${startTime.replace(
+        /'/g,
+        "''"
+      )}', 3)`;
     }
 
     if (endTime) {
-      // Convert ISO 8601 string to DateTime64(3) using toDateTime
-      sql += ` AND timestamp <= toDateTime('${endTime.replace(/'/g, "''")}')`;
+      // Tinybird/ClickHouse: parse ISO 8601 (including milliseconds + Z) safely into DateTime64(3)
+      sql += ` AND timestamp <= parseDateTime64BestEffort('${endTime.replace(
+        /'/g,
+        "''"
+      )}', 3)`;
     }
 
     sql += ` ORDER BY timestamp DESC LIMIT ${limit} OFFSET ${offset}`;

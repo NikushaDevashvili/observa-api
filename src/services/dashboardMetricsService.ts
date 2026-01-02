@@ -63,13 +63,19 @@ export class DashboardMetricsService {
     }
 
     if (startTime) {
-      // Convert ISO 8601 string to DateTime64(3) using toDateTime
-      whereClause += ` AND timestamp >= toDateTime('${startTime.replace(/'/g, "''")}')`;
+      // Tinybird/ClickHouse: parse ISO 8601 (including milliseconds + Z) safely into DateTime64(3)
+      whereClause += ` AND timestamp >= parseDateTime64BestEffort('${startTime.replace(
+        /'/g,
+        "''"
+      )}', 3)`;
     }
 
     if (endTime) {
-      // Convert ISO 8601 string to DateTime64(3) using toDateTime
-      whereClause += ` AND timestamp <= toDateTime('${endTime.replace(/'/g, "''")}')`;
+      // Tinybird/ClickHouse: parse ISO 8601 (including milliseconds + Z) safely into DateTime64(3)
+      whereClause += ` AND timestamp <= parseDateTime64BestEffort('${endTime.replace(
+        /'/g,
+        "''"
+      )}', 3)`;
     }
 
     // Extract latency_ms from attributes_json.llm_call.latency_ms
@@ -312,13 +318,19 @@ export class DashboardMetricsService {
     }
 
     if (startTime) {
-      // Convert ISO 8601 string to DateTime64(3) using toDateTime
-      whereClause += ` AND timestamp >= toDateTime('${startTime.replace(/'/g, "''")}')`;
+      // Tinybird/ClickHouse: parse ISO 8601 (including milliseconds + Z) safely into DateTime64(3)
+      whereClause += ` AND timestamp >= parseDateTime64BestEffort('${startTime.replace(
+        /'/g,
+        "''"
+      )}', 3)`;
     }
 
     if (endTime) {
-      // Convert ISO 8601 string to DateTime64(3) using toDateTime
-      whereClause += ` AND timestamp <= toDateTime('${endTime.replace(/'/g, "''")}')`;
+      // Tinybird/ClickHouse: parse ISO 8601 (including milliseconds + Z) safely into DateTime64(3)
+      whereClause += ` AND timestamp <= parseDateTime64BestEffort('${endTime.replace(
+        /'/g,
+        "''"
+      )}', 3)`;
     }
 
     // Extract cost from attributes_json.llm_call.cost
@@ -400,13 +412,19 @@ export class DashboardMetricsService {
     }
 
     if (startTime) {
-      // Convert ISO 8601 string to DateTime64(3) using toDateTime
-      whereClause += ` AND timestamp >= toDateTime('${startTime.replace(/'/g, "''")}')`;
+      // Tinybird/ClickHouse: parse ISO 8601 (including milliseconds + Z) safely into DateTime64(3)
+      whereClause += ` AND timestamp >= parseDateTime64BestEffort('${startTime.replace(
+        /'/g,
+        "''"
+      )}', 3)`;
     }
 
     if (endTime) {
-      // Convert ISO 8601 string to DateTime64(3) using toDateTime
-      whereClause += ` AND timestamp <= toDateTime('${endTime.replace(/'/g, "''")}')`;
+      // Tinybird/ClickHouse: parse ISO 8601 (including milliseconds + Z) safely into DateTime64(3)
+      whereClause += ` AND timestamp <= parseDateTime64BestEffort('${endTime.replace(
+        /'/g,
+        "''"
+      )}', 3)`;
     }
 
     // Extract token fields from attributes_json.llm_call
@@ -502,9 +520,21 @@ export class DashboardMetricsService {
         AND event_type IN ('trace_start', 'llm_call')
         ${escapedProjectId ? `AND project_id = '${escapedProjectId}'` : ""}
         ${
-          startTime ? `AND timestamp >= toDateTime('${startTime.replace(/'/g, "''")}')` : ""
+          startTime
+            ? `AND timestamp >= parseDateTime64BestEffort('${startTime.replace(
+                /'/g,
+                "''"
+              )}', 3)`
+            : ""
         }
-        ${endTime ? `AND timestamp <= toDateTime('${endTime.replace(/'/g, "''")}')` : ""}
+        ${
+          endTime
+            ? `AND timestamp <= parseDateTime64BestEffort('${endTime.replace(
+                /'/g,
+                "''"
+              )}', 3)`
+            : ""
+        }
     `;
 
     try {
