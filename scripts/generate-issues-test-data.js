@@ -119,6 +119,8 @@ function generateTraceWithIssues(traceIndex) {
   const events = [];
 
   // Trace start
+  // NOTE: agent_name, version, and route are NOT in Tinybird schema, but validation allows them
+  // They will be removed by the formatter before sending to Tinybird
   events.push({
     tenant_id: tenantId,
     project_id: projectId,
@@ -128,9 +130,12 @@ function generateTraceWithIssues(traceIndex) {
     parent_span_id: null,
     timestamp: new Date(baseTime).toISOString(),
     event_type: "trace_start",
+    // CRITICAL: conversation_id, session_id, and user_id are REQUIRED in Tinybird (not nullable)
+    // Always provide these values (use empty string if not available, but we have them here)
     conversation_id: conversationId,
     session_id: sessionId,
     user_id: userId,
+    // These fields are allowed in validation but removed by formatter (not in Tinybird schema)
     agent_name: agentName,
     version,
     route,
