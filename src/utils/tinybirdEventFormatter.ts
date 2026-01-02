@@ -54,6 +54,18 @@ export function cleanNullValues(obj: any): any {
  * empty strings or default values.
  */
 export function formatTinybirdEvent(event: TinybirdCanonicalEvent): any {
+  // Preserve actual values when they exist - these are important for tracking!
+  // Only use empty string as fallback when value is truly missing
+  const conversationId = (event.conversation_id && typeof event.conversation_id === 'string' && event.conversation_id.trim() !== "")
+    ? event.conversation_id
+    : "";
+  const sessionId = (event.session_id && typeof event.session_id === 'string' && event.session_id.trim() !== "")
+    ? event.session_id
+    : "";
+  const userId = (event.user_id && typeof event.user_id === 'string' && event.user_id.trim() !== "")
+    ? event.user_id
+    : "";
+
   // Build the event with only fields that exist in the Tinybird schema
   const formatted: any = {
     tenant_id: event.tenant_id,
@@ -63,10 +75,10 @@ export function formatTinybirdEvent(event: TinybirdCanonicalEvent): any {
     span_id: event.span_id,
     timestamp: event.timestamp, // DateTime64(3) - ISO 8601 string format
     event_type: event.event_type,
-    // These are REQUIRED (not nullable) - must always be present
-    conversation_id: event.conversation_id ?? "", // Empty string if null (required field)
-    session_id: event.session_id ?? "", // Empty string if null (required field)
-    user_id: event.user_id ?? "", // Empty string if null (required field)
+    // These are REQUIRED (not nullable) - preserve actual values when available
+    conversation_id: conversationId,
+    session_id: sessionId,
+    user_id: userId,
     attributes_json: event.attributes_json,
   };
 

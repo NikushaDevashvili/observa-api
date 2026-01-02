@@ -262,26 +262,40 @@ router.post(
         "../utils/tinybirdEventFormatter.js"
       );
       const tinybirdEvents: TinybirdCanonicalEvent[] = validatedEvents.map(
-        (event) => ({
-          tenant_id: event.tenant_id,
-          project_id: event.project_id,
-          environment: event.environment,
-          trace_id: event.trace_id,
-          span_id: event.span_id,
-          parent_span_id: event.parent_span_id ?? null,
-          timestamp: event.timestamp,
-          event_type: event.event_type,
-          // CRITICAL: conversation_id, session_id, and user_id are REQUIRED (not nullable) in Tinybird
-          // Convert null/undefined to empty strings BEFORE creating TinybirdCanonicalEvent
-          conversation_id: event.conversation_id ?? "",
-          session_id: event.session_id ?? "",
-          user_id: event.user_id ?? "",
-          agent_name: event.agent_name ?? null,
-          version: event.version ?? null,
-          route: event.route ?? null,
-          // Clean null values from attributes before stringifying (for Tinybird strict type checking)
-          attributes_json: JSON.stringify(cleanNullValues(event.attributes)),
-        })
+        (event) => {
+          // Preserve actual values when they exist, only use empty string as fallback
+          // This ensures we track which conversation/session/user each event belongs to
+          const conversationId = event.conversation_id && event.conversation_id.trim() !== "" 
+            ? event.conversation_id 
+            : "";
+          const sessionId = event.session_id && event.session_id.trim() !== "" 
+            ? event.session_id 
+            : "";
+          const userId = event.user_id && event.user_id.trim() !== "" 
+            ? event.user_id 
+            : "";
+
+          return {
+            tenant_id: event.tenant_id,
+            project_id: event.project_id,
+            environment: event.environment,
+            trace_id: event.trace_id,
+            span_id: event.span_id,
+            parent_span_id: event.parent_span_id ?? null,
+            timestamp: event.timestamp,
+            event_type: event.event_type,
+            // CRITICAL: conversation_id, session_id, and user_id are REQUIRED (not nullable) in Tinybird
+            // Preserve actual values when available, use empty string only as fallback
+            conversation_id: conversationId,
+            session_id: sessionId,
+            user_id: userId,
+            agent_name: event.agent_name ?? null,
+            version: event.version ?? null,
+            route: event.route ?? null,
+            // Clean null values from attributes before stringifying (for Tinybird strict type checking)
+            attributes_json: JSON.stringify(cleanNullValues(event.attributes)),
+          };
+        }
       );
 
       // Format events to omit null fields and ensure required fields are present (for Tinybird strict type checking)
