@@ -60,8 +60,12 @@ export class DeletionService {
       }),
     };
 
+    // Format event before forwarding (ensures required fields are present)
+    const { formatTinybirdEvent } = await import("../utils/tinybirdEventFormatter.js");
+    const formattedTombstoneEvent = formatTinybirdEvent(tombstoneEvent);
+
     try {
-      await CanonicalEventService.forwardSingleEvent(tombstoneEvent);
+      await CanonicalEventService.forwardToTinybird([formattedTombstoneEvent]);
     } catch (error) {
       console.error("[DeletionService] Failed to write tombstone event (non-fatal):", error);
       // Don't throw - Postgres update is the source of truth
