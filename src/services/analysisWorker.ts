@@ -383,9 +383,11 @@ async function storeAnalysisSignals(
     parent_span_id: null,
     timestamp: signal.timestamp,
     event_type: "error" as EventType, // Using error type as placeholder for signals
-    conversation_id: job.conversation_id || null,
-    session_id: job.session_id || null,
-    user_id: job.user_id || null,
+    // CRITICAL: conversation_id, session_id, and user_id are REQUIRED (not nullable) in Tinybird
+    // Use empty strings instead of null
+    conversation_id: job.conversation_id || "",
+    session_id: job.session_id || "",
+    user_id: job.user_id || "",
     agent_name: job.agent_name || null,
     version: job.version || null,
     route: job.route || null,
@@ -401,8 +403,12 @@ async function storeAnalysisSignals(
     }),
   }));
 
+  // Format signals before forwarding (ensures required fields are present)
+  const { formatTinybirdEvents } = await import("../utils/tinybirdEventFormatter.js");
+  const formattedSignalEvents = formatTinybirdEvents(signalEvents);
+
   try {
-    await CanonicalEventService.forwardToTinybird(signalEvents);
+    await CanonicalEventService.forwardToTinybird(formattedSignalEvents);
   } catch (error) {
     console.error(
       `[AnalysisWorker] Failed to store analysis signals for trace ${job.trace_id}:`,

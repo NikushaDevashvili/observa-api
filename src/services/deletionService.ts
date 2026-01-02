@@ -43,9 +43,11 @@ export class DeletionService {
       parent_span_id: null,
       timestamp: new Date().toISOString(),
       event_type: "trace_end" as EventType, // Use trace_end as tombstone marker
-      conversation_id: null,
-      session_id: null,
-      user_id: params.userId || null,
+      // CRITICAL: conversation_id, session_id, and user_id are REQUIRED (not nullable) in Tinybird
+      // Use empty strings instead of null
+      conversation_id: "",
+      session_id: "",
+      user_id: params.userId || "",
       agent_name: null,
       version: null,
       route: null,

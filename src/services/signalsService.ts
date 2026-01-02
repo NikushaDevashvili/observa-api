@@ -242,9 +242,11 @@ export class SignalsService {
         parent_span_id: null,
         timestamp: signal.timestamp,
         event_type: "error" as EventType, // Use error type as placeholder for signals
-        conversation_id: null,
-        session_id: null,
-        user_id: null,
+        // CRITICAL: conversation_id, session_id, and user_id are REQUIRED (not nullable) in Tinybird
+        // Use empty strings instead of null
+        conversation_id: "",
+        session_id: "",
+        user_id: "",
         agent_name: null,
         version: null,
         route: null,
@@ -259,9 +261,13 @@ export class SignalsService {
         }),
       }));
 
+      // Format signals before forwarding (ensures required fields are present)
+      const { formatTinybirdEvents } = await import("../utils/tinybirdEventFormatter.js");
+      const formattedSignalEvents = formatTinybirdEvents(signalEvents);
+
       // Forward signals to Tinybird
       try {
-        await CanonicalEventService.forwardToTinybird(signalEvents);
+        await CanonicalEventService.forwardToTinybird(formattedSignalEvents);
       } catch (error) {
         console.error("[SignalsService] Failed to store signals:", error);
         // Don't throw - signal storage failure shouldn't break ingestion
