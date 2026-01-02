@@ -342,7 +342,7 @@ function generateTraceWithIssues(traceIndex) {
 
 // Send events
 async function sendEvents(events, apiKey) {
-  const response = await fetch(`${API_URL}/api/v1/events`, {
+  const response = await fetch(`${API_URL}/api/v1/events/ingest`, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
