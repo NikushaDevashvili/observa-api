@@ -271,9 +271,11 @@ router.post(
           parent_span_id: event.parent_span_id ?? null,
           timestamp: event.timestamp,
           event_type: event.event_type,
-          conversation_id: event.conversation_id ?? null,
-          session_id: event.session_id ?? null,
-          user_id: event.user_id ?? null,
+          // CRITICAL: conversation_id, session_id, and user_id are REQUIRED (not nullable) in Tinybird
+          // Convert null/undefined to empty strings BEFORE creating TinybirdCanonicalEvent
+          conversation_id: event.conversation_id ?? "",
+          session_id: event.session_id ?? "",
+          user_id: event.user_id ?? "",
           agent_name: event.agent_name ?? null,
           version: event.version ?? null,
           route: event.route ?? null,
@@ -282,7 +284,7 @@ router.post(
         })
       );
 
-      // Format events to omit null fields (for Tinybird strict type checking)
+      // Format events to omit null fields and ensure required fields are present (for Tinybird strict type checking)
       const formattedEvents = formatTinybirdEvents(tinybirdEvents);
 
       // Forward to Tinybird (use formatted events, not raw tinybirdEvents)
