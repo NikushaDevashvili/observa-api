@@ -101,8 +101,12 @@ export class SignalsQueryService {
       for (const event of events) {
         try {
           const attributes = JSON.parse(event.attributes_json);
-          if (attributes.signal) {
-            const signalData = attributes.signal;
+          // attributes_json can legally be "null" (JSON.parse -> null) or otherwise not an object
+          if (!attributes || typeof attributes !== "object") {
+            continue;
+          }
+          const signalData = (attributes as any).signal;
+          if (signalData) {
 
             // Filter by signal name if specified
             if (signalNames && signalNames.length > 0 && !signalNames.includes(signalData.signal_name)) {

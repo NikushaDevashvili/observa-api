@@ -79,8 +79,8 @@ export class DashboardMetricsService {
     }
 
     // Extract latency_ms from attributes_json.llm_call.latency_ms
-    // ClickHouse/Tinybird JSON functions (use camelCase: JSONExtractString, not JSONExtractString)
-    const latencyExpr = `CAST(JSONExtractString(attributes_json, '$.llm_call.latency_ms') AS Float64)`;
+    // Use toFloat64OrNull to avoid query failure when the value is missing/empty/non-numeric.
+    const latencyExpr = `toFloat64OrNull(JSONExtractString(attributes_json, '$.llm_call.latency_ms'))`;
 
     if (groupBy === "model") {
       // Grouped query by model
@@ -334,7 +334,8 @@ export class DashboardMetricsService {
     }
 
     // Extract cost from attributes_json.llm_call.cost
-    const costExpr = `CAST(JSONExtractString(attributes_json, '$.llm_call.cost') AS Float64)`;
+    // Use toFloat64OrNull to avoid query failure when the value is missing/empty/non-numeric.
+    const costExpr = `toFloat64OrNull(JSONExtractString(attributes_json, '$.llm_call.cost'))`;
     const modelExpr = `JSONExtractString(attributes_json, '$.llm_call.model')`;
 
     try {
@@ -428,9 +429,10 @@ export class DashboardMetricsService {
     }
 
     // Extract token fields from attributes_json.llm_call
-    const totalTokensExpr = `CAST(JSONExtractString(attributes_json, '$.llm_call.total_tokens') AS Int64)`;
-    const inputTokensExpr = `CAST(JSONExtractString(attributes_json, '$.llm_call.input_tokens') AS Int64)`;
-    const outputTokensExpr = `CAST(JSONExtractString(attributes_json, '$.llm_call.output_tokens') AS Int64)`;
+    // Use toInt64OrNull to avoid query failure when the value is missing/empty/non-numeric.
+    const totalTokensExpr = `toInt64OrNull(JSONExtractString(attributes_json, '$.llm_call.total_tokens'))`;
+    const inputTokensExpr = `toInt64OrNull(JSONExtractString(attributes_json, '$.llm_call.input_tokens'))`;
+    const outputTokensExpr = `toInt64OrNull(JSONExtractString(attributes_json, '$.llm_call.output_tokens'))`;
     const modelExpr = `JSONExtractString(attributes_json, '$.llm_call.model')`;
 
     const sql = `

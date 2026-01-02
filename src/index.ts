@@ -237,6 +237,7 @@ app.get("/", (req, res) => {
     status: "ok",
     endpoints: {
       health: "/health",
+      version: "/api/v1/version",
       metrics: "/api/v1/metrics",
       auth: "/api/v1/auth",
       analytics: "/api/v1/analytics",
@@ -254,6 +255,29 @@ app.get("/", (req, res) => {
 // Health check
 app.get("/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+// Build/Deploy metadata (helps verify which commit is currently running in Vercel)
+// This route intentionally does NOT require DB schema initialization.
+app.get("/api/v1/version", (req, res) => {
+  res.json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    git: {
+      sha:
+        process.env.VERCEL_GIT_COMMIT_SHA ||
+        process.env.GIT_COMMIT_SHA ||
+        null,
+      ref: process.env.VERCEL_GIT_COMMIT_REF || null,
+    },
+    vercel: {
+      deploymentId: process.env.VERCEL_DEPLOYMENT_ID || null,
+      env: process.env.VERCEL_ENV || null,
+    },
+    runtime: {
+      node: process.version,
+    },
+  });
 });
 
 // Schema initialization endpoint (for manual trigger)
@@ -329,6 +353,7 @@ app.use(async (req, res, next) => {
   if (
     req.path === "/health" ||
     req.path === "/" ||
+    req.path === "/api/v1/version" ||
     req.path === "/api/v1/admin/init-schema" ||
     req.path.startsWith("/diagnostics")
   ) {
