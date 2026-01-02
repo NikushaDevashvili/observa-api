@@ -203,11 +203,17 @@ export class DashboardMetricsService {
     }
 
     if (startTime) {
-      baseWhereClause += ` AND timestamp >= '${startTime.replace(/'/g, "''")}'`;
+      baseWhereClause += ` AND timestamp >= parseDateTime64BestEffort('${startTime.replace(
+        /'/g,
+        "''"
+      )}', 3)`;
     }
 
     if (endTime) {
-      baseWhereClause += ` AND timestamp <= '${endTime.replace(/'/g, "''")}'`;
+      baseWhereClause += ` AND timestamp <= parseDateTime64BestEffort('${endTime.replace(
+        /'/g,
+        "''"
+      )}', 3)`;
     }
 
     try {

@@ -100,13 +100,22 @@ export class SignalsQueryService {
       const signals: Signal[] = [];
       for (const event of events) {
         try {
-          const attributes = JSON.parse(event.attributes_json);
-          // attributes_json can legally be "null" (JSON.parse -> null) or otherwise not an object
-          if (!attributes || typeof attributes !== "object") {
+          const raw = (event as any)?.attributes_json;
+          if (raw === null || raw === undefined) {
             continue;
           }
-          const signalData = (attributes as any).signal;
-          if (signalData) {
+          // Tinybird can return NULLs depending on query/output mode; be defensive.
+          const rawStr = typeof raw === "string" ? raw : String(raw);
+          let attributes: any;
+          try {
+            attributes = JSON.parse(rawStr);
+          } catch {
+            // Skip invalid JSON silently (avoid log spam in prod)
+            continue;
+          }
+
+          const signalData = attributes?.signal;
+          if (signalData && typeof signalData === "object") {
 
             // Filter by signal name if specified
             if (signalNames && signalNames.length > 0 && !signalNames.includes(signalData.signal_name)) {
@@ -132,8 +141,7 @@ export class SignalsQueryService {
             });
           }
         } catch (parseError) {
-          // Skip events with invalid JSON
-          console.warn(`[SignalsQueryService] Failed to parse signal from event:`, parseError);
+          // Skip malformed rows (avoid log spam in prod)
           continue;
         }
       }
