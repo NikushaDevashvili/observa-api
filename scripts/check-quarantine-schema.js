@@ -46,3 +46,4 @@ console.log("2. Check Tinybird datasource schema (Schema tab)");
 console.log("3. Compare field types: String vs Nullable(String), etc.");
 console.log("4. Check if event_type enum values match");
 
+

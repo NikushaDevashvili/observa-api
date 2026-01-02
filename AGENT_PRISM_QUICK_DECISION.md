@@ -221,3 +221,5 @@ If **NO to adoption:**
 6. Low risk (can rollback, incremental possible)
 
 **Start with a 1-week proof of concept to validate the approach before committing to full migration.**
+
+

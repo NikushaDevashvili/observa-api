@@ -73,3 +73,4 @@ What format does Tinybird expect for `timestamp`?
 
 Once you share the schema details, I'll fix the code to match exactly what Tinybird expects.
 
+

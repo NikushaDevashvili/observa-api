@@ -85,3 +85,4 @@ Our code sends events like this:
 3. **Check the Schema tab** in Tinybird to see field types
 4. We'll fix the code based on the actual schema requirements
 
+

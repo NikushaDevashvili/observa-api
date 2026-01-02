@@ -583,3 +583,4 @@ curl -X GET "http://localhost:3000/api/v1/issues?severity=high&limit=50" \
 - ✅ Dashboard metrics service
 
 **Ready for:** Frontend integration and dashboard UI implementation
+

@@ -225,3 +225,5 @@ traceRecord.spansCount = totalSpansCount;
 - `ed2498f`: fix: Add status, tokensCount, and cost fields to TraceSpan
 - `a7794a6`: feat: Add input, output, and raw fields to TraceSpan + improve span type detection + fix spansCount
 
+
+

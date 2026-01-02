@@ -233,33 +233,79 @@ export class SignalsService {
         // Get environment from first event (all events in batch should have same env)
         const environment = events.length > 0 ? events[0].environment : "prod";
 
-        const signalEvents: TinybirdCanonicalEvent[] = signals.map((signal) => ({
-        tenant_id: signal.tenant_id,
-        project_id: signal.project_id,
-        environment: environment,
-        trace_id: signal.trace_id,
-        span_id: signal.span_id,
-        parent_span_id: null,
-        timestamp: signal.timestamp,
-        event_type: "error" as EventType, // Use error type as placeholder for signals
-        // CRITICAL: conversation_id, session_id, and user_id are REQUIRED (not nullable) in Tinybird
-        // Use empty strings instead of null
-        conversation_id: "",
-        session_id: "",
-        user_id: "",
-        agent_name: null,
-        version: null,
-        route: null,
-        attributes_json: JSON.stringify({
-          signal: {
-            signal_name: signal.signal_name,
-            signal_type: signal.signal_type,
-            signal_value: signal.signal_value,
-            signal_severity: signal.signal_severity,
-            metadata: signal.metadata,
-          },
-        }),
-      }));
+        // Create a map to look up original events by trace_id + span_id
+        // This allows signals to inherit conversation_id, session_id, and user_id from source events
+        const eventMap = new Map<string, TinybirdCanonicalEvent>();
+        for (const event of events) {
+          const key = `${event.trace_id}:${event.span_id}`;
+          // Use the first event with this key (prefer events with non-empty conversation/session/user IDs)
+          if (!eventMap.has(key)) {
+            eventMap.set(key, event);
+          } else {
+            // Prefer events with actual conversation/session/user IDs over empty strings
+            const existing = eventMap.get(key)!;
+            const hasExistingValues = 
+              (existing.conversation_id && existing.conversation_id.trim() !== "") ||
+              (existing.session_id && existing.session_id.trim() !== "") ||
+              (existing.user_id && existing.user_id.trim() !== "");
+            const hasNewValues = 
+              (event.conversation_id && event.conversation_id.trim() !== "") ||
+              (event.session_id && event.session_id.trim() !== "") ||
+              (event.user_id && event.user_id.trim() !== "");
+            if (!hasExistingValues && hasNewValues) {
+              eventMap.set(key, event);
+            }
+          }
+        }
+
+        const signalEvents: TinybirdCanonicalEvent[] = signals.map((signal) => {
+          // Find the original event that generated this signal
+          const key = `${signal.trace_id}:${signal.span_id}`;
+          const sourceEvent = eventMap.get(key);
+          
+          // Inherit conversation_id, session_id, user_id from source event
+          // Use empty string only if source event doesn't have them
+          // CRITICAL: These fields are REQUIRED (not nullable) in Tinybird
+          const conversationId = sourceEvent?.conversation_id && 
+            sourceEvent.conversation_id.trim() !== "" 
+            ? sourceEvent.conversation_id 
+            : "";
+          const sessionId = sourceEvent?.session_id && 
+            sourceEvent.session_id.trim() !== "" 
+            ? sourceEvent.session_id 
+            : "";
+          const userId = sourceEvent?.user_id && 
+            sourceEvent.user_id.trim() !== "" 
+            ? sourceEvent.user_id 
+            : "";
+
+          return {
+            tenant_id: signal.tenant_id,
+            project_id: signal.project_id,
+            environment: environment,
+            trace_id: signal.trace_id,
+            span_id: signal.span_id,
+            parent_span_id: null,
+            timestamp: signal.timestamp,
+            event_type: "error" as EventType, // Use error type as placeholder for signals
+            // Inherit conversation/session/user IDs from source event (required fields)
+            conversation_id: conversationId,
+            session_id: sessionId,
+            user_id: userId,
+            agent_name: null,
+            version: null,
+            route: null,
+            attributes_json: JSON.stringify({
+              signal: {
+                signal_name: signal.signal_name,
+                signal_type: signal.signal_type,
+                signal_value: signal.signal_value,
+                signal_severity: signal.signal_severity,
+                metadata: signal.metadata,
+              },
+            }),
+          };
+        });
 
       // Format signals before forwarding (ensures required fields are present)
       const { formatTinybirdEvents } = await import("../utils/tinybirdEventFormatter.js");

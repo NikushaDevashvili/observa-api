@@ -211,3 +211,5 @@ All visual elements match the expected UI from the reference images:
 
 The implementation correctly uses agent-prism's theme system with CSS variables, ensuring consistent colors and styling throughout the trace visualization. All visual enhancements from the reference images are properly implemented and should render correctly in the UI.
 
+
+

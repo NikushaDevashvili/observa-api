@@ -37,3 +37,4 @@ process.on("SIGINT", async () => {
 });
 
 console.log("✅ Analysis Worker started and listening for jobs");
+

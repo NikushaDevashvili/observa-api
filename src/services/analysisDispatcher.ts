@@ -324,3 +324,4 @@ export async function closeAnalysisQueue(): Promise<void> {
     redisClient = null;
   }
 }
+

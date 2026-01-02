@@ -434,6 +434,33 @@ async function storeTraceSummaries(
     const sessionId = llmCallEvent.session_id;
     const userId = llmCallEvent.user_id;
 
+    // --- Basic "issues" detection (10-minute dashboard path) ---
+    // We compute a minimal issues summary from canonical events and store it into Postgres
+    // so the dashboard can show non-zero counts even if Tinybird signals/queries lag.
+    const errorEvents = traceEvents.filter((e) => e.event_type === "error");
+    const errorTypes: Record<string, number> = {};
+    for (const e of errorEvents) {
+      const t = e.attributes?.error?.error_type || "error";
+      errorTypes[t] = (errorTypes[t] || 0) + 1;
+    }
+
+    const toolCalls = traceEvents.filter((e) => e.event_type === "tool_call");
+    const toolFailures = toolCalls.filter(
+      (e) =>
+        e.attributes?.tool_call?.result_status &&
+        e.attributes.tool_call.result_status !== "success"
+    );
+    const toolTimeouts = toolCalls.filter(
+      (e) => e.attributes?.tool_call?.result_status === "timeout"
+    );
+
+    const hasIssues =
+      errorEvents.length > 0 || toolFailures.length > 0 || toolTimeouts.length > 0;
+    const derivedStatus = hasIssues ? 500 : 200;
+    const derivedStatusText = hasIssues
+      ? `error:${Object.keys(errorTypes)[0] || "unknown"}`
+      : "OK";
+
     // Get message index from trace_start metadata if available
     let messageIndex: number | null = null;
     if (
@@ -473,11 +500,20 @@ async function storeTraceSummaries(
       latencyMs,
       timeToFirstTokenMs: null, // Not available in canonical events
       streamingDurationMs: null, // Not available in canonical events
-      status: 200,
-      statusText: "OK",
+      status: derivedStatus,
+      statusText: derivedStatusText,
       finishReason: llmAttrs.finish_reason || null,
       responseId: llmAttrs.response_id || null,
       systemFingerprint: llmAttrs.system_fingerprint || null,
+      metadata: {
+        issues: {
+          has_issues: hasIssues,
+          error_events: errorEvents.length,
+          error_types: errorTypes,
+          tool_failures: toolFailures.length,
+          tool_timeouts: toolTimeouts.length,
+        },
+      },
       conversationId: conversationId || undefined,
       sessionId: sessionId || undefined,
       userId: userId || undefined,
@@ -510,7 +546,7 @@ async function storeTraceSummaries(
             traceData.tokensTotal ?? null,
             traceData.model || null
           ),
-          hasIssues: false, // Will be updated after analysis
+          hasIssues, // Basic detection from canonical events
         });
 
         console.log(

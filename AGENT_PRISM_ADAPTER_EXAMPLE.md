@@ -543,3 +543,5 @@ describe("Adapter", () => {
 3. Test with real trace data
 4. Integrate with TraceViewer component
 5. Handle edge cases (missing fields, null values, etc.)
+
+

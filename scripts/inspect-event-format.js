@@ -84,3 +84,4 @@ console.log(JSON.stringify(attrsAfter, null, 2));
 console.log("\n\n📋 Final NDJSON format (what gets sent to Tinybird):\n");
 console.log(JSON.stringify(formatted));
 
+

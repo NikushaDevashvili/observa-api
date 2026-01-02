@@ -145,3 +145,4 @@
 - [ ] Signals are stored correctly
 - [ ] Backward compatibility maintained (old analysis_results still readable)
 
+

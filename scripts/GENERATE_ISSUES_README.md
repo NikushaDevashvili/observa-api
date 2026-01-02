@@ -141,3 +141,4 @@ The `SignalsService` automatically generates signals from the events:
 - Check that events have the required fields (latency_ms, cost, tokens, etc.)
 - Verify signal thresholds match your data (e.g., latency >5s, cost >$10)
 
+
