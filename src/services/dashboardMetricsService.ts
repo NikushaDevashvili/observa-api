@@ -7,6 +7,7 @@
 
 import { query } from "../db/client.js";
 import { SignalsQueryService } from "./signalsQueryService.js";
+import { TinybirdRepository } from "./tinybirdRepository.js";
 
 export interface LatencyMetrics {
   p50: number;
@@ -407,7 +408,7 @@ export class DashboardMetricsService {
   }
 
   /**
-   * Get trace count for a time period
+   * Get trace count for a time period from Tinybird canonical_events
    */
   static async getTraceCount(
     tenantId: string,
@@ -415,36 +416,27 @@ export class DashboardMetricsService {
     startTime?: string,
     endTime?: string
   ): Promise<number> {
-    const params: any[] = [tenantId];
-    let paramIndex = 1;
+    const escapedTenantId = tenantId.replace(/'/g, "''");
+    const escapedProjectId = projectId ? projectId.replace(/'/g, "''") : null;
 
-    // Build WHERE clause
-    let whereClause = "WHERE tenant_id = $1";
-
-    if (projectId) {
-      paramIndex++;
-      params.push(projectId);
-      whereClause += ` AND project_id = $${paramIndex}`;
-    }
-
-    if (startTime) {
-      paramIndex++;
-      params.push(startTime);
-      whereClause += ` AND COALESCE(timestamp, analyzed_at) >= $${paramIndex}::timestamp`;
-    }
-
-    if (endTime) {
-      paramIndex++;
-      params.push(endTime);
-      whereClause += ` AND COALESCE(timestamp, analyzed_at) <= $${paramIndex}::timestamp`;
-    }
-
-    const sql = `SELECT COUNT(DISTINCT trace_id) as count FROM analysis_results ${whereClause}`;
+    let sql = `
+      SELECT count(DISTINCT trace_id) as count
+      FROM canonical_events
+      WHERE tenant_id = '${escapedTenantId}'
+        AND event_type IN ('trace_start', 'llm_call')
+        ${escapedProjectId ? `AND project_id = '${escapedProjectId}'` : ""}
+        ${startTime ? `AND timestamp >= '${startTime.replace(/'/g, "''")}'` : ""}
+        ${endTime ? `AND timestamp <= '${endTime.replace(/'/g, "''")}'` : ""}
+    `;
 
     try {
-      const result = await query<{ count: string }>(sql, params);
-      const count = parseInt(result[0]?.count || "0", 10);
-      return count;
+      const result = await TinybirdRepository.rawQuery(sql, {
+        tenantId,
+        projectId: projectId || undefined,
+      });
+      // Handle Tinybird response format
+      const results = Array.isArray(result) ? result : (result?.data || []);
+      return parseInt(results[0]?.count || "0", 10);
     } catch (error) {
       console.error(
         "[DashboardMetricsService] Failed to get trace count:",
