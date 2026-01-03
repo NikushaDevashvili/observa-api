@@ -123,10 +123,18 @@ export class TinybirdRepository {
     // SECURITY: Additional check - ensure tenant_id appears in WHERE clause context
     // This prevents injection via comments or other SQL manipulation
     const whereIndex = sqlLower.indexOf("where");
-    const tenantIdIndex = sqlLower.indexOf("tenant_id");
-    if (whereIndex === -1 || (tenantIdIndex !== -1 && tenantIdIndex < whereIndex)) {
+    if (whereIndex === -1) {
       throw new Error(
-        "TinybirdRepository.rawQuery: tenant_id filter must appear after WHERE clause"
+        "TinybirdRepository.rawQuery: SQL must include a WHERE clause"
+      );
+    }
+    
+    // Check if tenant_id appears after WHERE (allowing for whitespace/newlines)
+    const afterWhereClause = sqlLower.substring(whereIndex);
+    const tenantIdInWhere = afterWhereClause.includes("tenant_id");
+    if (!tenantIdInWhere) {
+      throw new Error(
+        "TinybirdRepository.rawQuery: tenant_id filter must appear in WHERE clause"
       );
     }
 
