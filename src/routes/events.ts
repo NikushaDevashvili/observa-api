@@ -478,8 +478,13 @@ function calculateCost(
   const modelPricing: Record<string, number> = {
     "gpt-4": 0.03,
     "gpt-4-turbo": 0.01,
+    "gpt-4o": 0.015,
+    "gpt-4o-mini": 0.003,
     "gpt-3.5-turbo": 0.002,
     "gpt-3.5": 0.002,
+    "claude-3-opus": 0.03,
+    "claude-3-sonnet": 0.012,
+    "claude-3-haiku": 0.0025,
   };
 
   const pricePer1K = modelPricing[model.toLowerCase()] || 0.002;

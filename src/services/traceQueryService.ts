@@ -26,6 +26,13 @@ export interface TraceSummary {
   tokens_prompt?: number | null;
   tokens_completion?: number | null;
   total_cost?: number | null; // Aggregated cost from all LLM calls
+  estimated_cost_usd?: number | null; // Estimated cost from tokens_total+model (fallback)
+  issue_count?: number | null; // Count of issue flags on the trace
+  message_index?: number | null;
+  response_length?: number | null;
+  time_to_first_token_ms?: number | null;
+  quality_score?: number | null;
+  status?: number | null;
 
   // From analysis_results (if available)
   is_hallucination?: boolean | null;
@@ -44,55 +51,444 @@ export interface TraceSummary {
   environment?: string | null;
 }
 
-export class TraceQueryService {
-  /**
-   * Get trace summaries for a tenant/project
-   *
-   * NOTE: Currently falls back to analysis_results table for backward compatibility.
-   * TODO: Migrate to canonical events from Tinybird once data migration is complete.
-   */
-  static async getTraces(
-    tenantId: string,
-    projectId?: string | null,
-    limit: number = 50,
-    offset: number = 0,
-    issueType?: string
-  ): Promise<{ traces: TraceSummary[]; total: number }> {
-    try {
-      // For now, query from analysis_results table (backward compatibility)
-      // TODO: Once canonical events migration is complete, query from Tinybird instead
-      let whereClause = `WHERE tenant_id = $1`;
-      const params: any[] = [tenantId];
-      let paramIndex = 2;
+export type TraceListSortBy =
+  | "timestamp"
+  | "latency"
+  | "cost"
+  | "quality_score"
+  | "tokens_total"
+  | "issue_count";
 
-      if (projectId) {
-        whereClause += ` AND project_id = $${paramIndex}`;
-        params.push(projectId);
-        paramIndex++;
+export interface TraceListQueryOptions {
+  projectId?: string | null;
+  limit?: number;
+  offset?: number;
+  issueType?: string;
+
+  startDate?: string;
+  endDate?: string;
+  models?: string[];
+  userIds?: string[];
+  environments?: string[];
+  conversationId?: string;
+
+  minCost?: number;
+  maxCost?: number;
+  minLatencyMs?: number;
+  maxLatencyMs?: number;
+  minQualityScore?: number;
+  maxQualityScore?: number;
+
+  search?: string;
+
+  sortBy?: TraceListSortBy;
+  sortOrder?: "asc" | "desc";
+  includeStats?: boolean;
+}
+
+export interface TraceListStats {
+  totalTraces: number;
+  avgLatencyMs: number | null;
+  totalCostUsd: number | null;
+  avgQualityScore: number | null;
+  issueCount: number;
+  errorRate: number; // percentage
+}
+
+export class TraceQueryService {
+  private static normalizeList(values: unknown): string[] | undefined {
+    if (values === undefined || values === null) return undefined;
+    if (Array.isArray(values)) {
+      return values
+        .flatMap((v) => String(v).split(","))
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+    return String(values)
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  private static estimatedCostSql(): string {
+    // Estimated cost based on total tokens only (approximation).
+    // NOTE: This is intentionally simple. For exact costs, rely on per-span cost
+    // captured in canonical events (llm_call cost attributes).
+    return `
+      (COALESCE(tokens_total, 0)::numeric / 1000.0) *
+      (
+        CASE
+          WHEN lower(model) = 'gpt-4' THEN 0.03
+          WHEN lower(model) = 'gpt-4-turbo' THEN 0.01
+          WHEN lower(model) = 'gpt-4o' THEN 0.015
+          WHEN lower(model) = 'gpt-4o-mini' THEN 0.003
+          WHEN lower(model) = 'gpt-3.5-turbo' THEN 0.002
+          WHEN lower(model) = 'gpt-3.5' THEN 0.002
+          WHEN lower(model) = 'claude-3-opus' THEN 0.03
+          WHEN lower(model) = 'claude-3-sonnet' THEN 0.012
+          WHEN lower(model) = 'claude-3-haiku' THEN 0.0025
+          ELSE 0.002
+        END
+      )
+    `;
+  }
+
+  private static issueCountSql(): string {
+    return `
+      (
+        (CASE WHEN is_hallucination = true THEN 1 ELSE 0 END) +
+        (CASE WHEN has_context_drop = true THEN 1 ELSE 0 END) +
+        (CASE WHEN has_faithfulness_issue = true THEN 1 ELSE 0 END) +
+        (CASE WHEN has_model_drift = true THEN 1 ELSE 0 END) +
+        (CASE WHEN has_cost_anomaly = true THEN 1 ELSE 0 END) +
+        (CASE WHEN has_latency_anomaly = true THEN 1 ELSE 0 END) +
+        (CASE WHEN has_quality_degradation = true THEN 1 ELSE 0 END) +
+        (CASE WHEN has_prompt_injection = true THEN 1 ELSE 0 END) +
+        (CASE WHEN has_context_overflow = true THEN 1 ELSE 0 END)
+      )
+    `;
+  }
+
+  private static buildPerformanceAnalysis(summary: any, allSpans: any[]): any {
+    const totalLatencyMs =
+      typeof summary?.total_latency_ms === "number" ? summary.total_latency_ms : null;
+    let slowest = null as any;
+    for (const s of allSpans) {
+      const d = typeof s?.duration_ms === "number" ? s.duration_ms : null;
+      if (d === null) continue;
+      if (!slowest || d > slowest.duration_ms) slowest = s;
+    }
+
+    const bottleneckDurationMs =
+      typeof slowest?.duration_ms === "number" ? slowest.duration_ms : null;
+    const bottleneckPercentage =
+      totalLatencyMs && bottleneckDurationMs !== null && totalLatencyMs > 0
+        ? (bottleneckDurationMs / totalLatencyMs) * 100
+        : null;
+
+    const suggestions: string[] = [];
+    if (slowest) {
+      const name = slowest.name || slowest.displayName || slowest.type || "span";
+      if (bottleneckPercentage !== null && bottleneckPercentage >= 50) {
+        suggestions.push(
+          `Most time is spent in "${name}" (~${bottleneckPercentage.toFixed(
+            1
+          )}% of total). Consider caching, batching, or reducing work in this step.`
+        );
+      } else if (bottleneckDurationMs !== null && bottleneckDurationMs >= 1000) {
+        suggestions.push(
+          `"${name}" took ${bottleneckDurationMs}ms. Consider adding timeouts, retries with backoff, and caching where applicable.`
+        );
       }
 
-      // Filter by issue type
-      if (issueType) {
-        switch (issueType) {
-          case "hallucination":
-            whereClause += ` AND is_hallucination = true`;
-            break;
-          case "context_drop":
-            whereClause += ` AND has_context_drop = true`;
-            break;
-          case "faithfulness":
-            whereClause += ` AND has_faithfulness_issue = true`;
-            break;
-          case "drift":
-            whereClause += ` AND has_model_drift = true`;
-            break;
-          case "cost_anomaly":
-            whereClause += ` AND has_cost_anomaly = true`;
-            break;
+      const t = String(slowest.type || slowest.event_type || "").toLowerCase();
+      if (t.includes("retrieval")) {
+        suggestions.push(
+          `Retrieval was a bottleneck. Consider smaller top-k, better indexes, caching, or pre-filtering before retrieval.`
+        );
+      }
+      if (t.includes("tool")) {
+        suggestions.push(
+          `Tool execution was a bottleneck. Consider parallelizing tool calls or adding memoization for deterministic results.`
+        );
+      }
+      if (t.includes("llm")) {
+        suggestions.push(
+          `LLM call was a bottleneck. Consider faster models, shorter prompts, or streaming + early stopping for UX.`
+        );
+      }
+    }
+
+    return {
+      bottleneckSpanId: slowest?.id || slowest?.span_id || null,
+      bottleneckDurationMs,
+      bottleneckPercentage,
+      suggestions,
+    };
+  }
+
+  private static buildCostBreakdown(summary: any, allSpans: any[]): any {
+    let total = typeof summary?.total_cost === "number" ? summary.total_cost : 0;
+    const byType: Record<string, number> = {};
+    const bySpan: Array<{ spanId: string; name: string; costUsd: number }> = [];
+
+    for (const s of allSpans) {
+      // Try multiple locations since span formats differ across paths.
+      const cost =
+        s?.cost_usd ??
+        s?.llm_call?.cost ??
+        s?.details?.cost ??
+        s?.attributes?.cost ??
+        null;
+      const costNum = typeof cost === "number" ? cost : null;
+      if (costNum === null || !Number.isFinite(costNum) || costNum <= 0) continue;
+
+      // Ensure total includes per-span if summary total isn't populated.
+      if (!summary?.total_cost) total += costNum;
+
+      const typeKey = String(s?.type || s?.event_type || "unknown").toLowerCase();
+      byType[typeKey] = (byType[typeKey] || 0) + costNum;
+      bySpan.push({
+        spanId: s?.id || s?.span_id || "unknown",
+        name: s?.displayName || s?.name || typeKey,
+        costUsd: costNum,
+      });
+
+      // Normalize to top-level cost field for frontend convenience
+      if (s.cost_usd === undefined) s.cost_usd = costNum;
+    }
+
+    bySpan.sort((a, b) => b.costUsd - a.costUsd);
+
+    return {
+      totalCostUsd: total > 0 ? Number(total.toFixed(6)) : null,
+      byType: Object.fromEntries(
+        Object.entries(byType).map(([k, v]) => [k, Number(v.toFixed(6))])
+      ),
+      topSpans: bySpan.slice(0, 5),
+    };
+  }
+
+  private static buildTokenEfficiency(summary: any, allSpans: any[]): any {
+    const totalTokens =
+      typeof summary?.total_tokens === "number" ? summary.total_tokens : null;
+
+    let promptTokens = 0;
+    let completionTokens = 0;
+    for (const s of allSpans) {
+      const llm = s?.llm_call || s?.details;
+      const it = llm?.input_tokens ?? llm?.tokens_prompt ?? null;
+      const ot = llm?.output_tokens ?? llm?.tokens_completion ?? null;
+      if (typeof it === "number") promptTokens += it;
+      if (typeof ot === "number") completionTokens += ot;
+    }
+
+    const inputChars = typeof summary?.query === "string" ? summary.query.length : 0;
+    const outputChars =
+      typeof summary?.response === "string" ? summary.response.length : 0;
+    const totalChars = inputChars + outputChars;
+
+    const tokensPerCharacter =
+      totalTokens !== null && totalChars > 0 ? totalTokens / totalChars : null;
+
+    const inputEfficiency =
+      promptTokens > 0 && inputChars > 0 ? promptTokens / inputChars : null;
+    const outputEfficiency =
+      completionTokens > 0 && outputChars > 0 ? completionTokens / outputChars : null;
+
+    // Simple benchmark heuristic
+    let benchmarkComparison: "above_average" | "average" | "below_average" = "average";
+    if (tokensPerCharacter !== null) {
+      if (tokensPerCharacter > 1.2) benchmarkComparison = "below_average";
+      else if (tokensPerCharacter < 0.6) benchmarkComparison = "above_average";
+    }
+
+    return {
+      tokensPerCharacter,
+      inputEfficiency,
+      outputEfficiency,
+      benchmarkComparison,
+    };
+  }
+
+  private static buildQualityExplanation(analysis: any): any | null {
+    if (!analysis) return null;
+    const qualityScore = analysis.qualityScore ?? analysis.quality_score ?? null;
+    const coherence = analysis.coherenceScore ?? analysis.coherence_score ?? null;
+    const relevance = analysis.relevanceScore ?? analysis.relevance_score ?? null;
+    const helpfulness = analysis.helpfulnessScore ?? analysis.helpfulness_score ?? null;
+
+    const scoreExplain = (label: string, score: any): { score: number | null; explanation: string } => {
+      if (typeof score !== "number") {
+        return { score: null, explanation: `${label} score not available.` };
+      }
+      if (score < 0.5) return { score, explanation: `${label} is low; users may perceive this response as weak.` };
+      if (score < 0.7) return { score, explanation: `${label} is moderate; there is room to improve.` };
+      return { score, explanation: `${label} is strong.` };
+    };
+
+    const improvements: string[] = [];
+    if (analysis.hasContextDrop) improvements.push("Improve retrieval quality and ensure relevant context is included.");
+    if (analysis.hasFaithfulnessIssue) improvements.push("Add citations/grounding and tighten instructions to avoid unsupported claims.");
+    if (analysis.hasPromptInjection) improvements.push("Add prompt-injection guardrails and input sanitization.");
+    if (analysis.hasContextOverflow) improvements.push("Reduce prompt size with summarization or better chunk selection.");
+    if (analysis.hasLatencyAnomaly) improvements.push("Optimize slow spans (retrieval/tool/LLM) and add caching where possible.");
+    if (analysis.hasCostAnomaly) improvements.push("Consider cheaper models, shorter prompts, and token budgeting.");
+
+    return {
+      overallScore: typeof qualityScore === "number" ? qualityScore : null,
+      breakdown: {
+        coherence: scoreExplain("Coherence", coherence),
+        relevance: scoreExplain("Relevance", relevance),
+        helpfulness: scoreExplain("Helpfulness", helpfulness),
+      },
+      improvements,
+    };
+  }
+
+  private static buildTraceListWhereClause(
+    tenantId: string,
+    opts: TraceListQueryOptions
+  ): { whereClause: string; params: any[]; nextIndex: number } {
+    let whereClause = `WHERE tenant_id = $1`;
+    const params: any[] = [tenantId];
+    let paramIndex = 2;
+
+    const projectId = opts.projectId ?? null;
+    if (projectId) {
+      whereClause += ` AND project_id = $${paramIndex}`;
+      params.push(projectId);
+      paramIndex++;
+    }
+
+    // Time range (uses timestamp column)
+    if (opts.startDate) {
+      whereClause += ` AND timestamp >= $${paramIndex}`;
+      params.push(new Date(opts.startDate));
+      paramIndex++;
+    }
+    if (opts.endDate) {
+      whereClause += ` AND timestamp <= $${paramIndex}`;
+      params.push(new Date(opts.endDate));
+      paramIndex++;
+    }
+
+    // Multi-select filters
+    if (opts.models && opts.models.length > 0) {
+      whereClause += ` AND lower(model) = ANY($${paramIndex})`;
+      params.push(opts.models.map((m) => m.toLowerCase()));
+      paramIndex++;
+    }
+
+    if (opts.userIds && opts.userIds.length > 0) {
+      whereClause += ` AND user_id = ANY($${paramIndex})`;
+      params.push(opts.userIds);
+      paramIndex++;
+    }
+
+    if (opts.environments && opts.environments.length > 0) {
+      whereClause += ` AND environment = ANY($${paramIndex})`;
+      params.push(opts.environments);
+      paramIndex++;
+    }
+
+    if (opts.conversationId) {
+      whereClause += ` AND conversation_id = $${paramIndex}`;
+      params.push(opts.conversationId);
+      paramIndex++;
+    }
+
+    // Numeric filters
+    if (typeof opts.minLatencyMs === "number") {
+      whereClause += ` AND latency_ms >= $${paramIndex}`;
+      params.push(opts.minLatencyMs);
+      paramIndex++;
+    }
+    if (typeof opts.maxLatencyMs === "number") {
+      whereClause += ` AND latency_ms <= $${paramIndex}`;
+      params.push(opts.maxLatencyMs);
+      paramIndex++;
+    }
+
+    if (typeof opts.minQualityScore === "number") {
+      whereClause += ` AND quality_score >= $${paramIndex}`;
+      params.push(opts.minQualityScore);
+      paramIndex++;
+    }
+    if (typeof opts.maxQualityScore === "number") {
+      whereClause += ` AND quality_score <= $${paramIndex}`;
+      params.push(opts.maxQualityScore);
+      paramIndex++;
+    }
+
+    // Cost filters use estimated cost expression (tokens_total+model)
+    if (typeof opts.minCost === "number") {
+      whereClause += ` AND (${this.estimatedCostSql()}) >= $${paramIndex}`;
+      params.push(opts.minCost);
+      paramIndex++;
+    }
+    if (typeof opts.maxCost === "number") {
+      whereClause += ` AND (${this.estimatedCostSql()}) <= $${paramIndex}`;
+      params.push(opts.maxCost);
+      paramIndex++;
+    }
+
+    // Text search across query/response/context
+    if (opts.search && opts.search.trim().length > 0) {
+      const needle = `%${opts.search.trim()}%`;
+      whereClause += ` AND (query ILIKE $${paramIndex} OR response ILIKE $${paramIndex} OR context ILIKE $${paramIndex})`;
+      params.push(needle);
+      paramIndex++;
+    }
+
+    // Filter by issue type (single or comma-separated)
+    if (opts.issueType) {
+      const issueTypes = this.normalizeList(opts.issueType);
+      if (issueTypes && issueTypes.length > 0) {
+        const issuePredicates: string[] = [];
+        for (const it of issueTypes) {
+          switch (it) {
+            case "hallucination":
+              issuePredicates.push(`is_hallucination = true`);
+              break;
+            case "context_drop":
+              issuePredicates.push(`has_context_drop = true`);
+              break;
+            case "faithfulness":
+              issuePredicates.push(`has_faithfulness_issue = true`);
+              break;
+            case "drift":
+              issuePredicates.push(`has_model_drift = true`);
+              break;
+            case "cost_anomaly":
+              issuePredicates.push(`has_cost_anomaly = true`);
+              break;
+            case "latency_anomaly":
+              issuePredicates.push(`has_latency_anomaly = true`);
+              break;
+            case "quality_degradation":
+              issuePredicates.push(`has_quality_degradation = true`);
+              break;
+          }
+        }
+        if (issuePredicates.length > 0) {
+          whereClause += ` AND (${issuePredicates.join(" OR ")})`;
         }
       }
+    }
 
-      // Get traces from analysis_results
+    return { whereClause, params, nextIndex: paramIndex };
+  }
+
+  static async getTracesV2(
+    tenantId: string,
+    opts: TraceListQueryOptions
+  ): Promise<{ traces: TraceSummary[]; total: number; stats?: TraceListStats }> {
+    try {
+      const limit = typeof opts.limit === "number" ? opts.limit : 50;
+      const offset = typeof opts.offset === "number" ? opts.offset : 0;
+      const sortBy: TraceListSortBy = opts.sortBy || "timestamp";
+      const sortOrder = (opts.sortOrder || "desc").toLowerCase() === "asc" ? "ASC" : "DESC";
+
+      const { whereClause, params, nextIndex } = this.buildTraceListWhereClause(
+        tenantId,
+        opts
+      );
+
+      const estimatedCost = this.estimatedCostSql();
+      const issueCount = this.issueCountSql();
+
+      const sortColumnSql: Record<TraceListSortBy, string> = {
+        timestamp: `COALESCE(timestamp, analyzed_at)`,
+        latency: `latency_ms`,
+        cost: `estimated_cost_usd`,
+        quality_score: `quality_score`,
+        tokens_total: `tokens_total`,
+        issue_count: `issue_count`,
+      };
+
+      const orderBy = `ORDER BY ${sortColumnSql[sortBy]} ${sortOrder} NULLS LAST`;
+
       const traces = await query(
         `SELECT 
           trace_id,
@@ -101,35 +497,84 @@ export class TraceQueryService {
           analyzed_at,
           timestamp,
           model,
+          query,
+          response,
+          finish_reason,
           tokens_total,
           tokens_prompt,
           tokens_completion,
           latency_ms,
+          time_to_first_token_ms,
+          response_length,
+          status,
+          quality_score,
+          message_index,
           is_hallucination,
           hallucination_confidence,
           has_context_drop,
           has_faithfulness_issue,
           has_model_drift,
           has_cost_anomaly,
+          has_latency_anomaly,
+          has_quality_degradation,
+          has_prompt_injection,
+          has_context_overflow,
           context_relevance_score,
           answer_faithfulness_score,
           conversation_id,
           session_id,
           user_id,
-          environment
+          environment,
+          (${estimatedCost})::float8 as estimated_cost_usd,
+          (${issueCount})::int as issue_count
         FROM analysis_results
         ${whereClause}
-        ORDER BY COALESCE(timestamp, analyzed_at) DESC NULLS LAST
-        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+        ${orderBy}
+        LIMIT $${nextIndex} OFFSET $${nextIndex + 1}`,
         [...params, limit, offset]
       );
 
-      // Get total count
       const countResult = await query<{ count: string }>(
         `SELECT COUNT(*) as count FROM analysis_results ${whereClause}`,
         params
       );
       const total = parseInt(countResult[0]?.count || "0", 10);
+
+      let stats: TraceListStats | undefined;
+      if (opts.includeStats) {
+        const statsRows = await query(
+          `SELECT
+            COUNT(*)::int as total_traces,
+            AVG(latency_ms)::float8 as avg_latency_ms,
+            AVG(quality_score)::float8 as avg_quality_score,
+            SUM((${estimatedCost}))::float8 as total_cost_usd,
+            SUM(CASE WHEN (${issueCount}) > 0 THEN 1 ELSE 0 END)::int as issue_count,
+            SUM(CASE WHEN status IS NOT NULL AND status >= 400 THEN 1 ELSE 0 END)::int as error_count
+          FROM analysis_results
+          ${whereClause}`,
+          params
+        );
+        const s = statsRows?.[0] as any;
+        const totalTraces = Number(s?.total_traces || 0);
+        const errorCount = Number(s?.error_count || 0);
+        stats = {
+          totalTraces,
+          avgLatencyMs:
+            s?.avg_latency_ms === null || s?.avg_latency_ms === undefined
+              ? null
+              : Number(s.avg_latency_ms),
+          totalCostUsd:
+            s?.total_cost_usd === null || s?.total_cost_usd === undefined
+              ? null
+              : Number(s.total_cost_usd),
+          avgQualityScore:
+            s?.avg_quality_score === null || s?.avg_quality_score === undefined
+              ? null
+              : Number(s.avg_quality_score),
+          issueCount: Number(s?.issue_count || 0),
+          errorRate: totalTraces > 0 ? (errorCount / totalTraces) * 100 : 0,
+        };
+      }
 
       return {
         traces: traces.map((t: any) => ({
@@ -139,10 +584,20 @@ export class TraceQueryService {
           timestamp: t.timestamp?.toISOString() || new Date().toISOString(),
           analyzed_at: t.analyzed_at?.toISOString() || null,
           model: t.model,
+          query: t.query,
+          response: t.response,
+          finish_reason: t.finish_reason,
           latency_ms: t.latency_ms,
           tokens_total: t.tokens_total,
           tokens_prompt: t.tokens_prompt,
           tokens_completion: t.tokens_completion,
+          time_to_first_token_ms: t.time_to_first_token_ms,
+          response_length: t.response_length,
+          status: t.status,
+          quality_score: t.quality_score,
+          estimated_cost_usd: t.estimated_cost_usd,
+          issue_count: t.issue_count,
+          message_index: t.message_index,
           is_hallucination: t.is_hallucination,
           hallucination_confidence: t.hallucination_confidence,
           has_context_drop: t.has_context_drop || false,
@@ -157,11 +612,35 @@ export class TraceQueryService {
           environment: t.environment,
         })) as TraceSummary[],
         total,
+        stats,
       };
     } catch (error) {
-      console.error("[TraceQueryService] Error querying traces:", error);
+      console.error("[TraceQueryService] Error querying traces v2:", error);
       throw error;
     }
+  }
+
+  /**
+   * Get trace summaries for a tenant/project
+   *
+   * NOTE: Currently falls back to analysis_results table for backward compatibility.
+   * TODO: Migrate to canonical events from Tinybird once data migration is complete.
+   */
+  static async getTraces(
+    tenantId: string,
+    projectId?: string | null,
+    limit: number = 50,
+    offset: number = 0,
+    issueType?: string
+  ): Promise<{ traces: TraceSummary[]; total: number }> {
+    const result = await this.getTracesV2(tenantId, {
+      projectId: projectId ?? null,
+      limit,
+      offset,
+      issueType,
+      includeStats: false,
+    });
+    return { traces: result.traces, total: result.total };
   }
 
   /**
@@ -198,6 +677,80 @@ export class TraceQueryService {
       console.error("[TraceQueryService] Error querying trace detail:", error);
       throw error;
     }
+  }
+
+  static async getConversationContext(params: {
+    tenantId: string;
+    projectId?: string | null;
+    conversationId: string;
+    traceId: string;
+  }): Promise<any> {
+    const { tenantId, projectId, conversationId, traceId } = params;
+
+    let whereClause = `WHERE tenant_id = $1 AND conversation_id = $2`;
+    const values: any[] = [tenantId, conversationId];
+    let idx = 3;
+    if (projectId) {
+      whereClause += ` AND project_id = $${idx}`;
+      values.push(projectId);
+      idx++;
+    }
+
+    const rows = await query(
+      `SELECT trace_id, message_index, timestamp, latency_ms, tokens_total, model, status,
+              is_hallucination, has_context_drop, has_faithfulness_issue, has_model_drift, has_cost_anomaly,
+              has_latency_anomaly, has_quality_degradation, has_prompt_injection, has_context_overflow
+       FROM analysis_results
+       ${whereClause}
+       ORDER BY COALESCE(message_index, 2147483647) ASC, COALESCE(timestamp, analyzed_at) ASC`,
+      values
+    );
+
+    const totalMessages = rows.length;
+    const currentIdx = rows.findIndex((r: any) => r.trace_id === traceId);
+    const current = currentIdx >= 0 ? rows[currentIdx] : null;
+
+    const previousTraceId =
+      currentIdx > 0 ? rows[currentIdx - 1].trace_id : null;
+    const nextTraceId =
+      currentIdx >= 0 && currentIdx < rows.length - 1
+        ? rows[currentIdx + 1].trace_id
+        : null;
+
+    // Aggregate conversation metrics
+    const estimatedCost = this.estimatedCostSql();
+    const issueCount = this.issueCountSql();
+    const metricsRows = await query(
+      `SELECT
+        SUM(tokens_total)::bigint as total_tokens,
+        AVG(latency_ms)::float8 as avg_latency_ms,
+        SUM((${estimatedCost}))::float8 as total_cost_usd,
+        SUM(CASE WHEN (${issueCount}) > 0 THEN 1 ELSE 0 END)::int as issue_count
+      FROM analysis_results
+      ${whereClause}`,
+      values
+    );
+    const m = metricsRows?.[0] as any;
+
+    return {
+      id: conversationId,
+      messageIndex: current?.message_index ?? null,
+      totalMessages,
+      previousTraceId,
+      nextTraceId,
+      conversationMetrics: {
+        totalTokens: m?.total_tokens ? Number(m.total_tokens) : 0,
+        avgLatencyMs:
+          m?.avg_latency_ms === null || m?.avg_latency_ms === undefined
+            ? null
+            : Number(m.avg_latency_ms),
+        totalCostUsd:
+          m?.total_cost_usd === null || m?.total_cost_usd === undefined
+            ? null
+            : Number(m.total_cost_usd),
+        issueCount: Number(m?.issue_count || 0),
+      },
+    };
   }
 
   /**
@@ -1264,6 +1817,12 @@ export class TraceQueryService {
       }
     }
 
+    // Phase 1/2: Enrich with deeper insights for trace detail UX
+    const costBreakdown = this.buildCostBreakdown(summary, allSpans);
+    const performanceAnalysis = this.buildPerformanceAnalysis(summary, allSpans);
+    const tokenEfficiency = this.buildTokenEfficiency(summary, allSpans);
+    const qualityExplanation = this.buildQualityExplanation(analysisData);
+
     // CRITICAL FIX: Return root spans in main spans array to avoid duplicates
     // Frontend renders tree from rootSpans/children, but needs to find spans by ID
     // Solution: Use rootSpans for tree structure, allSpans/spansById for lookup
@@ -1280,6 +1839,10 @@ export class TraceQueryService {
       spansById: spansById,
       signals,
       analysis: analysisData,
+      costBreakdown,
+      performanceAnalysis,
+      tokenEfficiency,
+      qualityExplanation,
       // Metadata about the trace structure
       _meta: {
         totalSpans: allSpans.length,

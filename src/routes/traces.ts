@@ -20,8 +20,13 @@ function calculateCost(tokensTotal: number, model: string): number {
   const modelPricing: Record<string, number> = {
     "gpt-4": 0.03,
     "gpt-4-turbo": 0.01,
+    "gpt-4o": 0.015,
+    "gpt-4o-mini": 0.003,
     "gpt-3.5-turbo": 0.002,
     "gpt-3.5": 0.002,
+    "claude-3-opus": 0.03,
+    "claude-3-sonnet": 0.012,
+    "claude-3-haiku": 0.0025,
   };
 
   const pricePer1K = modelPricing[model.toLowerCase()] || 0.002;
@@ -29,6 +34,42 @@ function calculateCost(tokensTotal: number, model: string): number {
 }
 
 const router = Router();
+
+function parseNumber(value: unknown): number | undefined {
+  if (value === null || value === undefined) return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function parseBool(value: unknown): boolean | undefined {
+  if (value === null || value === undefined) return undefined;
+  const v = String(value).toLowerCase().trim();
+  if (v === "true" || v === "1" || v === "yes") return true;
+  if (v === "false" || v === "0" || v === "no") return false;
+  return undefined;
+}
+
+function parseStringList(value: unknown): string[] | undefined {
+  if (value === null || value === undefined) return undefined;
+  if (Array.isArray(value)) {
+    return value
+      .flatMap((v) => String(v).split(","))
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+  return String(value)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function performanceBadgeFromLatency(latencyMs: unknown): "fast" | "medium" | "slow" | null {
+  const ms = typeof latencyMs === "number" ? latencyMs : null;
+  if (ms === null) return null;
+  if (ms < 500) return "fast";
+  if (ms < 2000) return "medium";
+  return "slow";
+}
 
 /**
  * POST /api/v1/traces/ingest
@@ -342,11 +383,31 @@ router.get("/", async (req: Request, res: Response) => {
       });
     }
 
-    // Get query parameters
+    // Get query parameters (Phase 1/2: advanced filtering + sorting + stats)
     const limit = parseInt(req.query.limit as string) || 50;
     const offset = parseInt(req.query.offset as string) || 0;
     const issueType = req.query.issueType as string | undefined;
     const projectId = req.query.projectId as string | undefined;
+
+    const startDate = req.query.startDate as string | undefined;
+    const endDate = req.query.endDate as string | undefined;
+    const models =
+      parseStringList(req.query.models ?? req.query.model) || undefined;
+    const userIds =
+      parseStringList(req.query.userIds ?? req.query.userId) || undefined;
+    const environments =
+      parseStringList(req.query.environments ?? req.query.environment) || undefined;
+    const conversationId = req.query.conversationId as string | undefined;
+    const minCost = parseNumber(req.query.minCost);
+    const maxCost = parseNumber(req.query.maxCost);
+    const minLatencyMs = parseNumber(req.query.minLatencyMs);
+    const maxLatencyMs = parseNumber(req.query.maxLatencyMs);
+    const minQualityScore = parseNumber(req.query.minQualityScore);
+    const maxQualityScore = parseNumber(req.query.maxQualityScore);
+    const search = req.query.search as string | undefined;
+    const sortBy = (req.query.sortBy as any) || undefined;
+    const sortOrder = (req.query.sortOrder as any) || undefined;
+    const includeStats = parseBool(req.query.includeStats) ?? true;
 
     console.log(
       `[Traces API] Fetching traces for tenant ${
@@ -355,13 +416,28 @@ router.get("/", async (req: Request, res: Response) => {
     );
 
     // Use TraceQueryService for consistent querying
-    const result = await TraceQueryService.getTraces(
-      user.tenantId,
-      projectId || null,
+    const result = await TraceQueryService.getTracesV2(user.tenantId, {
+      projectId: projectId || null,
       limit,
       offset,
-      issueType
-    );
+      issueType,
+      startDate,
+      endDate,
+      models,
+      userIds,
+      environments,
+      conversationId,
+      minCost,
+      maxCost,
+      minLatencyMs,
+      maxLatencyMs,
+      minQualityScore,
+      maxQualityScore,
+      search,
+      sortBy,
+      sortOrder,
+      includeStats,
+    });
 
     // Transform to match frontend expectations (snake_case to camelCase where needed)
     const traces = result.traces.map((trace) => ({
@@ -371,8 +447,24 @@ router.get("/", async (req: Request, res: Response) => {
       analyzed_at: trace.analyzed_at,
       timestamp: trace.timestamp,
       model: trace.model,
+      query: trace.query,
+      response: trace.response,
       tokens_total: trace.tokens_total,
+      tokens_prompt: trace.tokens_prompt,
+      tokens_completion: trace.tokens_completion,
       latency_ms: trace.latency_ms,
+      time_to_first_token_ms: trace.time_to_first_token_ms,
+      response_length: trace.response_length,
+      status: trace.status,
+      quality_score: trace.quality_score,
+      estimated_cost_usd: trace.estimated_cost_usd,
+      issue_count: trace.issue_count,
+      performance_badge: performanceBadgeFromLatency(trace.latency_ms),
+      conversation_id: trace.conversation_id,
+      session_id: trace.session_id,
+      user_id: trace.user_id,
+      message_index: trace.message_index,
+      environment: trace.environment,
       is_hallucination: trace.is_hallucination,
       hallucination_confidence: trace.hallucination_confidence,
       has_context_drop: trace.has_context_drop,
@@ -396,10 +488,284 @@ router.get("/", async (req: Request, res: Response) => {
         offset,
         hasMore: offset + limit < result.total,
       },
+      stats: result.stats || undefined,
     });
   } catch (error) {
     console.error("Error fetching traces:", error);
     res.status(500).json({
+      error: error instanceof Error ? error.message : "Internal server error",
+    });
+  }
+});
+
+/**
+ * GET /api/v1/traces/export
+ * Export traces for the authenticated user (CSV or JSON)
+ *
+ * Query params:
+ * - format=csv|json (default: json)
+ * - supports same filters as GET /api/v1/traces
+ */
+router.get("/export", async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({
+        error: "Missing or invalid Authorization header",
+      });
+    }
+
+    const sessionToken = authHeader.substring(7);
+    const user = await AuthService.validateSession(sessionToken);
+    if (!user) {
+      return res.status(401).json({
+        error: "Invalid or expired session",
+      });
+    }
+
+    const format = String(req.query.format || "json").toLowerCase();
+    const projectId = req.query.projectId as string | undefined;
+
+    const limitRaw = parseInt(req.query.limit as string) || 1000;
+    const limit = Math.min(Math.max(limitRaw, 1), 5000);
+    const offset = parseInt(req.query.offset as string) || 0;
+
+    const startDate = req.query.startDate as string | undefined;
+    const endDate = req.query.endDate as string | undefined;
+    const issueType = req.query.issueType as string | undefined;
+    const models =
+      parseStringList(req.query.models ?? req.query.model) || undefined;
+    const userIds =
+      parseStringList(req.query.userIds ?? req.query.userId) || undefined;
+    const environments =
+      parseStringList(req.query.environments ?? req.query.environment) || undefined;
+    const conversationId = req.query.conversationId as string | undefined;
+    const minCost = parseNumber(req.query.minCost);
+    const maxCost = parseNumber(req.query.maxCost);
+    const minLatencyMs = parseNumber(req.query.minLatencyMs);
+    const maxLatencyMs = parseNumber(req.query.maxLatencyMs);
+    const minQualityScore = parseNumber(req.query.minQualityScore);
+    const maxQualityScore = parseNumber(req.query.maxQualityScore);
+    const search = req.query.search as string | undefined;
+    const sortBy = (req.query.sortBy as any) || undefined;
+    const sortOrder = (req.query.sortOrder as any) || undefined;
+
+    const result = await TraceQueryService.getTracesV2(user.tenantId, {
+      projectId: projectId || null,
+      limit,
+      offset,
+      issueType,
+      startDate,
+      endDate,
+      models,
+      userIds,
+      environments,
+      conversationId,
+      minCost,
+      maxCost,
+      minLatencyMs,
+      maxLatencyMs,
+      minQualityScore,
+      maxQualityScore,
+      search,
+      sortBy,
+      sortOrder,
+      includeStats: false,
+    });
+
+    if (format === "csv") {
+      const headers = [
+        "trace_id",
+        "timestamp",
+        "analyzed_at",
+        "project_id",
+        "environment",
+        "model",
+        "latency_ms",
+        "tokens_total",
+        "estimated_cost_usd",
+        "quality_score",
+        "issue_count",
+        "status",
+        "conversation_id",
+        "session_id",
+        "user_id",
+        "message_index",
+      ];
+
+      const escape = (v: any) => {
+        const s = v === null || v === undefined ? "" : String(v);
+        if (s.includes('"') || s.includes(",") || s.includes("\n")) {
+          return `"${s.replace(/"/g, '""')}"`;
+        }
+        return s;
+      };
+
+      const rows = result.traces.map((t: any) => [
+        t.trace_id,
+        t.timestamp,
+        t.analyzed_at,
+        t.project_id,
+        t.environment,
+        t.model,
+        t.latency_ms,
+        t.tokens_total,
+        t.estimated_cost_usd,
+        t.quality_score,
+        t.issue_count,
+        t.status,
+        t.conversation_id,
+        t.session_id,
+        t.user_id,
+        t.message_index,
+      ]);
+
+      const csv = [headers.join(","), ...rows.map((r) => r.map(escape).join(","))].join("\n");
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="traces-export.csv"`);
+      return res.status(200).send(csv);
+    }
+
+    return res.status(200).json({
+      success: true,
+      traces: result.traces,
+      pagination: {
+        total: result.total,
+        limit,
+        offset,
+        hasMore: offset + limit < result.total,
+      },
+    });
+  } catch (error) {
+    console.error("Error exporting traces:", error);
+    return res.status(500).json({
+      error: error instanceof Error ? error.message : "Internal server error",
+    });
+  }
+});
+
+/**
+ * GET /api/v1/traces/:traceId/export
+ * Export a single trace detail as JSON or Markdown
+ *
+ * Query params:
+ * - format=json|md (default: json)
+ * - projectId=...
+ */
+router.get("/:traceId/export", async (req: Request, res: Response) => {
+  try {
+    const { traceId } = req.params;
+    const format = String(req.query.format || "json").toLowerCase();
+
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({
+        error: "Missing or invalid Authorization header",
+      });
+    }
+
+    const sessionToken = authHeader.substring(7);
+    const user = await AuthService.validateSession(sessionToken);
+    if (!user) {
+      return res.status(401).json({
+        error: "Invalid or expired session",
+      });
+    }
+
+    const projectId = (req.query.projectId as string | undefined) || null;
+    const traceTree = await TraceQueryService.getTraceDetailTree(
+      traceId,
+      user.tenantId,
+      projectId
+    );
+
+    if (!traceTree) {
+      return res.status(404).json({
+        error: "Trace not found",
+      });
+    }
+
+    let conversation: any = null;
+    const conversationId = traceTree?.summary?.conversation_id;
+    if (conversationId) {
+      try {
+        conversation = await TraceQueryService.getConversationContext({
+          tenantId: user.tenantId,
+          projectId,
+          conversationId,
+          traceId,
+        });
+      } catch (e) {
+        // Non-fatal
+        conversation = null;
+      }
+    }
+
+    if (format === "md" || format === "markdown") {
+      const s = traceTree.summary || {};
+      const md = [
+        `# Trace ${s.trace_id || traceId}`,
+        ``,
+        `## Summary`,
+        `- **Project**: ${s.project_id || "n/a"}`,
+        `- **Environment**: ${s.environment || "n/a"}`,
+        `- **Model**: ${s.model || "n/a"}`,
+        `- **Start**: ${s.start_time || "n/a"}`,
+        `- **End**: ${s.end_time || "n/a"}`,
+        `- **Total latency (ms)**: ${s.total_latency_ms ?? "n/a"}`,
+        `- **Total tokens**: ${s.total_tokens ?? "n/a"}`,
+        `- **Total cost (USD)**: ${s.total_cost ?? traceTree?.costBreakdown?.totalCostUsd ?? "n/a"}`,
+        ``,
+        `## Signals`,
+        ...(Array.isArray(traceTree.signals) && traceTree.signals.length > 0
+          ? traceTree.signals.map((sig: any) =>
+              `- **${sig.signal_type}** (${sig.severity}) ${sig.score ?? sig.confidence ?? ""}`.trim()
+            )
+          : [`- None`]),
+        ``,
+        `## Performance`,
+        `- **Bottleneck span**: ${traceTree?.performanceAnalysis?.bottleneckSpanId || "n/a"}`,
+        `- **Bottleneck duration (ms)**: ${traceTree?.performanceAnalysis?.bottleneckDurationMs ?? "n/a"}`,
+        ...(Array.isArray(traceTree?.performanceAnalysis?.suggestions) &&
+        traceTree.performanceAnalysis.suggestions.length > 0
+          ? [``, `### Suggestions`, ...traceTree.performanceAnalysis.suggestions.map((x: string) => `- ${x}`)]
+          : []),
+        ``,
+        `## Cost Breakdown`,
+        `- **Total (USD)**: ${traceTree?.costBreakdown?.totalCostUsd ?? "n/a"}`,
+        ...(traceTree?.costBreakdown?.topSpans?.length
+          ? [
+              ``,
+              `### Top Spans`,
+              ...traceTree.costBreakdown.topSpans.map(
+                (x: any) => `- ${x.name} (${x.spanId}): $${x.costUsd}`
+              ),
+            ]
+          : [`- n/a`]),
+        ``,
+        `## Token Efficiency`,
+        `- **Tokens/char**: ${traceTree?.tokenEfficiency?.tokensPerCharacter ?? "n/a"}`,
+        `- **Benchmark**: ${traceTree?.tokenEfficiency?.benchmarkComparison ?? "n/a"}`,
+        ``,
+        conversation
+          ? `## Conversation\n- **Conversation ID**: ${conversation.id}\n- **Message**: ${conversation.messageIndex ?? "n/a"} of ${conversation.totalMessages}\n- **Prev**: ${conversation.previousTraceId ?? "n/a"}\n- **Next**: ${conversation.nextTraceId ?? "n/a"}\n`
+          : `## Conversation\n- None\n`,
+      ].join("\n");
+
+      return res.status(200).json({
+        success: true,
+        markdown: md,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      trace: traceTree,
+      conversation: conversation || undefined,
+    });
+  } catch (error) {
+    console.error("Error exporting trace:", error);
+    return res.status(500).json({
       error: error instanceof Error ? error.message : "Internal server error",
     });
   }
@@ -449,9 +815,25 @@ router.get("/:traceId", async (req: Request, res: Response) => {
       // Transform to agent-prism format
       const agentPrismData = AgentPrismAdapterService.adapt(traceTree);
 
+      let conversation: any = null;
+      const conversationId = traceTree?.summary?.conversation_id;
+      if (conversationId) {
+        try {
+          conversation = await TraceQueryService.getConversationContext({
+            tenantId: user.tenantId,
+            projectId: (req.query.projectId as string | undefined) || null,
+            conversationId,
+            traceId,
+          });
+        } catch {
+          conversation = null;
+        }
+      }
+
       return res.json({
         success: true,
         trace: agentPrismData,
+        conversation: conversation || undefined,
       });
     }
 
@@ -469,9 +851,25 @@ router.get("/:traceId", async (req: Request, res: Response) => {
         });
       }
 
+      let conversation: any = null;
+      const conversationId = traceTree?.summary?.conversation_id;
+      if (conversationId) {
+        try {
+          conversation = await TraceQueryService.getConversationContext({
+            tenantId: user.tenantId,
+            projectId: (req.query.projectId as string | undefined) || null,
+            conversationId,
+            traceId,
+          });
+        } catch {
+          conversation = null;
+        }
+      }
+
       return res.json({
         success: true,
         trace: traceTree,
+        conversation: conversation || undefined,
       });
     }
 
@@ -496,6 +894,62 @@ router.get("/:traceId", async (req: Request, res: Response) => {
     }
 
     // Transform to match frontend expectations
+    const estimatedCostUsd =
+      analysisResult.tokens_total && analysisResult.model
+        ? calculateCost(analysisResult.tokens_total, analysisResult.model)
+        : null;
+
+    // Phase 2: lightweight explanations/efficiency for legacy format too
+    const totalChars =
+      (analysisResult.query ? String(analysisResult.query).length : 0) +
+      (analysisResult.response ? String(analysisResult.response).length : 0);
+    const tokensPerCharacter =
+      analysisResult.tokens_total && totalChars > 0
+        ? analysisResult.tokens_total / totalChars
+        : null;
+
+    const qualityExplanation = (() => {
+      const coherence = analysisResult.coherence_score;
+      const relevance = analysisResult.relevance_score;
+      const helpfulness = analysisResult.helpfulness_score;
+      const mk = (label: string, score: any) => {
+        if (typeof score !== "number") return { score: null, explanation: `${label} score not available.` };
+        if (score < 0.5) return { score, explanation: `${label} is low; users may perceive this response as weak.` };
+        if (score < 0.7) return { score, explanation: `${label} is moderate; there is room to improve.` };
+        return { score, explanation: `${label} is strong.` };
+      };
+      const improvements: string[] = [];
+      if (analysisResult.has_context_drop) improvements.push("Improve retrieval quality and ensure relevant context is included.");
+      if (analysisResult.has_faithfulness_issue) improvements.push("Add citations/grounding and tighten instructions to avoid unsupported claims.");
+      if (analysisResult.has_prompt_injection) improvements.push("Add prompt-injection guardrails and input sanitization.");
+      if (analysisResult.has_context_overflow) improvements.push("Reduce prompt size with summarization or better chunk selection.");
+      if (analysisResult.has_latency_anomaly) improvements.push("Optimize slow spans and add caching where possible.");
+      if (analysisResult.has_cost_anomaly) improvements.push("Consider cheaper models, shorter prompts, and token budgeting.");
+      return {
+        overallScore: typeof analysisResult.quality_score === "number" ? analysisResult.quality_score : null,
+        breakdown: {
+          coherence: mk("Coherence", coherence),
+          relevance: mk("Relevance", relevance),
+          helpfulness: mk("Helpfulness", helpfulness),
+        },
+        improvements,
+      };
+    })();
+
+    let conversation: any = null;
+    if (analysisResult.conversation_id) {
+      try {
+        conversation = await TraceQueryService.getConversationContext({
+          tenantId: user.tenantId,
+          projectId: (req.query.projectId as string | undefined) || null,
+          conversationId: analysisResult.conversation_id,
+          traceId,
+        });
+      } catch {
+        conversation = null;
+      }
+    }
+
     res.json({
       success: true,
       trace: {
@@ -521,6 +975,7 @@ router.get("/:traceId", async (req: Request, res: Response) => {
         finishReason: analysisResult.finish_reason,
         responseId: analysisResult.response_id,
         systemFingerprint: analysisResult.system_fingerprint,
+        estimatedCostUsd,
         metadata: analysisResult.metadata_json
           ? JSON.parse(analysisResult.metadata_json)
           : null,
@@ -530,6 +985,18 @@ router.get("/:traceId", async (req: Request, res: Response) => {
         timestamp:
           analysisResult.timestamp?.toISOString() || analysisResult.timestamp,
         environment: analysisResult.environment,
+        tokenEfficiency: {
+          tokensPerCharacter,
+          benchmarkComparison:
+            tokensPerCharacter === null
+              ? "average"
+              : tokensPerCharacter > 1.2
+              ? "below_average"
+              : tokensPerCharacter < 0.6
+              ? "above_average"
+              : "average",
+        },
+        qualityExplanation,
         analysis: {
           isHallucination: analysisResult.is_hallucination,
           hallucinationConfidence: analysisResult.hallucination_confidence,
@@ -555,6 +1022,7 @@ router.get("/:traceId", async (req: Request, res: Response) => {
           processingTimeMs: analysisResult.processing_time_ms,
         },
       },
+      conversation: conversation || undefined,
     });
   } catch (error) {
     console.error("Error fetching trace:", error);
