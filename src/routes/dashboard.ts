@@ -51,7 +51,24 @@ router.get("/overview", async (req: Request, res: Response) => {
 
     // Get query parameters
     const projectId = req.query.projectId as string | undefined;
-    const days = parseInt(req.query.days as string) || 7; // Default: last 7 days (changed from 1 to show more data)
+    // Support both 'days' and 'timeRange' query params
+    // Frontend might pass timeRange=24h, 7d, 30d
+    let days = 7; // Default: last 7 days
+    const daysParam = req.query.days as string | undefined;
+    const timeRangeParam = req.query.timeRange as string | undefined;
+    
+    if (timeRangeParam) {
+      // Parse timeRange like "24h", "7d", "30d"
+      if (timeRangeParam.endsWith('h')) {
+        days = parseFloat(timeRangeParam) / 24;
+      } else if (timeRangeParam.endsWith('d')) {
+        days = parseFloat(timeRangeParam);
+      }
+    } else if (daysParam) {
+      days = parseInt(daysParam) || 7;
+    }
+    
+    console.log(`[Dashboard] Time range requested: ${timeRangeParam || daysParam || 'default'} (${days} days)`);
     const startTime = req.query.startTime as string | undefined;
     const endTime = req.query.endTime as string | undefined;
 
