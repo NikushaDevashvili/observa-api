@@ -148,8 +148,9 @@ export class SignalsQueryService {
 
       return signals;
     } catch (error) {
-      console.error("[SignalsQueryService] Failed to query signals:", error);
-      throw error;
+      console.error("[SignalsQueryService] Failed to query signals from Tinybird:", error);
+      // Return empty array instead of throwing - fallback to PostgreSQL will be attempted by caller
+      return [];
     }
   }
 
@@ -163,13 +164,21 @@ export class SignalsQueryService {
     startTime?: string,
     endTime?: string
   ): Promise<SignalSummary[]> {
-    const signals = await this.querySignals({
-      tenantId,
-      projectId,
-      startTime,
-      endTime,
-      limit: 10000, // Get more to aggregate
-    });
+    let signals: Signal[] = [];
+    
+    try {
+      signals = await this.querySignals({
+        tenantId,
+        projectId,
+        startTime,
+        endTime,
+        limit: 10000, // Get more to aggregate
+      });
+    } catch (error) {
+      console.error("[SignalsQueryService] Failed to get signals for summary:", error);
+      // Return empty array on error
+      return [];
+    }
 
     // Aggregate signals
     const summaryMap = new Map<string, SignalSummary>();
