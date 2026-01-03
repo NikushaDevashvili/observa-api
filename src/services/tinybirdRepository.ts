@@ -349,10 +349,18 @@ export class TinybirdRepository {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      console.error(
-        `[TinybirdRepository] Error fetching trace events for ${traceId}:`,
-        errorMessage
-      );
+      // Use warn instead of error - this is expected when Tinybird is unavailable/rate-limited
+      // The system will fall back to PostgreSQL analysis_results
+      if (errorMessage.includes("429") || errorMessage.includes("rate limit")) {
+        console.warn(
+          `[TinybirdRepository] Tinybird rate limited for trace ${traceId}, falling back to PostgreSQL`
+        );
+      } else {
+        console.warn(
+          `[TinybirdRepository] Tinybird unavailable for trace ${traceId}, falling back to PostgreSQL:`,
+          errorMessage.substring(0, 100)
+        );
+      }
       // Return empty array on error (fallback to analysis_results)
       return [];
     }
