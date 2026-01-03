@@ -72,6 +72,8 @@ router.get("/overview", async (req: Request, res: Response) => {
     }
 
     // Get all metrics in parallel
+    console.log(`[Dashboard] Fetching metrics for tenant ${user.tenantId}, project ${projectId || "all"}`);
+    
     const [
       latencyMetrics,
       errorRateMetrics,
@@ -128,6 +130,15 @@ router.get("/overview", async (req: Request, res: Response) => {
 
     const latency = latencyMetrics as any; // Cast since we're not grouping
 
+    // Log results for debugging
+    console.log(`[Dashboard] Metrics fetched:`);
+    console.log(`  - Trace count: ${traceCount}`);
+    console.log(`  - Error rate: ${errorRateMetrics.error_rate}% (${errorRateMetrics.errors}/${errorRateMetrics.total})`);
+    console.log(`  - Latency P95: ${latency.p95}ms`);
+    console.log(`  - Cost: $${costMetrics.total_cost}`);
+    console.log(`  - Tokens: ${tokenMetrics.total_tokens}`);
+    console.log(`  - Active issues: ${signalCounts.high + signalCounts.medium + signalCounts.low}`);
+
     return res.status(200).json({
       success: true,
       period: {
@@ -177,13 +188,23 @@ router.get("/overview", async (req: Request, res: Response) => {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error("[Dashboard API] Error fetching overview:", error);
     const errorMessage =
       error instanceof Error ? error.message : "Internal server error";
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    
+    console.error("[Dashboard API] ❌ Error fetching overview:", errorMessage);
+    if (errorStack) {
+      console.error("[Dashboard API] Stack trace:", errorStack);
+    }
+    
+    // Log the full error object for debugging
+    console.error("[Dashboard API] Full error:", error);
+    
     return res.status(500).json({
       error: {
         code: "INTERNAL_ERROR",
         message: errorMessage,
+        details: process.env.NODE_ENV === "development" ? { stack: errorStack } : undefined,
       },
     });
   }
@@ -299,6 +320,120 @@ router.get("/alerts", async (req: Request, res: Response) => {
       error: {
         code: "INTERNAL_ERROR",
         message: errorMessage,
+      },
+    });
+  }
+});
+
+/**
+ * GET /api/v1/dashboard/health
+ * Diagnostic endpoint to test Tinybird connection and data access
+ */
+router.get("/health", async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({
+        error: {
+          code: "UNAUTHORIZED",
+          message: "Missing or invalid Authorization header",
+        },
+      });
+    }
+
+    const sessionToken = authHeader.substring(7);
+    const user = await AuthService.validateSession(sessionToken);
+
+    if (!user) {
+      return res.status(401).json({
+        error: {
+          code: "UNAUTHORIZED",
+          message: "Invalid or expired session",
+        },
+      });
+    }
+
+    const projectId = req.query.projectId as string | undefined;
+    
+    // Test basic query
+    const end = new Date().toISOString();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 7);
+    const start = startDate.toISOString();
+
+    const diagnostics: any = {
+      timestamp: new Date().toISOString(),
+      tenant_id: user.tenantId,
+      project_id: projectId || "all",
+      time_range: { start, end },
+      tests: {},
+    };
+
+    // Test 1: Trace count
+    try {
+      const traceCount = await DashboardMetricsService.getTraceCount(
+        user.tenantId,
+        projectId || null,
+        start,
+        end
+      );
+      diagnostics.tests.trace_count = { success: true, value: traceCount };
+    } catch (error) {
+      diagnostics.tests.trace_count = {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+
+    // Test 2: Latency metrics
+    try {
+      const latency = await DashboardMetricsService.getLatencyMetrics(
+        user.tenantId,
+        projectId || null,
+        start,
+        end
+      );
+      diagnostics.tests.latency = { success: true, value: latency };
+    } catch (error) {
+      diagnostics.tests.latency = {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+
+    // Test 3: Error rate
+    try {
+      const errorRate = await DashboardMetricsService.getErrorRateMetrics(
+        user.tenantId,
+        projectId || null,
+        start,
+        end
+      );
+      diagnostics.tests.error_rate = { success: true, value: errorRate };
+    } catch (error) {
+      diagnostics.tests.error_rate = {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+
+    // Test 4: Check Tinybird token
+    diagnostics.tinybird_token = {
+      configured: !!process.env.TINYBIRD_ADMIN_TOKEN,
+      token_length: process.env.TINYBIRD_ADMIN_TOKEN?.length || 0,
+      token_prefix: process.env.TINYBIRD_ADMIN_TOKEN?.substring(0, 10) || "not set",
+    };
+
+    return res.status(200).json({
+      success: true,
+      diagnostics,
+    });
+  } catch (error) {
+    console.error("[Dashboard API] Health check error:", error);
+    return res.status(500).json({
+      error: {
+        code: "INTERNAL_ERROR",
+        message: error instanceof Error ? error.message : "Unknown error",
       },
     });
   }
