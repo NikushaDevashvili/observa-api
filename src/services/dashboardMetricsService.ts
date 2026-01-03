@@ -1211,13 +1211,122 @@ export class DashboardMetricsService {
           trace_count: traceCountMap.get(bucket) || 0,
         }));
 
+      // If Tinybird returns empty, fall back to PostgreSQL
+      if (series.length === 0) {
+        console.log("[DashboardMetricsService] Tinybird time-series empty, falling back to PostgreSQL");
+        return await this.getTimeSeriesFromPostgres(tenantId, projectId, startTime, endTime, interval);
+      }
+
       return series;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error(
-        "[DashboardMetricsService] Failed to get time-series metrics:",
+        "[DashboardMetricsService] Failed to get time-series metrics from Tinybird:",
         errorMessage
       );
+      // Fallback to PostgreSQL
+      console.log("[DashboardMetricsService] Falling back to PostgreSQL for time-series");
+      return await this.getTimeSeriesFromPostgres(tenantId, projectId, startTime, endTime, interval);
+    }
+  }
+
+  /**
+   * Get time-series metrics from PostgreSQL analysis_results (fallback)
+   */
+  private static async getTimeSeriesFromPostgres(
+    tenantId: string,
+    projectId: string | null | undefined,
+    startTime: string,
+    endTime: string,
+    interval: "hour" | "day" | "week" = "day"
+  ): Promise<Array<{
+    timestamp: string;
+    latency: { p50: number; p95: number; p99: number };
+    error_rate: number;
+    cost: number;
+    tokens: number;
+    trace_count: number;
+  }>> {
+    try {
+      let whereClause = "WHERE tenant_id = $1";
+      const params: any[] = [tenantId];
+      let paramIndex = 2;
+
+      if (projectId) {
+        whereClause += ` AND project_id = $${paramIndex}`;
+        params.push(projectId);
+        paramIndex++;
+      }
+
+      whereClause += ` AND timestamp >= $${paramIndex}`;
+      params.push(new Date(startTime));
+      paramIndex++;
+
+      whereClause += ` AND timestamp <= $${paramIndex}`;
+      params.push(new Date(endTime));
+      paramIndex++;
+
+      // Determine time grouping based on interval
+      let dateGroup: string;
+      switch (interval) {
+        case "hour":
+          dateGroup = "DATE_TRUNC('hour', timestamp)";
+          break;
+        case "week":
+          dateGroup = "DATE_TRUNC('week', timestamp)";
+          break;
+        case "day":
+        default:
+          dateGroup = "DATE_TRUNC('day', timestamp)";
+      }
+
+      const result = await query<{
+        time_bucket: string;
+        trace_count: string;
+        p50: string;
+        p95: string;
+        p99: string;
+        total_tokens: string;
+        error_count: string;
+      }>(
+        `SELECT 
+          ${dateGroup} as time_bucket,
+          COUNT(*) as trace_count,
+          PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY latency_ms) FILTER (WHERE latency_ms IS NOT NULL) as p50,
+          PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY latency_ms) FILTER (WHERE latency_ms IS NOT NULL) as p95,
+          PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY latency_ms) FILTER (WHERE latency_ms IS NOT NULL) as p99,
+          SUM(COALESCE(tokens_total, 0)) as total_tokens,
+          COUNT(*) FILTER (WHERE status = 'error') as error_count
+        FROM analysis_results
+        ${whereClause}
+        GROUP BY time_bucket
+        ORDER BY time_bucket ASC`,
+        params
+      );
+
+      const series = result.map((row) => {
+        const traceCount = parseInt(row.trace_count || "0", 10);
+        const errorCount = parseInt(row.error_count || "0", 10);
+        const tokens = parseInt(row.total_tokens || "0", 10);
+        
+        return {
+          timestamp: new Date(row.time_bucket).toISOString(),
+          latency: {
+            p50: parseFloat(row.p50 || "0"),
+            p95: parseFloat(row.p95 || "0"),
+            p99: parseFloat(row.p99 || "0"),
+          },
+          error_rate: traceCount > 0 ? (errorCount / traceCount) * 100 : 0,
+          cost: tokens * 0.000002, // Estimated cost
+          tokens: tokens,
+          trace_count: traceCount,
+        };
+      });
+
+      console.log(`[DashboardMetricsService] PostgreSQL time-series: ${series.length} buckets`);
+      return series;
+    } catch (error) {
+      console.error("[DashboardMetricsService] PostgreSQL time-series fallback failed:", error);
       return [];
     }
   }
