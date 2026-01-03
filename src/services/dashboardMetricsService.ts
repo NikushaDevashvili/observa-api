@@ -1268,26 +1268,28 @@ export class DashboardMetricsService {
         paramIndex++;
       }
 
-      whereClause += ` AND timestamp >= $${paramIndex}`;
+      // Use COALESCE to handle NULL timestamps, falling back to analyzed_at
+      whereClause += ` AND COALESCE(timestamp, analyzed_at) >= $${paramIndex}`;
       params.push(new Date(startTime));
       paramIndex++;
 
-      whereClause += ` AND timestamp <= $${paramIndex}`;
+      whereClause += ` AND COALESCE(timestamp, analyzed_at) <= $${paramIndex}`;
       params.push(new Date(endTime));
       paramIndex++;
 
       // Determine time grouping based on interval
+      // Use COALESCE to handle NULL timestamps
       let dateGroup: string;
       switch (interval) {
         case "hour":
-          dateGroup = "DATE_TRUNC('hour', timestamp)";
+          dateGroup = "DATE_TRUNC('hour', COALESCE(timestamp, analyzed_at))";
           break;
         case "week":
-          dateGroup = "DATE_TRUNC('week', timestamp)";
+          dateGroup = "DATE_TRUNC('week', COALESCE(timestamp, analyzed_at))";
           break;
         case "day":
         default:
-          dateGroup = "DATE_TRUNC('day', timestamp)";
+          dateGroup = "DATE_TRUNC('day', COALESCE(timestamp, analyzed_at))";
       }
 
       const result = await query<{
@@ -1306,7 +1308,7 @@ export class DashboardMetricsService {
           PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY latency_ms) FILTER (WHERE latency_ms IS NOT NULL) as p95,
           PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY latency_ms) FILTER (WHERE latency_ms IS NOT NULL) as p99,
           SUM(COALESCE(tokens_total, 0)) as total_tokens,
-          COUNT(*) FILTER (WHERE status = 'error') as error_count
+          COUNT(*) FILTER (WHERE status >= 400) as error_count
         FROM analysis_results
         ${whereClause}
         GROUP BY time_bucket
