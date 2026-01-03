@@ -166,10 +166,19 @@ export class DashboardMetricsService {
         count: parseInt(row.count) || 0,
       };
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       console.error(
         "[DashboardMetricsService] Failed to get latency metrics:",
-        error
+        errorMessage
       );
+      
+      // If it's a permission error, log it clearly
+      if (errorMessage.includes("permissions") || errorMessage.includes("403")) {
+        console.error(
+          "[DashboardMetricsService] ⚠️  Tinybird token missing DATASOURCES:READ:canonical_events permission"
+        );
+      }
+      
       return {
         p50: 0,
         p95: 0,
@@ -290,10 +299,19 @@ export class DashboardMetricsService {
         error_types: errorTypes,
       };
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       console.error(
         "[DashboardMetricsService] Failed to get error rate metrics:",
-        error
+        errorMessage
       );
+      
+      // If it's a permission error, log it clearly
+      if (errorMessage.includes("permissions") || errorMessage.includes("403")) {
+        console.error(
+          "[DashboardMetricsService] ⚠️  Tinybird token missing DATASOURCES:READ:canonical_events permission"
+        );
+      }
+      
       return {
         total: 0,
         errors: 0,
@@ -385,10 +403,19 @@ export class DashboardMetricsService {
         cost_by_route: {}, // Route not available in current schema
       };
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       console.error(
         "[DashboardMetricsService] Failed to get cost metrics:",
-        error
+        errorMessage
       );
+      
+      // If it's a permission error, log it clearly
+      if (errorMessage.includes("permissions") || errorMessage.includes("403")) {
+        console.error(
+          "[DashboardMetricsService] ⚠️  Tinybird token missing DATASOURCES:READ:canonical_events permission"
+        );
+      }
+      
       return {
         total_cost: 0,
         avg_cost_per_trace: 0,
@@ -495,10 +522,19 @@ export class DashboardMetricsService {
         tokens_by_model: tokensByModel,
       };
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       console.error(
         "[DashboardMetricsService] Failed to get token metrics:",
-        error
+        errorMessage
       );
+      
+      // If it's a permission error, log it clearly
+      if (errorMessage.includes("permissions") || errorMessage.includes("403")) {
+        console.error(
+          "[DashboardMetricsService] ⚠️  Tinybird token missing DATASOURCES:READ:canonical_events permission"
+        );
+      }
+      
       return {
         total_tokens: 0,
         avg_tokens_per_trace: 0,
@@ -554,10 +590,19 @@ export class DashboardMetricsService {
       const results = Array.isArray(result) ? result : result?.data || [];
       return parseInt(results[0]?.count || "0", 10);
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       console.error(
         "[DashboardMetricsService] Failed to get trace count:",
-        error
+        errorMessage
       );
+      
+      // If it's a permission error, log it clearly
+      if (errorMessage.includes("permissions") || errorMessage.includes("403")) {
+        console.error(
+          "[DashboardMetricsService] ⚠️  Tinybird token missing DATASOURCES:READ:canonical_events permission"
+        );
+      }
+      
       return 0;
     }
   }
