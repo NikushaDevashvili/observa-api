@@ -51,7 +51,7 @@ router.get("/overview", async (req: Request, res: Response) => {
 
     // Get query parameters
     const projectId = req.query.projectId as string | undefined;
-    const days = parseInt(req.query.days as string) || 1; // Default: last 24 hours
+    const days = parseInt(req.query.days as string) || 7; // Default: last 7 days (changed from 1 to show more data)
     const startTime = req.query.startTime as string | undefined;
     const endTime = req.query.endTime as string | undefined;
 
@@ -62,10 +62,13 @@ router.get("/overview", async (req: Request, res: Response) => {
       start = startTime;
       end = endTime;
     } else {
+      // Use current time as end, go back N days
       end = new Date().toISOString();
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - days);
       start = startDate.toISOString();
+      
+      console.log(`[Dashboard] Querying metrics for period: ${start} to ${end} (${days} days)`);
     }
 
     // Get all metrics in parallel
