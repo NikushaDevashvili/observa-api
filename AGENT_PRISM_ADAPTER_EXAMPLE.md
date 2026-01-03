@@ -545,3 +545,4 @@ describe("Adapter", () => {
 5. Handle edge cases (missing fields, null values, etc.)
 
 
+

@@ -40,9 +40,14 @@ import analysisRouter from "./routes/analysis.js";
 import dashboardRouter from "./routes/dashboard.js";
 import issuesRouter from "./routes/issues.js";
 import costsRouter from "./routes/costs.js";
+import usersRouter from "./routes/users.js";
+import healthRouter from "./routes/health.js";
+import swaggerUi from "swagger-ui-express";
+import { swaggerSpec } from "./swagger.js";
 import { initializeSchema } from "./db/schema.js";
 import { testConnection } from "./db/client.js";
 import { initializeAnalysisQueue } from "./services/analysisDispatcher.js";
+import { requestIdMiddleware } from "./middleware/requestIdMiddleware.js";
 
 const app = express();
 
@@ -229,6 +234,9 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
+// Request ID middleware (add early for traceability)
+app.use(requestIdMiddleware);
+
 // Root route - API information
 app.get("/", (req, res) => {
   res.json({
@@ -247,15 +255,20 @@ app.get("/", (req, res) => {
       events: "/api/v1/events",
       conversations: "/api/v1/conversations",
       sessions: "/api/v1/sessions",
+      users: "/api/v1/users",
+      apiDocs: "/api-docs",
     },
     documentation: "https://github.com/NikushaDevashvili/observa-api",
   });
 });
 
-// Health check
+// Health check (basic - detailed health at /health/detailed)
 app.get("/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
+
+// Health routes (detailed health checks)
+app.use("/health", healthRouter);
 
 // Build/Deploy metadata (helps verify which commit is currently running in Vercel)
 // This route intentionally does NOT require DB schema initialization.
@@ -426,6 +439,13 @@ app.use("/api/v1/analysis", analysisRouter);
 app.use("/api/v1/dashboard", dashboardRouter);
 app.use("/api/v1/issues", issuesRouter);
 app.use("/api/v1/costs", costsRouter);
+app.use("/api/v1/users", usersRouter);
+
+// API Documentation (Swagger) - must be after API routes for proper path resolution
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  customCss: ".swagger-ui .topbar { display: none }",
+  customSiteTitle: "Observa API Documentation",
+}));
 
 // Error handler middleware (must be last)
 app.use(
@@ -435,12 +455,35 @@ app.use(
     res: express.Response,
     next: express.NextFunction
   ) => {
+    const requestId = res.locals.requestId || (req as any).requestId || "unknown";
+    
     // Log error to Sentry if configured
     if (env.SENTRY_DSN) {
-      Sentry.captureException(err);
+      Sentry.captureException(err, {
+        tags: { requestId },
+        extra: {
+          path: req.path,
+          method: req.method,
+        },
+      });
     }
-    console.error("Unhandled error:", err);
-    res.status(500).json({ error: "Internal server error" });
+    
+    console.error(`[Error] Request ID: ${requestId}`, err);
+    
+    // Structured error response
+    res.status(500).json({
+      error: {
+        code: "INTERNAL_ERROR",
+        message: "Internal server error",
+        requestId,
+        ...(process.env.NODE_ENV === "development" && {
+          details: {
+            message: err.message,
+            stack: err.stack,
+          },
+        }),
+      },
+    });
   }
 );
 

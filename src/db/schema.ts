@@ -290,6 +290,44 @@ export async function initializeSchema(): Promise<void> {
     ON user_sessions(tenant_id, user_id, started_at DESC);
   `);
 
+  // Create audit_logs table
+  await query(`
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+      user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+      action VARCHAR(100) NOT NULL,
+      resource_type VARCHAR(100) NOT NULL,
+      resource_id VARCHAR(255),
+      metadata_json TEXT,
+      ip_address VARCHAR(45),
+      user_agent TEXT,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+  `);
+
+  // Create indexes for audit_logs
+  await query(`
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_tenant 
+    ON audit_logs(tenant_id, created_at DESC);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_project 
+    ON audit_logs(project_id, created_at DESC);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_action 
+    ON audit_logs(action, created_at DESC);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_user 
+    ON audit_logs(user_id, created_at DESC);
+  `);
+
   console.log("✅ Core database schema initialized successfully");
 
   // Run migration to add new columns if needed

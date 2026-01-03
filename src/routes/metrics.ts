@@ -54,18 +54,51 @@ router.get("/", async (req: Request, res: Response) => {
     );
     const hallucinationRate = total > 0 ? (hallucinations / total) * 100 : 0;
 
+    // Get API key usage (last 24 hours)
+    const apiKeyUsageResult = await query<{ count: string }>(
+      `SELECT COUNT(*) as count FROM api_keys 
+       WHERE last_used_at > NOW() - INTERVAL '24 hours' AND revoked_at IS NULL`
+    );
+    const apiKeyUsage = parseInt(apiKeyUsageResult[0]?.count || "0", 10);
+
+    // Get total API keys
+    const totalApiKeysResult = await query<{ count: string }>(
+      "SELECT COUNT(*) as count FROM api_keys WHERE revoked_at IS NULL"
+    );
+    const totalApiKeys = parseInt(totalApiKeysResult[0]?.count || "0", 10);
+
+    // Get active sessions (last hour)
+    const activeSessionsResult = await query<{ count: string }>(
+      `SELECT COUNT(*) as count FROM sessions 
+       WHERE expires_at > NOW() AND created_at > NOW() - INTERVAL '1 hour'`
+    );
+    const activeSessions = parseInt(activeSessionsResult[0]?.count || "0", 10);
+
     res.json({
       timestamp: new Date().toISOString(),
-      tenants: {
-        total: tenantCount,
+      system: {
+        tenants: {
+          total: tenantCount,
+        },
+        projects: {
+          total: projectCount,
+        },
+        api_keys: {
+          total: totalApiKeys,
+          active_last_24h: apiKeyUsage,
+        },
+        sessions: {
+          active_last_hour: activeSessions,
+        },
       },
-      projects: {
-        total: projectCount,
-      },
-      analysis: {
-        total: analysisCount,
-        last24Hours: recentAnalysis,
-        hallucinationRate: parseFloat(hallucinationRate.toFixed(2)),
+      business: {
+        traces: {
+          total: analysisCount,
+          last24Hours: recentAnalysis,
+        },
+        quality: {
+          hallucinationRate: parseFloat(hallucinationRate.toFixed(2)),
+        },
       },
     });
   } catch (error) {

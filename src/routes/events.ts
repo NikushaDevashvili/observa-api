@@ -45,6 +45,60 @@ router.use((req, res, next) => {
 });
 
 /**
+ * @swagger
+ * /api/v1/events/ingest:
+ *   post:
+ *     summary: Ingest canonical events
+ *     description: Batch ingestion of canonical events (NDJSON or JSON array). Used by SDK to send trace data.
+ *     tags: [Events]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: array
+ *             items:
+ *               $ref: '#/components/schemas/CanonicalEvent'
+ *         application/x-ndjson:
+ *           schema:
+ *             type: string
+ *             description: NDJSON format (one event per line)
+ *     responses:
+ *       200:
+ *         description: Events ingested successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 event_count:
+ *                   type: number
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: Invalid request
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       429:
+ *         description: Rate limit exceeded
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+/**
  * POST /api/v1/events/ingest
  * Batch ingestion of canonical events (NDJSON or JSON array)
  *
