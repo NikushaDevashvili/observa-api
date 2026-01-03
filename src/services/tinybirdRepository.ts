@@ -95,15 +95,38 @@ export class TinybirdRepository {
       );
     }
 
-    // Validate that SQL includes tenant_id filter
+    // SECURITY: Validate tenantId format (must be UUID) to prevent injection
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(options.tenantId)) {
+      throw new Error("Invalid tenant_id format: must be a valid UUID");
+    }
+
+    // SECURITY: Validate projectId format if provided
+    if (options.projectId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(options.projectId)) {
+      throw new Error("Invalid project_id format: must be a valid UUID");
+    }
+
+    // SECURITY: Enhanced validation - SQL must include proper tenant_id filter
     const sqlLower = sql.toLowerCase();
-    if (
-      !sqlLower.includes("tenant_id") &&
-      !sqlLower.includes("where") &&
-      !sqlLower.includes("tenant_id =")
-    ) {
+    const hasTenantFilter = 
+      sqlLower.includes("tenant_id") && 
+      (sqlLower.includes("where tenant_id") || 
+       sqlLower.includes("and tenant_id") ||
+       sqlLower.includes("tenant_id ="));
+    
+    if (!hasTenantFilter) {
       throw new Error(
-        "TinybirdRepository.rawQuery: SQL must explicitly filter by tenant_id for security"
+        "TinybirdRepository.rawQuery: SQL must explicitly filter by tenant_id for security. " +
+        "Query must include 'WHERE tenant_id = ...' or 'AND tenant_id = ...'"
+      );
+    }
+
+    // SECURITY: Additional check - ensure tenant_id appears in WHERE clause context
+    // This prevents injection via comments or other SQL manipulation
+    const whereIndex = sqlLower.indexOf("where");
+    const tenantIdIndex = sqlLower.indexOf("tenant_id");
+    if (whereIndex === -1 || (tenantIdIndex !== -1 && tenantIdIndex < whereIndex)) {
+      throw new Error(
+        "TinybirdRepository.rawQuery: tenant_id filter must appear after WHERE clause"
       );
     }
 

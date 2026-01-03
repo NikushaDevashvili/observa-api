@@ -15,10 +15,10 @@ if (env.SENTRY_DSN) {
       // Add profiling integration
       nodeProfilingIntegration(),
     ],
-    // Performance Monitoring
-    tracesSampleRate: 1.0, // Capture 100% of transactions for performance monitoring
+    // Performance Monitoring - Reduced sampling to improve performance
+    tracesSampleRate: 0.1, // Sample 10% of transactions (reduced from 100%)
     // Set sampling rate for profiling
-    profilesSampleRate: 1.0, // Capture 100% of profiles
+    profilesSampleRate: 0.1, // Sample 10% of profiles (reduced from 100%)
   });
   console.log("✅ Sentry initialized for error monitoring");
 }
@@ -359,71 +359,9 @@ app.get("/diagnostics", (req, res) => {
   res.json(diagnostics);
 });
 
-// Middleware to ensure schema is initialized before handling database requests
-// Skip for health check and schema init endpoint
-app.use(async (req, res, next) => {
-  // Skip schema check for these endpoints
-  if (
-    req.path === "/health" ||
-    req.path === "/" ||
-    req.path === "/api/v1/version" ||
-    req.path === "/api/v1/admin/init-schema" ||
-    req.path.startsWith("/diagnostics")
-  ) {
-    return next();
-  }
-
-  // For all other endpoints, ensure schema is initialized
-  // Use a shorter timeout for the middleware check to prevent hanging
-  try {
-    const initPromise = ensureSchemaInitialized();
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(
-        () => reject(new Error("Schema initialization check timeout")),
-        5000 // 5 second timeout for middleware check
-      );
-    });
-
-    await Promise.race([initPromise, timeoutPromise]);
-    next();
-  } catch (error: any) {
-    console.error("Schema not initialized, returning 503:", error);
-    const errorMessage = error?.message || "Unknown error";
-    const errorCode = error?.code || "UNKNOWN";
-
-    // If it's a timeout, provide helpful message
-    if (errorMessage.includes("timeout")) {
-      return res.status(503).json({
-        error:
-          "Database initialization is taking longer than expected. Please try again in a moment.",
-        message:
-          "The database is being initialized. This usually takes a few seconds. Please retry your request.",
-        details: {
-          hint: "If this persists, the database connection may be slow. Check Vercel logs for details.",
-          retryAfter: "5 seconds",
-        },
-      });
-    }
-
-    res.status(503).json({
-      error: "Database not ready. Please try again in a moment.",
-      message:
-        "If this persists, call /api/v1/admin/init-schema to initialize the database schema.",
-      details: {
-        error: errorMessage,
-        code: errorCode,
-        hint:
-          errorCode === "42P01"
-            ? "Table does not exist - schema needs initialization"
-            : errorCode === "28P01"
-            ? "Database authentication failed - check DATABASE_URL"
-            : errorCode === "ENOTFOUND" || errorCode === "ECONNREFUSED"
-            ? "Cannot connect to database - check DATABASE_URL"
-            : "Check Vercel logs for more details",
-      },
-    });
-  }
-});
+// Schema initialization happens on startup (lines 133-144)
+// No need to check on every request - if schema isn't initialized, queries will fail anyway
+// This removes the 5-second delay on every request
 
 // API Routes
 app.use("/api/v1/onboarding", onboardingRouter);

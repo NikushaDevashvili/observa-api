@@ -52,6 +52,16 @@ export class DashboardMetricsService {
     endTime?: string,
     groupBy?: "route" | "model"
   ): Promise<LatencyMetrics | Record<string, LatencyMetrics>> {
+    // SECURITY: Validate tenantId format (UUID) to prevent SQL injection
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
+      throw new Error("Invalid tenant_id format: must be a valid UUID");
+    }
+    
+    // SECURITY: Validate projectId format if provided
+    if (projectId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(projectId)) {
+      throw new Error("Invalid project_id format: must be a valid UUID");
+    }
+    
     const escapedTenantId = tenantId.replace(/'/g, "''");
     const escapedProjectId = projectId ? projectId.replace(/'/g, "''") : null;
 
@@ -201,6 +211,16 @@ export class DashboardMetricsService {
     startTime?: string,
     endTime?: string
   ): Promise<ErrorRateMetrics> {
+    // SECURITY: Validate tenantId format (UUID) to prevent SQL injection
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
+      throw new Error("Invalid tenant_id format: must be a valid UUID");
+    }
+    
+    // SECURITY: Validate projectId format if provided
+    if (projectId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(projectId)) {
+      throw new Error("Invalid project_id format: must be a valid UUID");
+    }
+    
     const escapedTenantId = tenantId.replace(/'/g, "''");
     const escapedProjectId = projectId ? projectId.replace(/'/g, "''") : null;
 
@@ -331,6 +351,16 @@ export class DashboardMetricsService {
     startTime?: string,
     endTime?: string
   ): Promise<CostMetrics> {
+    // SECURITY: Validate tenantId format (UUID) to prevent SQL injection
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
+      throw new Error("Invalid tenant_id format: must be a valid UUID");
+    }
+    
+    // SECURITY: Validate projectId format if provided
+    if (projectId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(projectId)) {
+      throw new Error("Invalid project_id format: must be a valid UUID");
+    }
+    
     const escapedTenantId = tenantId.replace(/'/g, "''");
     const escapedProjectId = projectId ? projectId.replace(/'/g, "''") : null;
 
@@ -435,6 +465,16 @@ export class DashboardMetricsService {
     startTime?: string,
     endTime?: string
   ): Promise<TokenMetrics> {
+    // SECURITY: Validate tenantId format (UUID) to prevent SQL injection
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
+      throw new Error("Invalid tenant_id format: must be a valid UUID");
+    }
+    
+    // SECURITY: Validate projectId format if provided
+    if (projectId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(projectId)) {
+      throw new Error("Invalid project_id format: must be a valid UUID");
+    }
+    
     const escapedTenantId = tenantId.replace(/'/g, "''");
     const escapedProjectId = projectId ? projectId.replace(/'/g, "''") : null;
 
@@ -554,6 +594,16 @@ export class DashboardMetricsService {
     startTime?: string,
     endTime?: string
   ): Promise<number> {
+    // SECURITY: Validate tenantId format (UUID) to prevent SQL injection
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
+      throw new Error("Invalid tenant_id format: must be a valid UUID");
+    }
+    
+    // SECURITY: Validate projectId format if provided
+    if (projectId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(projectId)) {
+      throw new Error("Invalid project_id format: must be a valid UUID");
+    }
+    
     const escapedTenantId = tenantId.replace(/'/g, "''");
     const escapedProjectId = projectId ? projectId.replace(/'/g, "''") : null;
 

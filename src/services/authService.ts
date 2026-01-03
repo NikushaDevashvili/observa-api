@@ -21,6 +21,40 @@ export interface User {
 export class AuthService {
   private static readonly SALT_ROUNDS = 10;
   private static readonly SESSION_EXPIRY_DAYS = 90;
+  private static readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes cache TTL
+  
+  // Secure session cache: key = tokenHash, value = { user, expires, tokenHash }
+  // Using tokenHash as key prevents cache poisoning and ensures tenant isolation
+  private static sessionCache = new Map<string, { 
+    user: User; 
+    expires: number;
+    tokenHash: string;
+  }>();
+  
+  // Cache cleanup interval (runs every 10 minutes)
+  private static cacheCleanupInterval: NodeJS.Timeout | null = null;
+  
+  /**
+   * Initialize cache cleanup interval
+   */
+  private static initializeCacheCleanup(): void {
+    if (this.cacheCleanupInterval) return;
+    
+    // Clean up expired cache entries every 10 minutes
+    this.cacheCleanupInterval = setInterval(() => {
+      const now = Date.now();
+      let cleaned = 0;
+      for (const [key, value] of this.sessionCache.entries()) {
+        if (value.expires <= now) {
+          this.sessionCache.delete(key);
+          cleaned++;
+        }
+      }
+      if (cleaned > 0) {
+        console.log(`[AuthService] Cleaned up ${cleaned} expired session cache entries`);
+      }
+    }, 10 * 60 * 1000);
+  }
 
   /**
    * Hash a password
@@ -259,11 +293,29 @@ export class AuthService {
   }
 
   /**
-   * Validate session token
+   * Validate session token with secure caching
+   * Cache key is tokenHash to prevent cache poisoning
    */
   static async validateSession(sessionToken: string): Promise<User | null> {
+    // Initialize cache cleanup if not already done
+    this.initializeCacheCleanup();
+    
     const tokenHash = crypto.createHash("sha256").update(sessionToken).digest("hex");
 
+    // Check cache first - use tokenHash as key for security
+    const cached = this.sessionCache.get(tokenHash);
+    if (cached && cached.expires > Date.now()) {
+      // Defense in depth: verify token hash matches
+      if (cached.tokenHash === tokenHash) {
+        return cached.user;
+      } else {
+        // Security violation detected - remove bad cache entry
+        this.sessionCache.delete(tokenHash);
+        console.error(`[AuthService] Security: Cache token hash mismatch detected`);
+      }
+    }
+
+    // Cache miss or expired - query database
     const rows = await query<{ user_id: string; expires_at: Date }>(
       `SELECT user_id, expires_at FROM sessions 
        WHERE token_hash = $1 AND expires_at > NOW()`,
@@ -275,22 +327,66 @@ export class AuthService {
     }
 
     const session = rows[0];
-    return await this.getUserById(session.user_id);
+    const user = await this.getUserById(session.user_id);
+    
+    // Cache the result if user found
+    if (user) {
+      this.sessionCache.set(tokenHash, {
+        user,
+        expires: Date.now() + this.CACHE_TTL,
+        tokenHash // Store hash for validation
+      });
+    }
+    
+    return user;
   }
 
   /**
-   * Revoke a session
+   * Invalidate session cache entry
+   */
+  private static invalidateSessionCache(sessionToken: string): void {
+    const tokenHash = crypto.createHash("sha256").update(sessionToken).digest("hex");
+    this.sessionCache.delete(tokenHash);
+  }
+
+  /**
+   * Invalidate all cached sessions for a user
+   */
+  private static invalidateUserCache(userId: string): void {
+    // Remove all cached sessions for this user
+    for (const [key, value] of this.sessionCache.entries()) {
+      if (value.user.id === userId) {
+        this.sessionCache.delete(key);
+      }
+    }
+  }
+
+  /**
+   * Revoke a session and invalidate cache
    */
   static async revokeSession(sessionToken: string): Promise<void> {
+    // Invalidate cache first
+    this.invalidateSessionCache(sessionToken);
+    
     const tokenHash = crypto.createHash("sha256").update(sessionToken).digest("hex");
     await query(`DELETE FROM sessions WHERE token_hash = $1`, [tokenHash]);
   }
 
   /**
-   * Revoke all sessions for a user
+   * Revoke all sessions for a user and invalidate cache
    */
   static async revokeAllSessions(userId: string): Promise<void> {
+    // Invalidate cache first
+    this.invalidateUserCache(userId);
+    
     await query(`DELETE FROM sessions WHERE user_id = $1`, [userId]);
+  }
+  
+  /**
+   * Invalidate cache when password is changed (call this after password update)
+   */
+  static invalidateUserSessionsOnPasswordChange(userId: string): void {
+    this.invalidateUserCache(userId);
   }
 }
 

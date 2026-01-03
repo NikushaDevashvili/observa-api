@@ -12,6 +12,41 @@ import { SignalsQueryService } from "../services/signalsQueryService.js";
 
 const router = Router();
 
+// Secure dashboard cache: key = cacheKey, value = { data, expires, tenantId }
+// Cache key includes tenant_id FIRST to prevent cross-tenant access
+const dashboardCache = new Map<string, { 
+  data: any; 
+  expires: number;
+  tenantId: string; // Store tenant for validation
+}>();
+
+const CACHE_TTL = 60 * 1000; // 1 minute cache TTL
+
+// Cache cleanup interval (runs every 5 minutes)
+let cacheCleanupInterval: NodeJS.Timeout | null = null;
+
+function initializeCacheCleanup(): void {
+  if (cacheCleanupInterval) return;
+  
+  // Clean up expired cache entries every 5 minutes
+  cacheCleanupInterval = setInterval(() => {
+    const now = Date.now();
+    let cleaned = 0;
+    for (const [key, value] of dashboardCache.entries()) {
+      if (value.expires <= now) {
+        dashboardCache.delete(key);
+        cleaned++;
+      }
+    }
+    if (cleaned > 0) {
+      console.log(`[Dashboard] Cleaned up ${cleaned} expired cache entries`);
+    }
+  }, 5 * 60 * 1000);
+}
+
+// Initialize cache cleanup on module load
+initializeCacheCleanup();
+
 /**
  * GET /api/v1/dashboard/overview
  * Get dashboard overview with key metrics
@@ -68,8 +103,25 @@ router.get("/overview", async (req: Request, res: Response) => {
       console.log(`[Dashboard] Querying metrics for all time (no time filter)`);
     }
 
-    // Get all metrics in parallel
-    console.log(`[Dashboard] Fetching metrics for tenant ${user.tenantId}, project ${projectId || "all"}`);
+    // Build cache key with tenant_id FIRST to prevent cross-tenant access
+    const cacheKey = `dashboard:${user.tenantId}:${projectId || 'all'}:${start || 'all'}:${end || 'all'}`;
+    
+    // Check cache
+    const cached = dashboardCache.get(cacheKey);
+    if (cached && cached.expires > Date.now()) {
+      // Security check: verify tenant matches (defense in depth)
+      if (cached.tenantId === user.tenantId) {
+        console.log(`[Dashboard] Cache hit for tenant ${user.tenantId}`);
+        return res.status(200).json(cached.data);
+      } else {
+        // Security violation detected - remove bad cache entry
+        dashboardCache.delete(cacheKey);
+        console.error(`[Dashboard] Security: Cache tenant mismatch detected for key: ${cacheKey}`);
+      }
+    }
+
+    // Cache miss or expired - fetch data
+    console.log(`[Dashboard] Cache miss - fetching metrics for tenant ${user.tenantId}, project ${projectId || "all"}`);
     
     const [
       latencyMetrics,
@@ -136,7 +188,7 @@ router.get("/overview", async (req: Request, res: Response) => {
     console.log(`  - Tokens: ${tokenMetrics.total_tokens}`);
     console.log(`  - Active issues: ${signalCounts.high + signalCounts.medium + signalCounts.low}`);
 
-    return res.status(200).json({
+    const responseData = {
       success: true,
       period: {
         start: start || null,
@@ -183,7 +235,16 @@ router.get("/overview", async (req: Request, res: Response) => {
         trace_count: traceCount,
       },
       timestamp: new Date().toISOString(),
+    };
+
+    // Store in cache with tenant validation
+    dashboardCache.set(cacheKey, {
+      data: responseData,
+      expires: Date.now() + CACHE_TTL,
+      tenantId: user.tenantId // Store tenant for validation
     });
+
+    return res.status(200).json(responseData);
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Internal server error";
