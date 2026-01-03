@@ -708,10 +708,17 @@ function calculateErrorSummary(spans: AgentPrismTraceSpan[]): ErrorSummary {
   
   function traverseSpans(spans: AgentPrismTraceSpan[]) {
     for (const span of spans) {
-      if (span.errorInfo) {
+      // Count spans with errorInfo OR status="error"
+      // This ensures we catch all errors even if errorInfo wasn't set for some reason
+      if (span.errorInfo || span.status === "error") {
         errorSpans.push(span.id);
-        const errorType = span.errorInfo.type || "error";
-        errorTypes[errorType] = (errorTypes[errorType] || 0) + 1;
+        if (span.errorInfo) {
+          const errorType = span.errorInfo.type || "error";
+          errorTypes[errorType] = (errorTypes[errorType] || 0) + 1;
+        } else {
+          // If status is error but no errorInfo, use a default type
+          errorTypes["error"] = (errorTypes["error"] || 0) + 1;
+        }
       }
       
       if (span.children && span.children.length > 0) {

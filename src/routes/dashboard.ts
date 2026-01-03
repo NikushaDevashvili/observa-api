@@ -51,41 +51,21 @@ router.get("/overview", async (req: Request, res: Response) => {
 
     // Get query parameters
     const projectId = req.query.projectId as string | undefined;
-    // Support both 'days' and 'timeRange' query params
-    // Frontend might pass timeRange=24h, 7d, 30d
-    let days = 7; // Default: last 7 days
-    const daysParam = req.query.days as string | undefined;
-    const timeRangeParam = req.query.timeRange as string | undefined;
-    
-    if (timeRangeParam) {
-      // Parse timeRange like "24h", "7d", "30d"
-      if (timeRangeParam.endsWith('h')) {
-        days = parseFloat(timeRangeParam) / 24;
-      } else if (timeRangeParam.endsWith('d')) {
-        days = parseFloat(timeRangeParam);
-      }
-    } else if (daysParam) {
-      days = parseInt(daysParam) || 7;
-    }
-    
-    console.log(`[Dashboard] Time range requested: ${timeRangeParam || daysParam || 'default'} (${days} days)`);
     const startTime = req.query.startTime as string | undefined;
     const endTime = req.query.endTime as string | undefined;
 
-    // Calculate time range
-    let start: string;
-    let end: string;
+    // If no time filter provided, show all data (no time restriction)
+    let start: string | undefined;
+    let end: string | undefined;
+    
     if (startTime && endTime) {
+      // Explicit time range provided
       start = startTime;
       end = endTime;
+      console.log(`[Dashboard] Querying metrics for explicit time range: ${start} to ${end}`);
     } else {
-      // Use current time as end, go back N days
-      end = new Date().toISOString();
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - days);
-      start = startDate.toISOString();
-      
-      console.log(`[Dashboard] Querying metrics for period: ${start} to ${end} (${days} days)`);
+      // No time filter - show all data
+      console.log(`[Dashboard] Querying metrics for all time (no time filter)`);
     }
 
     // Get all metrics in parallel
