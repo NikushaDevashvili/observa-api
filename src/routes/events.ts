@@ -360,12 +360,20 @@ router.post(
       );
 
       // Generate Layer 2 signals (async, non-blocking)
-      SignalsService.processEvents(tinybirdEvents).catch((error) => {
-        console.error(
-          "[Events API] Failed to process signals (non-fatal):",
-          error
-        );
-      });
+      // Process signals from the formatted events (they have attributes_json as string)
+      // Note: We use tinybirdEvents (before formatting) because they have the full data
+      SignalsService.processEvents(tinybirdEvents)
+        .then(() => {
+          console.log(
+            `[Events API] ✅ Processed signals for ${validatedEvents.length} events`
+          );
+        })
+        .catch((error) => {
+          console.error(
+            "[Events API] ❌ Failed to process signals (non-fatal):",
+            error
+          );
+        });
 
       // Increment quota usage (use projectId if available, otherwise tenantId)
       try {

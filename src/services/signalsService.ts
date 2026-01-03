@@ -35,9 +35,31 @@ export class SignalsService {
    */
   static async processEvents(events: TinybirdCanonicalEvent[]): Promise<void> {
     const signals: Signal[] = [];
+    let parseErrors = 0;
 
     for (const event of events) {
-      const attributes = JSON.parse(event.attributes_json);
+      // Safely parse attributes_json - skip events with invalid JSON
+      let attributes: any;
+      try {
+        if (typeof event.attributes_json === "string" && event.attributes_json.trim()) {
+          attributes = JSON.parse(event.attributes_json);
+        } else {
+          // Skip events without valid attributes_json
+          continue;
+        }
+      } catch (e) {
+        parseErrors++;
+        // Log first few errors for debugging, then skip silently
+        if (parseErrors <= 3) {
+          console.warn(
+            `[SignalsService] Failed to parse attributes_json for event ${event.event_type} (trace: ${event.trace_id}):`,
+            e instanceof Error ? e.message : String(e)
+          );
+        }
+        // Skip this event and continue processing others
+        continue;
+      }
+
       const eventTimestamp = new Date(event.timestamp).toISOString();
 
       // Process LLM call events
@@ -314,8 +336,11 @@ export class SignalsService {
       // Forward signals to Tinybird
       try {
         await CanonicalEventService.forwardToTinybird(formattedSignalEvents);
+        console.log(
+          `[SignalsService] ✅ Stored ${signals.length} signals to Tinybird (${signals.filter(s => s.signal_severity === "high").length} high-severity)`
+        );
       } catch (error) {
-        console.error("[SignalsService] Failed to store signals:", error);
+        console.error("[SignalsService] ❌ Failed to store signals:", error);
         // Don't throw - signal storage failure shouldn't break ingestion
       }
 
@@ -381,6 +406,13 @@ export class SignalsService {
             // Don't throw - analysis queue failure shouldn't break ingestion
           }
         }
+      }
+    } else {
+      // Log if we had parse errors but no signals generated
+      if (parseErrors > 0) {
+        console.warn(
+          `[SignalsService] ⚠️  Skipped ${parseErrors} events due to JSON parsing errors (no signals generated)`
+        );
       }
     }
   }

@@ -73,17 +73,143 @@ router.get("/", async (req: Request, res: Response) => {
       start = startDate.toISOString();
     }
 
-    // Query signals
-    const signals = await SignalsQueryService.querySignals({
-      tenantId: user.tenantId,
-      projectId: projectId || null,
-      signalNames,
-      severity,
-      startTime: start,
-      endTime: end,
-      limit,
-      offset,
-    });
+    // Query signals from Tinybird
+    let signals: any[] = [];
+    try {
+      signals = await SignalsQueryService.querySignals({
+        tenantId: user.tenantId,
+        projectId: projectId || null,
+        signalNames,
+        severity,
+        startTime: start,
+        endTime: end,
+        limit,
+        offset,
+      });
+    } catch (error) {
+      console.warn("[Issues API] Failed to query signals from Tinybird:", error);
+      // Fall through to PostgreSQL fallback
+    }
+
+    // If no signals found, fallback to PostgreSQL (basic issue detection)
+    if (signals.length === 0) {
+      console.log("[Issues API] No signals found in Tinybird, querying PostgreSQL for basic issues...");
+      const { query } = await import("../db/client.js");
+      
+      let whereClause = `WHERE tenant_id = $1`;
+      const params: any[] = [user.tenantId];
+      let paramIndex = 2;
+
+      if (projectId) {
+        whereClause += ` AND project_id = $${paramIndex}`;
+        params.push(projectId);
+        paramIndex++;
+      }
+
+      // Filter by time range
+      if (start) {
+        whereClause += ` AND timestamp >= $${paramIndex}`;
+        params.push(new Date(start));
+        paramIndex++;
+      }
+      if (end) {
+        whereClause += ` AND timestamp <= $${paramIndex}`;
+        params.push(new Date(end));
+        paramIndex++;
+      }
+
+      // Only get traces with issues (metadata_json contains issues data)
+      whereClause += ` AND metadata_json IS NOT NULL AND metadata_json::jsonb->'issues'->>'has_issues' = 'true'`;
+
+      const rows = await query(
+        `SELECT 
+          trace_id,
+          span_id,
+          timestamp,
+          metadata_json,
+          status,
+          status_text
+        FROM analysis_results
+        ${whereClause}
+        ORDER BY timestamp DESC
+        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+        [...params, limit, offset]
+      );
+
+      // Transform PostgreSQL issues to issues format
+      for (const row of rows) {
+        let metadata: any = {};
+        try {
+          if (row.metadata_json) {
+            metadata = typeof row.metadata_json === "string" 
+              ? JSON.parse(row.metadata_json) 
+              : row.metadata_json;
+          }
+        } catch (e) {
+          // Skip if metadata can't be parsed
+          continue;
+        }
+
+        const issuesData = metadata?.issues;
+        if (!issuesData || !issuesData.has_issues) {
+          continue;
+        }
+
+        // Create issues from error types
+        if (issuesData.error_events > 0) {
+          for (const [errorType, count] of Object.entries(issuesData.error_types || {})) {
+            signals.push({
+              tenant_id: user.tenantId,
+              project_id: projectId || null,
+              trace_id: row.trace_id,
+              span_id: row.span_id,
+              signal_name: `error_${errorType}`,
+              signal_type: "error",
+              signal_value: true,
+              signal_severity: "high",
+              metadata: { error_type: errorType, count: count },
+              timestamp: row.timestamp,
+            });
+          }
+        }
+
+        // Add tool failures
+        if (issuesData.tool_failures > 0) {
+          signals.push({
+            tenant_id: user.tenantId,
+            project_id: projectId || null,
+            trace_id: row.trace_id,
+            span_id: row.span_id,
+            signal_name: "tool_error",
+            signal_type: "error",
+            signal_value: true,
+            signal_severity: "high",
+            metadata: { count: issuesData.tool_failures },
+            timestamp: row.timestamp,
+          });
+        }
+
+        // Add tool timeouts
+        if (issuesData.tool_timeouts > 0) {
+          signals.push({
+            tenant_id: user.tenantId,
+            project_id: projectId || null,
+            trace_id: row.trace_id,
+            span_id: row.span_id,
+            signal_name: "tool_timeout",
+            signal_type: "error",
+            signal_value: true,
+            signal_severity: "high",
+            metadata: { count: issuesData.tool_timeouts },
+            timestamp: row.timestamp,
+          });
+        }
+      }
+
+      if (signals.length > 0) {
+        console.log(`[Issues API] Found ${signals.length} issues from PostgreSQL fallback`);
+      }
+    }
 
     // Transform signals to issues format
     const issues = signals.map((signal) => ({
