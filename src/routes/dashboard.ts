@@ -139,9 +139,9 @@ router.get("/overview", async (req: Request, res: Response) => {
     return res.status(200).json({
       success: true,
       period: {
-        start,
-        end,
-        days,
+        start: start || null,
+        end: end || null,
+        all_time: !start && !end,
       },
       metrics: {
         error_rate: {
