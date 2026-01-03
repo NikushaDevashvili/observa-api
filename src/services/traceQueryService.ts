@@ -95,6 +95,12 @@ export interface TraceListStats {
   errorRate: number; // percentage
 }
 
+export interface AvailableModel {
+  model: string;
+  count: number;
+  lastSeen: string | null;
+}
+
 export class TraceQueryService {
   private static normalizeList(values: unknown): string[] | undefined {
     if (values === undefined || values === null) return undefined;
@@ -618,6 +624,65 @@ export class TraceQueryService {
       console.error("[TraceQueryService] Error querying traces v2:", error);
       throw error;
     }
+  }
+
+  static async getAvailableModels(params: {
+    tenantId: string;
+    projectId?: string | null;
+    environment?: string | null;
+    startDate?: string;
+    endDate?: string;
+    limit?: number;
+  }): Promise<AvailableModel[]> {
+    const { tenantId, projectId, environment, startDate, endDate } = params;
+    const limit = Math.min(Math.max(params.limit ?? 50, 1), 200);
+
+    let whereClause = `WHERE tenant_id = $1 AND model IS NOT NULL AND NULLIF(TRIM(model), '') IS NOT NULL`;
+    const values: any[] = [tenantId];
+    let idx = 2;
+
+    if (projectId) {
+      whereClause += ` AND project_id = $${idx}`;
+      values.push(projectId);
+      idx++;
+    }
+
+    if (environment) {
+      whereClause += ` AND environment = $${idx}`;
+      values.push(environment);
+      idx++;
+    }
+
+    if (startDate) {
+      whereClause += ` AND timestamp >= $${idx}`;
+      values.push(new Date(startDate));
+      idx++;
+    }
+
+    if (endDate) {
+      whereClause += ` AND timestamp <= $${idx}`;
+      values.push(new Date(endDate));
+      idx++;
+    }
+
+    const rows = await query(
+      `SELECT
+        model,
+        COUNT(*)::int as count,
+        MAX(COALESCE(timestamp, analyzed_at)) as last_seen
+      FROM analysis_results
+      ${whereClause}
+      GROUP BY model
+      ORDER BY count DESC, model ASC
+      LIMIT $${idx}`,
+      [...values, limit]
+    );
+
+    return rows.map((r: any) => ({
+      model: String(r.model),
+      count: Number(r.count || 0),
+      lastSeen: r.last_seen ? new Date(r.last_seen).toISOString() : null,
+    })) as AvailableModel[];
   }
 
   /**

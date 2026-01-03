@@ -499,6 +499,60 @@ router.get("/", async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/v1/traces/models
+ * List available models (distinct) for the authenticated tenant (with counts)
+ *
+ * Query params:
+ * - projectId (optional)
+ * - environment (optional)
+ * - startDate/endDate (optional)
+ * - limit (optional, default 50, max 200)
+ */
+router.get("/models", async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({
+        error: "Missing or invalid Authorization header",
+      });
+    }
+
+    const sessionToken = authHeader.substring(7);
+    const user = await AuthService.validateSession(sessionToken);
+    if (!user) {
+      return res.status(401).json({
+        error: "Invalid or expired session",
+      });
+    }
+
+    const projectId = (req.query.projectId as string | undefined) || null;
+    const environment = (req.query.environment as string | undefined) || null;
+    const startDate = req.query.startDate as string | undefined;
+    const endDate = req.query.endDate as string | undefined;
+    const limit = parseInt(req.query.limit as string) || 50;
+
+    const models = await TraceQueryService.getAvailableModels({
+      tenantId: user.tenantId,
+      projectId,
+      environment,
+      startDate,
+      endDate,
+      limit,
+    });
+
+    return res.status(200).json({
+      success: true,
+      models,
+    });
+  } catch (error) {
+    console.error("Error fetching available models:", error);
+    return res.status(500).json({
+      error: error instanceof Error ? error.message : "Internal server error",
+    });
+  }
+});
+
+/**
  * GET /api/v1/traces/export
  * Export traces for the authenticated user (CSV or JSON)
  *
