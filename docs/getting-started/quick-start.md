@@ -5,12 +5,14 @@ Get up and running with Observa in 5 minutes.
 ## Step 1: Sign Up
 
 ### Option A: Via Dashboard
+
 1. Go to [Observa Dashboard](https://observa-app.vercel.app)
 2. Click "Sign Up"
 3. Enter your email and company name
 4. Complete signup
 
 ### Option B: Via API
+
 ```bash
 curl -X POST https://observa-api.vercel.app/api/v1/onboarding/signup \
   -H "Content-Type: application/json" \
@@ -76,4 +78,3 @@ await observa.endTrace();
 ---
 
 **That's it!** You're now tracking your AI applications with Observa.
-
