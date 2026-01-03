@@ -3,10 +3,12 @@
  *
  * SOTA: Aggregates metrics from Tinybird canonical_events (OLAP data plane) for dashboard display
  * Provides latency percentiles, error rates, cost metrics, etc.
+ * Falls back to PostgreSQL analysis_results when Tinybird returns no data.
  */
 
 import { SignalsQueryService } from "./signalsQueryService.js";
 import { TinybirdRepository } from "./tinybirdRepository.js";
+import { query } from "../db/client.js";
 
 export interface LatencyMetrics {
   p50: number;
@@ -178,17 +180,83 @@ export class DashboardMetricsService {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error(
-        "[DashboardMetricsService] Failed to get latency metrics:",
+        "[DashboardMetricsService] Failed to get latency metrics from Tinybird:",
         errorMessage
       );
       
-      // If it's a permission error, log it clearly
-      if (errorMessage.includes("permissions") || errorMessage.includes("403")) {
-        console.error(
-          "[DashboardMetricsService] ⚠️  Tinybird token missing DATASOURCES:READ:canonical_events permission"
-        );
+      // Fallback to PostgreSQL
+      console.log("[DashboardMetricsService] Falling back to PostgreSQL for latency metrics");
+      return await this.getLatencyFromPostgres(tenantId, projectId, startTime, endTime);
+    }
+  }
+
+  /**
+   * Get latency metrics from PostgreSQL analysis_results (fallback)
+   */
+  private static async getLatencyFromPostgres(
+    tenantId: string,
+    projectId?: string | null,
+    startTime?: string,
+    endTime?: string
+  ): Promise<LatencyMetrics> {
+    try {
+      let whereClause = "WHERE tenant_id = $1 AND latency_ms IS NOT NULL AND latency_ms > 0";
+      const params: any[] = [tenantId];
+      let paramIndex = 2;
+
+      if (projectId) {
+        whereClause += ` AND project_id = $${paramIndex}`;
+        params.push(projectId);
+        paramIndex++;
       }
+
+      if (startTime) {
+        whereClause += ` AND timestamp >= $${paramIndex}`;
+        params.push(new Date(startTime));
+        paramIndex++;
+      }
+
+      if (endTime) {
+        whereClause += ` AND timestamp <= $${paramIndex}`;
+        params.push(new Date(endTime));
+        paramIndex++;
+      }
+
+      const result = await query<{
+        p50: string;
+        p95: string;
+        p99: string;
+        avg: string;
+        min: string;
+        max: string;
+        count: string;
+      }>(
+        `SELECT 
+          PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY latency_ms) as p50,
+          PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY latency_ms) as p95,
+          PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY latency_ms) as p99,
+          AVG(latency_ms) as avg,
+          MIN(latency_ms) as min,
+          MAX(latency_ms) as max,
+          COUNT(*) as count
+        FROM analysis_results ${whereClause}`,
+        params
+      );
       
+      const row = result[0] || {};
+      console.log(`[DashboardMetricsService] PostgreSQL latency: p50=${row.p50}, p95=${row.p95}, count=${row.count}`);
+      
+      return {
+        p50: parseFloat(row.p50 || "0"),
+        p95: parseFloat(row.p95 || "0"),
+        p99: parseFloat(row.p99 || "0"),
+        avg: parseFloat(row.avg || "0"),
+        min: parseFloat(row.min || "0"),
+        max: parseFloat(row.max || "0"),
+        count: parseInt(row.count || "0", 10),
+      };
+    } catch (error) {
+      console.error("[DashboardMetricsService] PostgreSQL latency fallback failed:", error);
       return {
         p50: 0,
         p95: 0,
@@ -312,6 +380,12 @@ export class DashboardMetricsService {
         );
       }
 
+      // If Tinybird returns 0 total, try PostgreSQL fallback
+      if (total === 0) {
+        console.log("[DashboardMetricsService] Tinybird returned 0 for error rate, falling back to PostgreSQL");
+        return await this.getErrorRateFromPostgres(tenantId, projectId, startTime, endTime);
+      }
+
       return {
         total,
         errors,
@@ -321,17 +395,69 @@ export class DashboardMetricsService {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error(
-        "[DashboardMetricsService] Failed to get error rate metrics:",
+        "[DashboardMetricsService] Failed to get error rate metrics from Tinybird:",
         errorMessage
       );
       
-      // If it's a permission error, log it clearly
-      if (errorMessage.includes("permissions") || errorMessage.includes("403")) {
-        console.error(
-          "[DashboardMetricsService] ⚠️  Tinybird token missing DATASOURCES:READ:canonical_events permission"
-        );
+      // Fallback to PostgreSQL
+      console.log("[DashboardMetricsService] Falling back to PostgreSQL for error rate");
+      return await this.getErrorRateFromPostgres(tenantId, projectId, startTime, endTime);
+    }
+  }
+
+  /**
+   * Get error rate from PostgreSQL analysis_results (fallback)
+   */
+  private static async getErrorRateFromPostgres(
+    tenantId: string,
+    projectId?: string | null,
+    startTime?: string,
+    endTime?: string
+  ): Promise<ErrorRateMetrics> {
+    try {
+      let whereClause = "WHERE tenant_id = $1";
+      const params: any[] = [tenantId];
+      let paramIndex = 2;
+
+      if (projectId) {
+        whereClause += ` AND project_id = $${paramIndex}`;
+        params.push(projectId);
+        paramIndex++;
       }
+
+      if (startTime) {
+        whereClause += ` AND timestamp >= $${paramIndex}`;
+        params.push(new Date(startTime));
+        paramIndex++;
+      }
+
+      if (endTime) {
+        whereClause += ` AND timestamp <= $${paramIndex}`;
+        params.push(new Date(endTime));
+        paramIndex++;
+      }
+
+      const result = await query<{ total: string; errors: string }>(
+        `SELECT 
+          COUNT(*) as total,
+          COUNT(*) FILTER (WHERE status = 'error') as errors
+        FROM analysis_results ${whereClause}`,
+        params
+      );
       
+      const total = parseInt(result[0]?.total || "0", 10);
+      const errors = parseInt(result[0]?.errors || "0", 10);
+      
+      console.log(`[DashboardMetricsService] PostgreSQL error rate: ${errors}/${total}`);
+      
+      return {
+        total,
+        errors,
+        error_rate: total > 0 ? (errors / total) * 100 : 0,
+        error_types: {},
+      };
+    } catch (error) {
+      console.error("[DashboardMetricsService] PostgreSQL error rate fallback failed:", error);
       return {
         total: 0,
         errors: 0,
@@ -426,6 +552,12 @@ export class DashboardMetricsService {
         costByModel[model] = cost;
       }
 
+      // If Tinybird returns 0, try PostgreSQL fallback
+      if (totalCost === 0) {
+        console.log("[DashboardMetricsService] Tinybird returned 0 for cost, falling back to PostgreSQL");
+        return await this.getCostFromPostgres(tenantId, projectId, startTime, endTime);
+      }
+
       return {
         total_cost: totalCost,
         avg_cost_per_trace: totalTraces > 0 ? totalCost / totalTraces : 0,
@@ -435,17 +567,91 @@ export class DashboardMetricsService {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error(
-        "[DashboardMetricsService] Failed to get cost metrics:",
+        "[DashboardMetricsService] Failed to get cost metrics from Tinybird:",
         errorMessage
       );
       
-      // If it's a permission error, log it clearly
-      if (errorMessage.includes("permissions") || errorMessage.includes("403")) {
-        console.error(
-          "[DashboardMetricsService] ⚠️  Tinybird token missing DATASOURCES:READ:canonical_events permission"
-        );
+      // Fallback to PostgreSQL
+      console.log("[DashboardMetricsService] Falling back to PostgreSQL for cost metrics");
+      return await this.getCostFromPostgres(tenantId, projectId, startTime, endTime);
+    }
+  }
+
+  /**
+   * Get cost metrics from PostgreSQL analysis_results (fallback)
+   * Uses estimated cost calculation based on tokens and model
+   */
+  private static async getCostFromPostgres(
+    tenantId: string,
+    projectId?: string | null,
+    startTime?: string,
+    endTime?: string
+  ): Promise<CostMetrics> {
+    try {
+      let whereClause = "WHERE tenant_id = $1";
+      const params: any[] = [tenantId];
+      let paramIndex = 2;
+
+      if (projectId) {
+        whereClause += ` AND project_id = $${paramIndex}`;
+        params.push(projectId);
+        paramIndex++;
+      }
+
+      if (startTime) {
+        whereClause += ` AND timestamp >= $${paramIndex}`;
+        params.push(new Date(startTime));
+        paramIndex++;
+      }
+
+      if (endTime) {
+        whereClause += ` AND timestamp <= $${paramIndex}`;
+        params.push(new Date(endTime));
+        paramIndex++;
+      }
+
+      // Estimate cost based on tokens (rough estimate: $0.002 per 1K tokens)
+      const result = await query<{
+        total_cost: string;
+        trace_count: string;
+        model: string;
+      }>(
+        `SELECT 
+          model,
+          SUM(COALESCE(tokens_total, 0) * 0.000002) as total_cost,
+          COUNT(*) as trace_count
+        FROM analysis_results 
+        ${whereClause}
+        GROUP BY model`,
+        params
+      );
+      
+      let totalCost = 0;
+      let totalTraces = 0;
+      const costByModel: Record<string, number> = {};
+
+      for (const row of result) {
+        const cost = parseFloat(row.total_cost || "0");
+        const traces = parseInt(row.trace_count || "0", 10);
+        const model = row.model || "unknown";
+
+        totalCost += cost;
+        totalTraces += traces;
+        if (model !== "unknown") {
+          costByModel[model] = cost;
+        }
       }
       
+      console.log(`[DashboardMetricsService] PostgreSQL cost: $${totalCost.toFixed(4)}, ${totalTraces} traces`);
+      
+      return {
+        total_cost: totalCost,
+        avg_cost_per_trace: totalTraces > 0 ? totalCost / totalTraces : 0,
+        cost_by_model: costByModel,
+        cost_by_route: {},
+      };
+    } catch (error) {
+      console.error("[DashboardMetricsService] PostgreSQL cost fallback failed:", error);
       return {
         total_cost: 0,
         avg_cost_per_trace: 0,
@@ -554,6 +760,12 @@ export class DashboardMetricsService {
         };
       }
 
+      // If Tinybird returns 0, try PostgreSQL fallback
+      if (totalTokens === 0) {
+        console.log("[DashboardMetricsService] Tinybird returned 0 for tokens, falling back to PostgreSQL");
+        return await this.getTokensFromPostgres(tenantId, projectId, startTime, endTime);
+      }
+
       return {
         total_tokens: totalTokens,
         avg_tokens_per_trace: totalTraces > 0 ? totalTokens / totalTraces : 0,
@@ -564,17 +776,106 @@ export class DashboardMetricsService {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error(
-        "[DashboardMetricsService] Failed to get token metrics:",
+        "[DashboardMetricsService] Failed to get token metrics from Tinybird:",
         errorMessage
       );
       
-      // If it's a permission error, log it clearly
-      if (errorMessage.includes("permissions") || errorMessage.includes("403")) {
-        console.error(
-          "[DashboardMetricsService] ⚠️  Tinybird token missing DATASOURCES:READ:canonical_events permission"
-        );
+      // Fallback to PostgreSQL
+      console.log("[DashboardMetricsService] Falling back to PostgreSQL for token metrics");
+      return await this.getTokensFromPostgres(tenantId, projectId, startTime, endTime);
+    }
+  }
+
+  /**
+   * Get token metrics from PostgreSQL analysis_results (fallback)
+   */
+  private static async getTokensFromPostgres(
+    tenantId: string,
+    projectId?: string | null,
+    startTime?: string,
+    endTime?: string
+  ): Promise<TokenMetrics> {
+    try {
+      let whereClause = "WHERE tenant_id = $1";
+      const params: any[] = [tenantId];
+      let paramIndex = 2;
+
+      if (projectId) {
+        whereClause += ` AND project_id = $${paramIndex}`;
+        params.push(projectId);
+        paramIndex++;
+      }
+
+      if (startTime) {
+        whereClause += ` AND timestamp >= $${paramIndex}`;
+        params.push(new Date(startTime));
+        paramIndex++;
+      }
+
+      if (endTime) {
+        whereClause += ` AND timestamp <= $${paramIndex}`;
+        params.push(new Date(endTime));
+        paramIndex++;
+      }
+
+      const result = await query<{
+        model: string;
+        total_tokens: string;
+        input_tokens: string;
+        output_tokens: string;
+        avg_tokens: string;
+        trace_count: string;
+      }>(
+        `SELECT 
+          model,
+          SUM(COALESCE(tokens_total, 0)) as total_tokens,
+          SUM(COALESCE(tokens_prompt, 0)) as input_tokens,
+          SUM(COALESCE(tokens_completion, 0)) as output_tokens,
+          AVG(COALESCE(tokens_total, 0)) as avg_tokens,
+          COUNT(*) as trace_count
+        FROM analysis_results 
+        ${whereClause}
+        GROUP BY model`,
+        params
+      );
+      
+      let totalTokens = 0;
+      let totalInputTokens = 0;
+      let totalOutputTokens = 0;
+      let totalTraces = 0;
+      const tokensByModel: Record<string, { total: number; avg: number }> = {};
+
+      for (const row of result) {
+        const tokens = parseInt(row.total_tokens || "0", 10);
+        const inputTokens = parseInt(row.input_tokens || "0", 10);
+        const outputTokens = parseInt(row.output_tokens || "0", 10);
+        const traces = parseInt(row.trace_count || "0", 10);
+        const model = row.model || "unknown";
+        const avgTokens = parseFloat(row.avg_tokens || "0");
+
+        totalTokens += tokens;
+        totalInputTokens += inputTokens;
+        totalOutputTokens += outputTokens;
+        totalTraces += traces;
+        if (model !== "unknown") {
+          tokensByModel[model] = {
+            total: tokens,
+            avg: avgTokens,
+          };
+        }
       }
       
+      console.log(`[DashboardMetricsService] PostgreSQL tokens: ${totalTokens} total, ${totalTraces} traces`);
+      
+      return {
+        total_tokens: totalTokens,
+        avg_tokens_per_trace: totalTraces > 0 ? totalTokens / totalTraces : 0,
+        input_tokens: totalInputTokens,
+        output_tokens: totalOutputTokens,
+        tokens_by_model: tokensByModel,
+      };
+    } catch (error) {
+      console.error("[DashboardMetricsService] PostgreSQL token fallback failed:", error);
       return {
         total_tokens: 0,
         avg_tokens_per_trace: 0,
@@ -638,21 +939,70 @@ export class DashboardMetricsService {
       });
       // Handle Tinybird response format
       const results = Array.isArray(result) ? result : result?.data || [];
-      return parseInt(results[0]?.count || "0", 10);
+      const tinybirdCount = parseInt(results[0]?.count || "0", 10);
+      
+      // If Tinybird returns 0, try PostgreSQL fallback
+      if (tinybirdCount === 0) {
+        console.log("[DashboardMetricsService] Tinybird returned 0, falling back to PostgreSQL");
+        return await this.getTraceCountFromPostgres(tenantId, projectId, startTime, endTime);
+      }
+      
+      return tinybirdCount;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error(
-        "[DashboardMetricsService] Failed to get trace count:",
+        "[DashboardMetricsService] Failed to get trace count from Tinybird:",
         errorMessage
       );
       
-      // If it's a permission error, log it clearly
-      if (errorMessage.includes("permissions") || errorMessage.includes("403")) {
-        console.error(
-          "[DashboardMetricsService] ⚠️  Tinybird token missing DATASOURCES:READ:canonical_events permission"
-        );
+      // Fallback to PostgreSQL
+      console.log("[DashboardMetricsService] Falling back to PostgreSQL for trace count");
+      return await this.getTraceCountFromPostgres(tenantId, projectId, startTime, endTime);
+    }
+  }
+
+  /**
+   * Get trace count from PostgreSQL analysis_results (fallback)
+   */
+  private static async getTraceCountFromPostgres(
+    tenantId: string,
+    projectId?: string | null,
+    startTime?: string,
+    endTime?: string
+  ): Promise<number> {
+    try {
+      let whereClause = "WHERE tenant_id = $1";
+      const params: any[] = [tenantId];
+      let paramIndex = 2;
+
+      if (projectId) {
+        whereClause += ` AND project_id = $${paramIndex}`;
+        params.push(projectId);
+        paramIndex++;
       }
+
+      if (startTime) {
+        whereClause += ` AND timestamp >= $${paramIndex}`;
+        params.push(new Date(startTime));
+        paramIndex++;
+      }
+
+      if (endTime) {
+        whereClause += ` AND timestamp <= $${paramIndex}`;
+        params.push(new Date(endTime));
+        paramIndex++;
+      }
+
+      const result = await query<{ count: string }>(
+        `SELECT COUNT(*) as count FROM analysis_results ${whereClause}`,
+        params
+      );
       
+      const count = parseInt(result[0]?.count || "0", 10);
+      console.log(`[DashboardMetricsService] PostgreSQL trace count: ${count}`);
+      return count;
+    } catch (error) {
+      console.error("[DashboardMetricsService] PostgreSQL fallback failed:", error);
       return 0;
     }
   }
