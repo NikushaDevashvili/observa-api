@@ -217,13 +217,25 @@ export class SignalsQueryService {
     startTime?: string,
     endTime?: string
   ): Promise<{ high: number; medium: number; low: number }> {
-    const signals = await this.querySignals({
-      tenantId,
-      projectId,
-      startTime,
-      endTime,
-      limit: 10000,
-    });
+    let signals: Signal[] = [];
+    
+    try {
+      signals = await this.querySignals({
+        tenantId,
+        projectId,
+        startTime,
+        endTime,
+        limit: 10000,
+      });
+    } catch (error) {
+      console.warn("[SignalsQueryService] Tinybird query failed, falling back to PostgreSQL:", error);
+    }
+
+    // If Tinybird returns no signals, fall back to PostgreSQL issue detection
+    if (signals.length === 0) {
+      console.log("[SignalsQueryService] No signals from Tinybird, using PostgreSQL issue counts");
+      return await this.getIssueCountsFromPostgres(tenantId, projectId, startTime, endTime);
+    }
 
     const counts = { high: 0, medium: 0, low: 0 };
     for (const signal of signals) {
@@ -231,6 +243,71 @@ export class SignalsQueryService {
     }
 
     return counts;
+  }
+
+  /**
+   * Get issue counts from PostgreSQL analysis_results (fallback)
+   * Counts based on issue flags like is_hallucination, has_context_drop, etc.
+   */
+  private static async getIssueCountsFromPostgres(
+    tenantId: string,
+    projectId?: string | null,
+    startTime?: string,
+    endTime?: string
+  ): Promise<{ high: number; medium: number; low: number }> {
+    try {
+      const { query } = await import("../db/client.js");
+      
+      let whereClause = `WHERE tenant_id = $1`;
+      const params: any[] = [tenantId];
+      let paramIndex = 2;
+
+      if (projectId) {
+        whereClause += ` AND project_id = $${paramIndex}`;
+        params.push(projectId);
+        paramIndex++;
+      }
+
+      if (startTime) {
+        whereClause += ` AND COALESCE(timestamp, analyzed_at) >= $${paramIndex}`;
+        params.push(new Date(startTime));
+        paramIndex++;
+      }
+
+      if (endTime) {
+        whereClause += ` AND COALESCE(timestamp, analyzed_at) <= $${paramIndex}`;
+        params.push(new Date(endTime));
+        paramIndex++;
+      }
+
+      // Count issues by severity
+      // High severity: hallucination, prompt_injection, critical errors (status >= 500)
+      // Medium severity: context_drop, faithfulness_issue, model_drift, cost_anomaly, latency_anomaly
+      // Low severity: quality_degradation, context_overflow
+      const result = await query<{
+        high_count: string;
+        medium_count: string;
+        low_count: string;
+      }>(
+        `SELECT 
+          COUNT(*) FILTER (WHERE is_hallucination = TRUE OR has_prompt_injection = TRUE OR status >= 500) as high_count,
+          COUNT(*) FILTER (WHERE has_context_drop = TRUE OR has_faithfulness_issue = TRUE OR has_model_drift = TRUE OR has_cost_anomaly = TRUE OR has_latency_anomaly = TRUE) as medium_count,
+          COUNT(*) FILTER (WHERE has_quality_degradation = TRUE OR has_context_overflow = TRUE) as low_count
+        FROM analysis_results ${whereClause}`,
+        params
+      );
+
+      const high = parseInt(result[0]?.high_count || "0", 10);
+      const medium = parseInt(result[0]?.medium_count || "0", 10);
+      const low = parseInt(result[0]?.low_count || "0", 10);
+
+      console.log(`[SignalsQueryService] PostgreSQL issue counts: high=${high}, medium=${medium}, low=${low}`);
+
+      return { high, medium, low };
+    } catch (error) {
+      console.error("[SignalsQueryService] PostgreSQL issue count fallback failed:", error);
+      return { high: 0, medium: 0, low: 0 };
+    }
   }
 
   /**

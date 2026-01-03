@@ -448,7 +448,7 @@ export class DashboardMetricsService {
       const result = await query<{ total: string; errors: string }>(
         `SELECT 
           COUNT(*) as total,
-          COUNT(*) FILTER (WHERE status = 'error') as errors
+          COUNT(*) FILTER (WHERE status >= 400) as errors
         FROM analysis_results ${whereClause}`,
         params
       );
