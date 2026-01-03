@@ -167,6 +167,14 @@ export class DashboardMetricsService {
       });
       const results = Array.isArray(result) ? result : result?.data || [];
       const row = results[0] || {};
+      
+      const count = parseInt(row.count) || 0;
+      
+      // If Tinybird returns 0 count, fall back to PostgreSQL
+      if (count === 0) {
+        console.log("[DashboardMetricsService] Tinybird latency count is 0, falling back to PostgreSQL");
+        return await this.getLatencyFromPostgres(tenantId, projectId, startTime, endTime);
+      }
 
       return {
         p50: parseFloat(row.p50) || 0,
@@ -175,7 +183,7 @@ export class DashboardMetricsService {
         avg: parseFloat(row.avg) || 0,
         min: parseFloat(row.min) || 0,
         max: parseFloat(row.max) || 0,
-        count: parseInt(row.count) || 0,
+        count: count,
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -1201,6 +1209,7 @@ export class DashboardMetricsService {
 
       // Combine into time series array
       const series = Array.from(allBuckets)
+        .filter((bucket) => bucket && bucket.trim() !== '') // Filter out empty buckets
         .sort()
         .map((bucket) => ({
           timestamp: bucket,
@@ -1211,9 +1220,10 @@ export class DashboardMetricsService {
           trace_count: traceCountMap.get(bucket) || 0,
         }));
 
-      // If Tinybird returns empty, fall back to PostgreSQL
-      if (series.length === 0) {
-        console.log("[DashboardMetricsService] Tinybird time-series empty, falling back to PostgreSQL");
+      // If Tinybird returns empty or all zeros, fall back to PostgreSQL
+      const totalTraceCount = series.reduce((sum, item) => sum + item.trace_count, 0);
+      if (series.length === 0 || totalTraceCount === 0) {
+        console.log("[DashboardMetricsService] Tinybird time-series empty or no traces, falling back to PostgreSQL");
         return await this.getTimeSeriesFromPostgres(tenantId, projectId, startTime, endTime, interval);
       }
 
