@@ -150,8 +150,7 @@ router.get("/", async (req: Request, res: Response) => {
           has_model_drift,
           has_cost_anomaly,
           model,
-          query,
-          estimated_cost_usd
+          query
         FROM analysis_results
         ${whereClause}
         ORDER BY COALESCE(timestamp, analyzed_at) DESC
@@ -265,9 +264,9 @@ router.get("/", async (req: Request, res: Response) => {
             span_id: row.span_id || null,
             signal_name: "cost_anomaly",
             signal_type: "cost",
-            signal_value: row.estimated_cost_usd,
+            signal_value: true,
             signal_severity: "low",
-            metadata: { cost_usd: row.estimated_cost_usd, model: row.model },
+            metadata: { model: row.model },
             timestamp: row.timestamp,
           });
         }
