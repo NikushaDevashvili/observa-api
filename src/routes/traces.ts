@@ -456,6 +456,7 @@ router.get("/", async (req: Request, res: Response) => {
       time_to_first_token_ms: trace.time_to_first_token_ms,
       response_length: trace.response_length,
       status: trace.status,
+      status_text: trace.status_text,
       quality_score: trace.quality_score,
       estimated_cost_usd: trace.estimated_cost_usd,
       issue_count: trace.issue_count,

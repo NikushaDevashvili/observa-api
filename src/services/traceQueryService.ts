@@ -600,6 +600,7 @@ export class TraceQueryService {
           time_to_first_token_ms: t.time_to_first_token_ms,
           response_length: t.response_length,
           status: t.status,
+          status_text: t.status_text,
           quality_score: t.quality_score,
           estimated_cost_usd: t.estimated_cost_usd,
           issue_count: t.issue_count,
