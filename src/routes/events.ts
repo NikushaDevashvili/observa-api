@@ -20,6 +20,8 @@ import { SecretsScrubbingService } from "../services/secretsScrubbingService.js"
 import { SignalsService } from "../services/signalsService.js";
 import { TraceService } from "../services/traceService.js";
 import { ConversationService } from "../services/conversationService.js";
+import { OnboardingChecklistService } from "../services/onboardingChecklistService.js";
+import { query } from "../db/client.js";
 import {
   canonicalEventSchema,
   batchEventsSchema,
@@ -442,6 +444,43 @@ router.post(
           quotaError
         );
         // Don't fail the request if quota increment fails
+      }
+
+      // Detect first trace for onboarding (async, non-blocking)
+      try {
+        // Get users for this tenant
+        const users = await query(
+          `SELECT id FROM users WHERE tenant_id = $1 LIMIT 1`,
+          [tenantId]
+        );
+
+        if (users.length > 0) {
+          const userId = users[0].id;
+
+          // Check if this is the first trace for this tenant by checking if any traces exist
+          const existingTraces = await query(
+            `SELECT COUNT(*) as count FROM analysis_results WHERE tenant_id = $1 LIMIT 1`,
+            [tenantId]
+          );
+
+          // If this is the first trace (before this ingestion)
+          if (existingTraces.length > 0 && parseInt(existingTraces[0].count) === 0) {
+            // This is likely the first trace - mark task complete
+            await OnboardingChecklistService.detectAutomaticTasks(userId, {
+              type: "first_trace",
+              metadata: {
+                traceId: validatedEvents[0]?.traceId || "unknown",
+                eventCount: validatedEvents.length,
+              },
+            });
+          }
+        }
+      } catch (onboardingError) {
+        // Non-fatal - onboarding detection shouldn't break event ingestion
+        console.warn(
+          "[Events API] Failed to detect onboarding tasks (non-fatal):",
+          onboardingError
+        );
       }
 
       return res.status(200).json({

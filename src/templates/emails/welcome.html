@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome to Observa</title>
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <h1 style="color: #2563eb;">Welcome to Observa, {{name}}!</h1>
+  
+  <p>Thank you for signing up. Your account has been created and you're ready to start tracking your AI applications.</p>
+  
+  <div style="background: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0;">
+    <h2 style="margin-top: 0;">Your API Key</h2>
+    <p style="word-break: break-all; font-family: monospace; background: white; padding: 10px; border-radius: 4px;">{{apiKey}}</p>
+    <p style="font-size: 12px; color: #666;">⚠️ Keep this key secure and never commit it to version control.</p>
+  </div>
+  
+  <div style="margin: 30px 0;">
+    <a href="{{frontendUrl}}/dashboard" style="background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">Go to Dashboard</a>
+  </div>
+  
+  <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+    <h3>Quick Start</h3>
+    <ol>
+      <li>Install the SDK: <code>npm install observa-sdk</code></li>
+      <li>Initialize with your API key</li>
+      <li>Start tracking traces in your application</li>
+      <li>View results in your dashboard</li>
+    </ol>
+    
+    <p><a href="{{frontendUrl}}/docs">View Documentation →</a></p>
+  </div>
+  
+  <p style="margin-top: 30px; font-size: 12px; color: #666;">
+    If you have any questions, feel free to reach out to our support team.
+  </p>
+</body>
+</html>
+

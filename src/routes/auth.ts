@@ -2,6 +2,9 @@ import { Router, Request, Response } from "express";
 import { AuthService } from "../services/authService.js";
 import { TenantService } from "../services/tenantService.js";
 import { TokenService } from "../services/tokenService.js";
+import { EmailService } from "../services/emailService.js";
+import { OnboardingTrackerService } from "../services/onboardingTrackerService.js";
+import { env } from "../config/env.js";
 import { z } from "zod";
 
 const router = Router();
@@ -262,6 +265,111 @@ router.get("/account", async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error("Get account error:", error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Internal server error",
+    });
+  }
+});
+
+/**
+ * POST /api/v1/auth/verify-email
+ * Request email verification
+ */
+router.post("/verify-email", async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({
+        error: "Unauthorized",
+        message: "Missing or invalid session token",
+      });
+    }
+
+    if (!env.EMAIL_VERIFICATION_ENABLED) {
+      return res.status(400).json({
+        error: "Email verification is not enabled",
+      });
+    }
+
+    const sessionToken = authHeader.substring(7);
+    const user = await AuthService.validateSession(sessionToken);
+
+    if (!user) {
+      return res.status(401).json({
+        error: "Unauthorized",
+        message: "Invalid or expired session",
+      });
+    }
+
+    // Check if already verified
+    const existingToken = await query(
+      `SELECT verified_at FROM email_verification_tokens
+       WHERE user_id = $1 AND verified_at IS NOT NULL
+       ORDER BY verified_at DESC LIMIT 1`,
+      [user.id]
+    );
+
+    if (existingToken.length > 0) {
+      return res.json({
+        success: true,
+        message: "Email already verified",
+      });
+    }
+
+    // Generate verification token
+    const token = await EmailService.generateVerificationToken(user.id);
+
+    // Send verification email
+    await EmailService.sendEmailVerificationEmail(user.id, user.email, token);
+
+    res.json({
+      success: true,
+      message: "Verification email sent",
+    });
+  } catch (error) {
+    console.error("Request verification email error:", error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Internal server error",
+    });
+  }
+});
+
+/**
+ * GET /api/v1/auth/verify-email/:token
+ * Verify email with token
+ */
+router.get("/verify-email/:token", async (req: Request, res: Response) => {
+  try {
+    if (!env.EMAIL_VERIFICATION_ENABLED) {
+      return res.status(400).json({
+        error: "Email verification is not enabled",
+      });
+    }
+
+    const { token } = req.params;
+
+    const userId = await EmailService.verifyToken(token);
+
+    if (!userId) {
+      return res.status(400).json({
+        error: "Invalid or expired verification token",
+      });
+    }
+
+    // Mark email_verified task as complete
+    try {
+      await OnboardingTrackerService.completeTask(userId, "email_verified");
+    } catch (err) {
+      // Non-fatal - task might not exist yet
+      console.warn("Failed to update onboarding task:", err);
+    }
+
+    res.json({
+      success: true,
+      message: "Email verified successfully",
+    });
+  } catch (error) {
+    console.error("Verify email error:", error);
     res.status(500).json({
       error: error instanceof Error ? error.message : "Internal server error",
     });

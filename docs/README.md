@@ -41,6 +41,7 @@ Welcome to the Observa Knowledge Hub - your complete guide to using and integrat
 - [Debugging Guide](./troubleshooting/debugging.md)
 
 ### 📖 Reference
+- [Platform Capabilities & Technical Overview](./reference/platform-capabilities.md)
 - [Data Models](./reference/data-models.md)
 - [Event Formats](./reference/event-formats.md)
 - [Rate Limits](./reference/rate-limits.md)
@@ -56,6 +57,7 @@ Welcome to the Observa Knowledge Hub - your complete guide to using and integrat
 - [View Your Data](./guides/dashboard.md)
 
 ### For Developers
+- [Platform Capabilities](./reference/platform-capabilities.md)
 - [API Documentation](../api-docs)
 - [SDK Examples](./sdk/examples.md)
 - [Integration Patterns](./sdk/migration.md)

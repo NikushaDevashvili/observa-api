@@ -9,6 +9,7 @@ import { Router, Request, Response } from "express";
 import { AuthService } from "../services/authService.js";
 import { DashboardMetricsService } from "../services/dashboardMetricsService.js";
 import { SignalsQueryService } from "../services/signalsQueryService.js";
+import { OnboardingChecklistService } from "../services/onboardingChecklistService.js";
 
 const router = Router();
 
@@ -83,6 +84,15 @@ router.get("/overview", async (req: Request, res: Response) => {
         },
       });
     }
+
+    // Detect dashboard visit for onboarding (async, non-blocking)
+    OnboardingChecklistService.detectAutomaticTasks(user.id, {
+      type: "dashboard_visit",
+      metadata: { source: "dashboard_overview" },
+    }).catch((err) => {
+      // Non-fatal - onboarding detection shouldn't break dashboard
+      console.warn("[Dashboard] Failed to detect onboarding tasks:", err);
+    });
 
     // Get query parameters
     const projectId = req.query.projectId as string | undefined;

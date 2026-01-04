@@ -6,6 +6,7 @@ import { TraceService } from "../services/traceService.js";
 import { AuthService } from "../services/authService.js";
 import { TraceQueryService } from "../services/traceQueryService.js";
 import { AgentPrismAdapterService } from "../services/agentPrismAdapter.js";
+import { OnboardingChecklistService } from "../services/onboardingChecklistService.js";
 import { TraceEvent } from "../types.js";
 import { traceEventSchema } from "../validation/schemas.js";
 import { query } from "../db/client.js";
@@ -852,6 +853,15 @@ router.get("/:traceId", async (req: Request, res: Response) => {
         error: "Invalid or expired session",
       });
     }
+
+    // Detect trace view for onboarding (async, non-blocking)
+    OnboardingChecklistService.detectAutomaticTasks(user.id, {
+      type: "trace_view",
+      metadata: { traceId, source: "trace_detail" },
+    }).catch((err) => {
+      // Non-fatal - onboarding detection shouldn't break trace viewing
+      console.warn("[Traces API] Failed to detect onboarding tasks:", err);
+    });
 
     // If format=agent-prism requested, return agent-prism formatted data
     if (format === "agent-prism") {

@@ -43,6 +43,15 @@ const envSchema = z.object({
   REDIS_URL: z.string().url().optional(),
   UPSTASH_REDIS_URL: z.string().url().optional(),
   ANALYSIS_SERVICE_URL: z.string().url().optional(),
+  EMAIL_SERVICE_API_KEY: z.string().optional(),
+  EMAIL_FROM_ADDRESS: z.string().email().optional(),
+  EMAIL_FROM_NAME: z.string().optional(),
+  EMAIL_VERIFICATION_ENABLED: z
+    .string()
+    .transform((val) => val === "true")
+    .pipe(z.boolean())
+    .default("false"),
+  FRONTEND_URL: z.string().url().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
