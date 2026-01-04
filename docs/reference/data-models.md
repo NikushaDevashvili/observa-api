@@ -94,3 +94,4 @@ interface CostMetrics {
 
 **Full Reference**: See [TRACE_DATA_REFERENCE.md](../../TRACE_DATA_REFERENCE.md) for complete details.
 
+

@@ -78,3 +78,4 @@ await observa.endTrace();
 ---
 
 **That's it!** You're now tracking your AI applications with Observa.
+

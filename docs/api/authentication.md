@@ -142,3 +142,4 @@ curl -X GET https://observa-api.vercel.app/api/v1/traces \
 
 **Need help?** Check the [Troubleshooting Guide](../troubleshooting/common-issues.md).
 
+

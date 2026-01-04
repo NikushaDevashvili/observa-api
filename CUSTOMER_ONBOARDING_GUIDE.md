@@ -389,3 +389,4 @@ observa.endTrace()               // End and send trace
 
 **Congratulations!** You're now set up with Observa. Start tracking your AI applications and gain insights into performance, costs, and issues.
 
+

@@ -226,3 +226,4 @@ async function sendFirstTrace() {
 - **Issues**: Report on GitHub
 - **Email**: support@observa.ai
 
+

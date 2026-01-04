@@ -106,101 +106,168 @@ router.get("/", async (req: Request, res: Response) => {
         paramIndex++;
       }
 
-      // Filter by time range
+      // Filter by time range - use COALESCE for timestamp as it might be null
       if (start) {
-        whereClause += ` AND timestamp >= $${paramIndex}`;
+        whereClause += ` AND COALESCE(timestamp, analyzed_at) >= $${paramIndex}`;
         params.push(new Date(start));
         paramIndex++;
       }
       if (end) {
-        whereClause += ` AND timestamp <= $${paramIndex}`;
+        whereClause += ` AND COALESCE(timestamp, analyzed_at) <= $${paramIndex}`;
         params.push(new Date(end));
         paramIndex++;
       }
 
-      // Only get traces with issues (metadata_json contains issues data)
-      whereClause += ` AND metadata_json IS NOT NULL AND metadata_json::jsonb->'issues'->>'has_issues' = 'true'`;
+      // Only get traces with issues - check actual column flags or status >= 400
+      whereClause += ` AND (
+        status >= 400 
+        OR is_hallucination = true 
+        OR has_context_drop = true 
+        OR has_faithfulness_issue = true 
+        OR has_model_drift = true 
+        OR has_cost_anomaly = true
+      )`;
+
+      // Filter by severity if specified
+      if (severity === "high") {
+        whereClause += ` AND (status >= 500 OR is_hallucination = true)`;
+      } else if (severity === "medium") {
+        whereClause += ` AND (status >= 400 AND status < 500 OR has_faithfulness_issue = true OR has_context_drop = true)`;
+      } else if (severity === "low") {
+        whereClause += ` AND (has_model_drift = true OR has_cost_anomaly = true)`;
+      }
 
       const rows = await query(
         `SELECT 
           trace_id,
           span_id,
-          timestamp,
-          metadata_json,
+          COALESCE(timestamp, analyzed_at) as timestamp,
           status,
-          status_text
+          status_text,
+          is_hallucination,
+          has_context_drop,
+          has_faithfulness_issue,
+          has_model_drift,
+          has_cost_anomaly,
+          model,
+          query,
+          estimated_cost_usd
         FROM analysis_results
         ${whereClause}
-        ORDER BY timestamp DESC
+        ORDER BY COALESCE(timestamp, analyzed_at) DESC
         LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
         [...params, limit, offset]
       );
 
       // Transform PostgreSQL issues to issues format
       for (const row of rows) {
-        let metadata: any = {};
-        try {
-          if (row.metadata_json) {
-            metadata = typeof row.metadata_json === "string" 
-              ? JSON.parse(row.metadata_json) 
-              : row.metadata_json;
-          }
-        } catch (e) {
-          // Skip if metadata can't be parsed
-          continue;
-        }
-
-        const issuesData = metadata?.issues;
-        if (!issuesData || !issuesData.has_issues) {
-          continue;
-        }
-
-        // Create issues from error types
-        if (issuesData.error_events > 0) {
-          for (const [errorType, count] of Object.entries(issuesData.error_types || {})) {
-            signals.push({
-              tenant_id: user.tenantId,
-              project_id: projectId || null,
-              trace_id: row.trace_id,
-              span_id: row.span_id,
-              signal_name: `error_${errorType}`,
-              signal_type: "error",
-              signal_value: true,
-              signal_severity: "high",
-              metadata: { error_type: errorType, count: count },
-              timestamp: row.timestamp,
-            });
-          }
-        }
-
-        // Add tool failures
-        if (issuesData.tool_failures > 0) {
+        // Create issues based on actual column flags
+        
+        // HTTP errors (status >= 500 = high, 400-499 = medium)
+        if (row.status >= 500) {
           signals.push({
             tenant_id: user.tenantId,
             project_id: projectId || null,
             trace_id: row.trace_id,
-            span_id: row.span_id,
-            signal_name: "tool_error",
+            span_id: row.span_id || null,
+            signal_name: "http_error",
             signal_type: "error",
-            signal_value: true,
+            signal_value: row.status,
             signal_severity: "high",
-            metadata: { count: issuesData.tool_failures },
+            metadata: { status: row.status, status_text: row.status_text || "Server Error" },
+            timestamp: row.timestamp,
+          });
+        } else if (row.status >= 400) {
+          signals.push({
+            tenant_id: user.tenantId,
+            project_id: projectId || null,
+            trace_id: row.trace_id,
+            span_id: row.span_id || null,
+            signal_name: "http_error",
+            signal_type: "error",
+            signal_value: row.status,
+            signal_severity: "medium",
+            metadata: { status: row.status, status_text: row.status_text || "Client Error" },
             timestamp: row.timestamp,
           });
         }
-
-        // Add tool timeouts
-        if (issuesData.tool_timeouts > 0) {
+        
+        // Hallucination detection
+        if (row.is_hallucination) {
           signals.push({
             tenant_id: user.tenantId,
             project_id: projectId || null,
             trace_id: row.trace_id,
-            span_id: row.span_id,
-            signal_name: "tool_timeout",
-            signal_type: "error",
+            span_id: row.span_id || null,
+            signal_name: "hallucination",
+            signal_type: "quality",
             signal_value: true,
             signal_severity: "high",
-            metadata: { count: issuesData.tool_timeouts },
+            metadata: { model: row.model },
+            timestamp: row.timestamp,
+          });
+        }
+        
+        // Context drop
+        if (row.has_context_drop) {
+          signals.push({
+            tenant_id: user.tenantId,
+            project_id: projectId || null,
+            trace_id: row.trace_id,
+            span_id: row.span_id || null,
+            signal_name: "context_drop",
+            signal_type: "quality",
+            signal_value: true,
+            signal_severity: "medium",
+            metadata: { model: row.model },
+            timestamp: row.timestamp,
+          });
+        }
+        
+        // Faithfulness issue
+        if (row.has_faithfulness_issue) {
+          signals.push({
+            tenant_id: user.tenantId,
+            project_id: projectId || null,
+            trace_id: row.trace_id,
+            span_id: row.span_id || null,
+            signal_name: "faithfulness_issue",
+            signal_type: "quality",
+            signal_value: true,
+            signal_severity: "medium",
+            metadata: { model: row.model },
+            timestamp: row.timestamp,
+          });
+        }
+        
+        // Model drift
+        if (row.has_model_drift) {
+          signals.push({
+            tenant_id: user.tenantId,
+            project_id: projectId || null,
+            trace_id: row.trace_id,
+            span_id: row.span_id || null,
+            signal_name: "model_drift",
+            signal_type: "quality",
+            signal_value: true,
+            signal_severity: "low",
+            metadata: { model: row.model },
+            timestamp: row.timestamp,
+          });
+        }
+        
+        // Cost anomaly
+        if (row.has_cost_anomaly) {
+          signals.push({
+            tenant_id: user.tenantId,
+            project_id: projectId || null,
+            trace_id: row.trace_id,
+            span_id: row.span_id || null,
+            signal_name: "cost_anomaly",
+            signal_type: "cost",
+            signal_value: row.estimated_cost_usd,
+            signal_severity: "low",
+            metadata: { cost_usd: row.estimated_cost_usd, model: row.model },
             timestamp: row.timestamp,
           });
         }

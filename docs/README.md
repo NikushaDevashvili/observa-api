@@ -93,3 +93,4 @@ This documentation is actively maintained. Last updated: January 2025
 - **Technical Support**: support@observa.ai
 - **API Status**: Check `/health/detailed` endpoint
 
+
