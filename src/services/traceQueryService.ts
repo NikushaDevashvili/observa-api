@@ -513,6 +513,7 @@ export class TraceQueryService {
           time_to_first_token_ms,
           response_length,
           status,
+          status_text,
           quality_score,
           message_index,
           is_hallucination,
