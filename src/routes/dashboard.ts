@@ -9,7 +9,6 @@ import { Router, Request, Response } from "express";
 import { AuthService } from "../services/authService.js";
 import { DashboardMetricsService } from "../services/dashboardMetricsService.js";
 import { SignalsQueryService } from "../services/signalsQueryService.js";
-import { OnboardingChecklistService } from "../services/onboardingChecklistService.js";
 
 const router = Router();
 
@@ -85,15 +84,6 @@ router.get("/overview", async (req: Request, res: Response) => {
       });
     }
 
-    // Detect dashboard visit for onboarding (async, non-blocking)
-    OnboardingChecklistService.detectAutomaticTasks(user.id, {
-      type: "dashboard_visit",
-      metadata: { source: "dashboard_overview" },
-    }).catch((err) => {
-      // Non-fatal - onboarding detection shouldn't break dashboard
-      console.warn("[Dashboard] Failed to detect onboarding tasks:", err);
-    });
-
     // Get query parameters
     const projectId = req.query.projectId as string | undefined;
     const startTime = req.query.startTime as string | undefined;
@@ -145,6 +135,7 @@ router.get("/overview", async (req: Request, res: Response) => {
       traceCount,
       signalCounts,
       signalSummary,
+      feedbackMetrics,
     ] = await Promise.all([
       DashboardMetricsService.getLatencyMetrics(
         user.tenantId,
@@ -183,6 +174,12 @@ router.get("/overview", async (req: Request, res: Response) => {
         end
       ),
       SignalsQueryService.getSignalSummary(
+        user.tenantId,
+        projectId || null,
+        start,
+        end
+      ),
+      DashboardMetricsService.getFeedbackMetrics(
         user.tenantId,
         projectId || null,
         start,
@@ -264,6 +261,7 @@ router.get("/overview", async (req: Request, res: Response) => {
     console.log(`  - Cost: $${costMetrics.total_cost}`);
     console.log(`  - Tokens: ${tokenMetrics.total_tokens}`);
     console.log(`  - Active issues: ${signalCounts.high + signalCounts.medium + signalCounts.low}`);
+    console.log(`  - Feedback: ${feedbackMetrics.total} total (${feedbackMetrics.likes} likes, ${feedbackMetrics.dislikes} dislikes, ${feedbackMetrics.feedback_rate}% rate)`);
     console.log(`  - Overall health: ${overallHealth}`);
 
     const responseData = {
@@ -310,6 +308,18 @@ router.get("/overview", async (req: Request, res: Response) => {
         },
         success_rate: parseFloat(successRate.toFixed(2)),
         trace_count: traceCount,
+        feedback: {
+          total: feedbackMetrics.total,
+          likes: feedbackMetrics.likes,
+          dislikes: feedbackMetrics.dislikes,
+          ratings: feedbackMetrics.ratings,
+          corrections: feedbackMetrics.corrections,
+          feedback_rate: feedbackMetrics.feedback_rate,
+          avg_rating: feedbackMetrics.avg_rating,
+          with_comments: feedbackMetrics.with_comments,
+          by_outcome: feedbackMetrics.by_outcome,
+          by_type: feedbackMetrics.by_type,
+        },
       },
       health: {
         overall: overallHealth,
@@ -691,6 +701,101 @@ router.get("/metrics/breakdown", async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error("[Dashboard API] Error fetching breakdown:", error);
+    const errorMessage =
+      error instanceof Error ? error.message : "Internal server error";
+    return res.status(500).json({
+      error: {
+        code: "INTERNAL_ERROR",
+        message: errorMessage,
+      },
+    });
+  }
+});
+
+/**
+ * GET /api/v1/dashboard/feedback
+ * Get detailed feedback metrics and analytics
+ * 
+ * Returns comprehensive feedback data including likes, dislikes, ratings, and comments
+ */
+router.get("/feedback", async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({
+        error: {
+          code: "UNAUTHORIZED",
+          message: "Missing or invalid Authorization header",
+        },
+      });
+    }
+
+    const sessionToken = authHeader.substring(7);
+    const user = await AuthService.validateSession(sessionToken);
+
+    if (!user) {
+      return res.status(401).json({
+        error: {
+          code: "UNAUTHORIZED",
+          message: "Invalid or expired session",
+        },
+      });
+    }
+
+    const projectId = req.query.projectId as string | undefined;
+    const startTime = req.query.startTime as string | undefined;
+    const endTime = req.query.endTime as string | undefined;
+
+    // Default to last 7 days if no time range provided
+    let start: string;
+    let end: string;
+    if (startTime && endTime) {
+      start = startTime;
+      end = endTime;
+    } else {
+      end = new Date().toISOString();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - 7);
+      start = startDate.toISOString();
+    }
+
+    const feedbackMetrics = await DashboardMetricsService.getFeedbackMetrics(
+      user.tenantId,
+      projectId || null,
+      start,
+      end
+    );
+
+    // Calculate additional insights
+    const likeDislikeRatio = feedbackMetrics.dislikes > 0 
+      ? parseFloat((feedbackMetrics.likes / feedbackMetrics.dislikes).toFixed(2))
+      : feedbackMetrics.likes > 0 ? 999 : 0;
+    
+    const satisfactionScore = feedbackMetrics.total > 0
+      ? parseFloat((((feedbackMetrics.likes + feedbackMetrics.ratings * (feedbackMetrics.avg_rating / 5)) / feedbackMetrics.total) * 100).toFixed(2))
+      : 0;
+
+    return res.status(200).json({
+      success: true,
+      period: {
+        start,
+        end,
+      },
+      metrics: feedbackMetrics,
+      insights: {
+        like_dislike_ratio: likeDislikeRatio,
+        satisfaction_score: satisfactionScore,
+        negative_feedback_rate: feedbackMetrics.total > 0
+          ? parseFloat(((feedbackMetrics.dislikes / feedbackMetrics.total) * 100).toFixed(2))
+          : 0,
+        positive_feedback_rate: feedbackMetrics.total > 0
+          ? parseFloat(((feedbackMetrics.likes / feedbackMetrics.total) * 100).toFixed(2))
+          : 0,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("[Dashboard API] Error fetching feedback metrics:", error);
     const errorMessage =
       error instanceof Error ? error.message : "Internal server error";
     return res.status(500).json({

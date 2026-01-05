@@ -42,6 +42,29 @@ export interface TokenMetrics {
   tokens_by_model: Record<string, { total: number; avg: number }>;
 }
 
+export interface FeedbackMetrics {
+  total: number;
+  likes: number;
+  dislikes: number;
+  ratings: number;
+  corrections: number;
+  feedback_rate: number; // Percentage of traces with feedback
+  avg_rating: number; // Average rating (1-5 scale)
+  with_comments: number; // Feedback with comments
+  by_outcome: {
+    success: number;
+    failure: number;
+    partial: number;
+    unknown: number;
+  };
+  by_type: {
+    like: number;
+    dislike: number;
+    rating: number;
+    correction: number;
+  };
+}
+
 export class DashboardMetricsService {
   /**
    * Get latency metrics (P50, P95, P99) from Tinybird canonical_events
@@ -895,6 +918,219 @@ export class DashboardMetricsService {
   }
 
   /**
+   * Get feedback metrics from Tinybird canonical_events
+   * Feedback events have event_type='feedback' with data in attributes_json.feedback
+   */
+  static async getFeedbackMetrics(
+    tenantId: string,
+    projectId?: string | null,
+    startTime?: string,
+    endTime?: string
+  ): Promise<FeedbackMetrics> {
+    // SECURITY: Validate tenantId format (UUID) to prevent SQL injection
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
+      throw new Error("Invalid tenant_id format: must be a valid UUID");
+    }
+    
+    // SECURITY: Validate projectId format if provided
+    if (projectId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(projectId)) {
+      throw new Error("Invalid project_id format: must be a valid UUID");
+    }
+    
+    const escapedTenantId = tenantId.replace(/'/g, "''");
+    const escapedProjectId = projectId ? projectId.replace(/'/g, "''") : null;
+
+    // Build WHERE clause for Tinybird
+    let whereClause = `WHERE tenant_id = '${escapedTenantId}' AND event_type = 'feedback'`;
+
+    if (escapedProjectId) {
+      whereClause += ` AND project_id = '${escapedProjectId}'`;
+    }
+
+    if (startTime) {
+      whereClause += ` AND timestamp >= parseDateTime64BestEffort('${startTime.replace(
+        /'/g,
+        "''"
+      )}', 3)`;
+    }
+
+    if (endTime) {
+      whereClause += ` AND timestamp <= parseDateTime64BestEffort('${endTime.replace(
+        /'/g,
+        "''"
+      )}', 3)`;
+    }
+
+    // Extract feedback fields from attributes_json.feedback
+    const feedbackTypeExpr = `JSONExtractString(attributes_json, '$.feedback.type')`;
+    const feedbackRatingExpr = `toFloat64OrNull(JSONExtractString(attributes_json, '$.feedback.rating'))`;
+    const feedbackOutcomeExpr = `JSONExtractString(attributes_json, '$.feedback.outcome')`;
+    const feedbackCommentExpr = `JSONExtractString(attributes_json, '$.feedback.comment')`;
+
+    try {
+      // Get all feedback events (we'll aggregate in memory for better flexibility)
+      const feedbackSql = `
+        SELECT 
+          ${feedbackTypeExpr} as type,
+          ${feedbackOutcomeExpr} as outcome,
+          ${feedbackRatingExpr} as rating,
+          ${feedbackCommentExpr} as comment
+        FROM canonical_events
+        ${whereClause}
+      `;
+
+      const result = await TinybirdRepository.rawQuery(feedbackSql, {
+        tenantId,
+        projectId: projectId || undefined,
+      });
+      const results = Array.isArray(result) ? result : result?.data || [];
+
+      // Initialize counters
+      let total = 0;
+      let likes = 0;
+      let dislikes = 0;
+      let ratings = 0;
+      let corrections = 0;
+      let withComments = 0;
+      let ratingSum = 0;
+      let ratingCount = 0;
+      const byOutcome = {
+        success: 0,
+        failure: 0,
+        partial: 0,
+        unknown: 0,
+      };
+      const byType = {
+        like: 0,
+        dislike: 0,
+        rating: 0,
+        correction: 0,
+      };
+
+      // Aggregate results
+      for (const row of results) {
+        total += 1;
+        
+        const type = (row.type || "").toLowerCase();
+        const outcome = (row.outcome || "unknown").toLowerCase();
+        const rating = parseFloat(row.rating) || null;
+        const comment = row.comment || "";
+        const hasComment = comment && comment.trim() !== "" && comment.toLowerCase() !== "null";
+
+        // Count by type
+        if (type === "like") {
+          likes += 1;
+          byType.like += 1;
+        } else if (type === "dislike") {
+          dislikes += 1;
+          byType.dislike += 1;
+        } else if (type === "rating") {
+          ratings += 1;
+          byType.rating += 1;
+          if (rating !== null && !isNaN(rating)) {
+            ratingSum += rating;
+            ratingCount += 1;
+          }
+        } else if (type === "correction") {
+          corrections += 1;
+          byType.correction += 1;
+        }
+
+        // Count by outcome
+        if (outcome === "success") {
+          byOutcome.success += 1;
+        } else if (outcome === "failure") {
+          byOutcome.failure += 1;
+        } else if (outcome === "partial") {
+          byOutcome.partial += 1;
+        } else {
+          byOutcome.unknown += 1;
+        }
+
+        // Count feedback with comments
+        if (hasComment) {
+          withComments += 1;
+        }
+      }
+
+      // Get total trace count to calculate feedback rate
+      const traceCount = await this.getTraceCount(tenantId, projectId, startTime, endTime);
+      const feedbackRate = traceCount > 0 ? (total / traceCount) * 100 : 0;
+
+      // Calculate average rating
+      const avgRating = ratingCount > 0 ? ratingSum / ratingCount : 0;
+
+      // If Tinybird returns 0, try PostgreSQL fallback
+      if (total === 0 && traceCount > 0) {
+        console.log("[DashboardMetricsService] Tinybird returned 0 for feedback, falling back to PostgreSQL");
+        return await this.getFeedbackFromPostgres(tenantId, projectId, startTime, endTime, traceCount);
+      }
+
+      return {
+        total,
+        likes,
+        dislikes,
+        ratings,
+        corrections,
+        feedback_rate: parseFloat(feedbackRate.toFixed(2)),
+        avg_rating: parseFloat(avgRating.toFixed(2)),
+        with_comments: withComments,
+        by_outcome: byOutcome,
+        by_type: byType,
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(
+        "[DashboardMetricsService] Failed to get feedback metrics from Tinybird:",
+        errorMessage
+      );
+      
+      // Fallback to PostgreSQL
+      console.log("[DashboardMetricsService] Falling back to PostgreSQL for feedback metrics");
+      const traceCount = await this.getTraceCount(tenantId, projectId, startTime, endTime);
+      return await this.getFeedbackFromPostgres(tenantId, projectId, startTime, endTime, traceCount);
+    }
+  }
+
+  /**
+   * Get feedback metrics from PostgreSQL (fallback)
+   * Note: PostgreSQL doesn't store feedback events directly, so this returns empty metrics
+   */
+  private static async getFeedbackFromPostgres(
+    tenantId: string,
+    projectId?: string | null,
+    startTime?: string,
+    endTime?: string,
+    traceCount: number = 0
+  ): Promise<FeedbackMetrics> {
+    // PostgreSQL doesn't store feedback events in analysis_results
+    // This is a placeholder for future implementation if needed
+    console.log("[DashboardMetricsService] PostgreSQL feedback fallback - no feedback data in PostgreSQL");
+    return {
+      total: 0,
+      likes: 0,
+      dislikes: 0,
+      ratings: 0,
+      corrections: 0,
+      feedback_rate: 0,
+      avg_rating: 0,
+      with_comments: 0,
+      by_outcome: {
+        success: 0,
+        failure: 0,
+        partial: 0,
+        unknown: 0,
+      },
+      by_type: {
+        like: 0,
+        dislike: 0,
+        rating: 0,
+        correction: 0,
+      },
+    };
+  }
+
+  /**
    * Get trace count for a time period from Tinybird canonical_events
    */
   static async getTraceCount(
@@ -1032,6 +1268,7 @@ export class DashboardMetricsService {
     cost: number;
     tokens: number;
     trace_count: number;
+    feedback: { total: number; likes: number; dislikes: number; feedback_rate: number };
   }>> {
     // SECURITY: Validate tenantId format (UUID) to prevent SQL injection
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
@@ -1149,13 +1386,29 @@ export class DashboardMetricsService {
         ORDER BY time_bucket ASC
       `;
 
+      // Query for feedback by time bucket
+      const feedbackTypeExpr = `JSONExtractString(attributes_json, '$.feedback.type')`;
+      const feedbackSql = `
+        SELECT 
+          ${timeGroupExpr} as time_bucket,
+          count(*) as total,
+          sum(CASE WHEN ${feedbackTypeExpr} = 'like' THEN 1 ELSE 0 END) as likes,
+          sum(CASE WHEN ${feedbackTypeExpr} = 'dislike' THEN 1 ELSE 0 END) as dislikes
+        FROM canonical_events
+        ${whereClause}
+          AND event_type = 'feedback'
+        GROUP BY time_bucket
+        ORDER BY time_bucket ASC
+      `;
+
       // Execute all queries in parallel
-      const [latencyResult, errorRateResult, costResult, tokensResult, traceCountResult] = await Promise.all([
+      const [latencyResult, errorRateResult, costResult, tokensResult, traceCountResult, feedbackResult] = await Promise.all([
         TinybirdRepository.rawQuery(latencySql, { tenantId, projectId: projectId || undefined }),
         TinybirdRepository.rawQuery(errorRateSql, { tenantId, projectId: projectId || undefined }),
         TinybirdRepository.rawQuery(costSql, { tenantId, projectId: projectId || undefined }),
         TinybirdRepository.rawQuery(tokensSql, { tenantId, projectId: projectId || undefined }),
         TinybirdRepository.rawQuery(traceCountSql, { tenantId, projectId: projectId || undefined }),
+        TinybirdRepository.rawQuery(feedbackSql, { tenantId, projectId: projectId || undefined }),
       ]);
 
       // Parse results
@@ -1164,6 +1417,7 @@ export class DashboardMetricsService {
       const costData = Array.isArray(costResult) ? costResult : costResult?.data || [];
       const tokensData = Array.isArray(tokensResult) ? tokensResult : tokensResult?.data || [];
       const traceCountData = Array.isArray(traceCountResult) ? traceCountResult : traceCountResult?.data || [];
+      const feedbackData = Array.isArray(feedbackResult) ? feedbackResult : feedbackResult?.data || [];
 
       // Create maps for quick lookup
       const latencyMap = new Map<string, { p50: number; p95: number; p99: number }>();
@@ -1199,6 +1453,14 @@ export class DashboardMetricsService {
         traceCountMap.set(row.time_bucket, parseInt(row.trace_count) || 0);
       }
 
+      const feedbackMap = new Map<string, { total: number; likes: number; dislikes: number }>();
+      for (const row of feedbackData) {
+        const total = parseInt(row.total) || 0;
+        const likes = parseInt(row.likes) || 0;
+        const dislikes = parseInt(row.dislikes) || 0;
+        feedbackMap.set(row.time_bucket, { total, likes, dislikes });
+      }
+
       // Get all unique time buckets
       const allBuckets = new Set<string>();
       latencyData.forEach((r: any) => allBuckets.add(r.time_bucket));
@@ -1206,19 +1468,32 @@ export class DashboardMetricsService {
       costData.forEach((r: any) => allBuckets.add(r.time_bucket));
       tokensData.forEach((r: any) => allBuckets.add(r.time_bucket));
       traceCountData.forEach((r: any) => allBuckets.add(r.time_bucket));
+      feedbackData.forEach((r: any) => allBuckets.add(r.time_bucket));
 
       // Combine into time series array
       const series = Array.from(allBuckets)
         .filter((bucket) => bucket && bucket.trim() !== '') // Filter out empty buckets
         .sort()
-        .map((bucket) => ({
-          timestamp: bucket,
-          latency: latencyMap.get(bucket) || { p50: 0, p95: 0, p99: 0 },
-          error_rate: errorRateMap.get(bucket) || 0,
-          cost: costMap.get(bucket) || 0,
-          tokens: tokensMap.get(bucket) || 0,
-          trace_count: traceCountMap.get(bucket) || 0,
-        }));
+        .map((bucket) => {
+          const feedback = feedbackMap.get(bucket) || { total: 0, likes: 0, dislikes: 0 };
+          const traceCount = traceCountMap.get(bucket) || 0;
+          const feedbackRate = traceCount > 0 ? (feedback.total / traceCount) * 100 : 0;
+          
+          return {
+            timestamp: bucket,
+            latency: latencyMap.get(bucket) || { p50: 0, p95: 0, p99: 0 },
+            error_rate: errorRateMap.get(bucket) || 0,
+            cost: costMap.get(bucket) || 0,
+            tokens: tokensMap.get(bucket) || 0,
+            trace_count: traceCount,
+            feedback: {
+              total: feedback.total,
+              likes: feedback.likes,
+              dislikes: feedback.dislikes,
+              feedback_rate: parseFloat(feedbackRate.toFixed(2)),
+            },
+          };
+        });
 
       // If Tinybird returns empty or all zeros, fall back to PostgreSQL
       const totalTraceCount = series.reduce((sum, item) => sum + item.trace_count, 0);
@@ -1256,6 +1531,7 @@ export class DashboardMetricsService {
     cost: number;
     tokens: number;
     trace_count: number;
+    feedback: { total: number; likes: number; dislikes: number; feedback_rate: number };
   }>> {
     try {
       let whereClause = "WHERE tenant_id = $1";
@@ -1332,6 +1608,12 @@ export class DashboardMetricsService {
           cost: tokens * 0.000002, // Estimated cost
           tokens: tokens,
           trace_count: traceCount,
+          feedback: {
+            total: 0,
+            likes: 0,
+            dislikes: 0,
+            feedback_rate: 0,
+          },
         };
       });
 
