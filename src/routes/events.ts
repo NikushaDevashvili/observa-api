@@ -356,6 +356,14 @@ router.post(
                 const jsonStr = JSON.stringify(cleaned);
                 // Validate it can be parsed back
                 JSON.parse(jsonStr);
+                
+                // Debug logging for feedback events
+                if (event.event_type === "feedback") {
+                  console.log(`[Events API] Feedback event attributes_json:`, jsonStr.substring(0, 500));
+                  console.log(`[Events API] Original attributes:`, JSON.stringify(event.attributes, null, 2).substring(0, 500));
+                  console.log(`[Events API] Cleaned attributes:`, JSON.stringify(cleaned, null, 2).substring(0, 500));
+                }
+                
                 return jsonStr;
               } catch (e) {
                 console.error(
