@@ -40,6 +40,9 @@ const CONFIG = {
   costSpikeRate: parseFloat(process.env.COST_SPIKE_RATE || "0.10"), // 10% cost spikes
   tokenSpikeRate: parseFloat(process.env.TOKEN_SPIKE_RATE || "0.10"), // 10% token spikes
   toolTimeoutRate: parseFloat(process.env.TOOL_TIMEOUT_RATE || "0.15"), // 15% tool timeouts
+  // Feedback control: "like", "dislike", "both" (random), or null (use normal rate)
+  forceFeedbackType: process.env.FORCE_FEEDBACK_TYPE || null, // null = use normal feedback rate logic
+  forceFeedback: process.env.FORCE_FEEDBACK === "true", // If true, always include feedback (100% rate)
 };
 
 if (!JWT_TOKEN) {
@@ -485,20 +488,31 @@ function generateFeedbackEvent(params) {
     hasError, // Pass error state to influence feedback
   } = params;
 
-  // Prioritize likes/dislikes (most important for issue detection)
+  // Check if feedback type is forced via config
   let feedbackType;
-  if (Math.random() < CONFIG.likeDislikeRate) {
-    // 70% of feedback is like/dislike
-    // If there's an error, more likely to be dislike
-    if (hasError) {
-      feedbackType = Math.random() < 0.8 ? "dislike" : "like"; // 80% dislike when error
+  if (CONFIG.forceFeedbackType) {
+    // Use forced feedback type
+    if (CONFIG.forceFeedbackType === "both") {
+      // Random like or dislike
+      feedbackType = Math.random() < 0.5 ? "like" : "dislike";
     } else {
-      feedbackType = Math.random() < 0.7 ? "like" : "dislike"; // 70% like when no error
+      feedbackType = CONFIG.forceFeedbackType;
     }
   } else {
-    // 30% other feedback types
-    const otherTypes = ["rating", "correction"];
-    feedbackType = randomChoice(otherTypes);
+    // Normal logic: Prioritize likes/dislikes (most important for issue detection)
+    if (Math.random() < CONFIG.likeDislikeRate) {
+      // 70% of feedback is like/dislike
+      // If there's an error, more likely to be dislike
+      if (hasError) {
+        feedbackType = Math.random() < 0.8 ? "dislike" : "like"; // 80% dislike when error
+      } else {
+        feedbackType = Math.random() < 0.7 ? "like" : "dislike"; // 70% like when no error
+      }
+    } else {
+      // 30% other feedback types
+      const otherTypes = ["rating", "correction"];
+      feedbackType = randomChoice(otherTypes);
+    }
   }
 
   // Determine outcome based on feedback type and error state
@@ -512,7 +526,7 @@ function generateFeedbackEvent(params) {
   // Generate realistic comments based on feedback type
   let comment = null;
   const hasComment = Math.random() < 0.4; // 40% have comments
-  
+
   if (hasComment) {
     if (feedbackType === "like") {
       const likeComments = [
@@ -1161,12 +1175,20 @@ function generateCanonicalEvents(params) {
   });
 
   // Phase 1.2: Feedback event (conditional)
-  // Increase feedback rate if there's an error (users more likely to give feedback when something goes wrong)
-  const adjustedFeedbackRate = hasError 
-    ? CONFIG.feedbackRate * 1.5 // 50% more likely when error
-    : CONFIG.feedbackRate;
-    
-  if (Math.random() < adjustedFeedbackRate) {
+  // If forceFeedback is true, always include feedback (100% rate)
+  // Otherwise, use normal feedback rate logic
+  let shouldIncludeFeedback = false;
+  if (CONFIG.forceFeedback) {
+    shouldIncludeFeedback = true; // Always include feedback
+  } else {
+    // Increase feedback rate if there's an error (users more likely to give feedback when something goes wrong)
+    const adjustedFeedbackRate = hasError
+      ? CONFIG.feedbackRate * 1.5 // 50% more likely when error
+      : CONFIG.feedbackRate;
+    shouldIncludeFeedback = Math.random() < adjustedFeedbackRate;
+  }
+
+  if (shouldIncludeFeedback) {
     const feedbackTime = addMilliseconds(outputTime, 100);
     const feedbackEvent = generateFeedbackEvent({
       traceId,
@@ -1238,15 +1260,21 @@ function generateCanonicalEvents(params) {
 
 async function sendEvents(events, apiKey, retries = 3) {
   // DEBUG: Log feedback events before sending
-  const feedbackEvents = events.filter(e => e.event_type === "feedback");
+  const feedbackEvents = events.filter((e) => e.event_type === "feedback");
   if (feedbackEvents.length > 0) {
-    console.log(`\n📝 DEBUG: Sending ${feedbackEvents.length} feedback event(s):`);
+    console.log(
+      `\n📝 DEBUG: Sending ${feedbackEvents.length} feedback event(s):`
+    );
     feedbackEvents.forEach((fe, i) => {
-      console.log(`   Feedback ${i+1}: type="${fe.attributes?.feedback?.type}", outcome="${fe.attributes?.feedback?.outcome}"`);
+      console.log(
+        `   Feedback ${i + 1}: type="${
+          fe.attributes?.feedback?.type
+        }", outcome="${fe.attributes?.feedback?.outcome}"`
+      );
       console.log(`   Full attributes:`, JSON.stringify(fe.attributes));
     });
   }
-  
+
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
       const response = await fetch(`${API_URL}/api/v1/events/ingest`, {
@@ -1412,7 +1440,11 @@ async function runSimulation() {
     ).toFixed(1)}%)`
   );
   console.log(`  Hallucinations enabled: ${CONFIG.enableHallucinations}`);
-  console.log(`  Feedback rate: ${(CONFIG.feedbackRate * 100).toFixed(1)}% (${(CONFIG.likeDislikeRate * 100).toFixed(0)}% like/dislike)`);
+  console.log(
+    `  Feedback rate: ${(CONFIG.feedbackRate * 100).toFixed(1)}% (${(
+      CONFIG.likeDislikeRate * 100
+    ).toFixed(0)}% like/dislike)`
+  );
   console.log(`  Multi-LLM rate: ${(CONFIG.multiLLMRate * 100).toFixed(1)}%`);
   console.log(`  Max tools per trace: ${CONFIG.maxToolsPerTrace}`);
   console.log(`  Max retrievals per trace: ${CONFIG.maxRetrievalsPerTrace}`);
