@@ -30,6 +30,16 @@ export class CanonicalEventService {
       .map((event) => JSON.stringify(event))
       .join("\n") + "\n";
 
+    // DEBUG: Log feedback events being sent to Tinybird
+    const feedbackEvents = events.filter((e: any) => e.event_type === "feedback");
+    if (feedbackEvents.length > 0) {
+      console.log(`[CanonicalEventService] 📝 Sending ${feedbackEvents.length} FEEDBACK events to Tinybird`);
+      feedbackEvents.forEach((fe: any, i: number) => {
+        console.log(`[CanonicalEventService] Feedback ${i+1} NDJSON: ${JSON.stringify(fe)}`);
+        console.log(`[CanonicalEventService] Feedback ${i+1} attributes_json: ${fe.attributes_json}`);
+      });
+    }
+
     try {
       console.log(
         `[CanonicalEventService] Forwarding ${events.length} events to Tinybird at ${url}`

@@ -1237,6 +1237,16 @@ function generateCanonicalEvents(params) {
 }
 
 async function sendEvents(events, apiKey, retries = 3) {
+  // DEBUG: Log feedback events before sending
+  const feedbackEvents = events.filter(e => e.event_type === "feedback");
+  if (feedbackEvents.length > 0) {
+    console.log(`\n📝 DEBUG: Sending ${feedbackEvents.length} feedback event(s):`);
+    feedbackEvents.forEach((fe, i) => {
+      console.log(`   Feedback ${i+1}: type="${fe.attributes?.feedback?.type}", outcome="${fe.attributes?.feedback?.outcome}"`);
+      console.log(`   Full attributes:`, JSON.stringify(fe.attributes));
+    });
+  }
+  
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
       const response = await fetch(`${API_URL}/api/v1/events/ingest`, {
