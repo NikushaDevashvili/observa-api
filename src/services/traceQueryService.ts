@@ -1249,13 +1249,14 @@ export class TraceQueryService {
       let parentSpanId = event.parent_span_id;
 
       // If this is a root span event (parent_span_id === null), create a unique span for each event type
-      // This makes each event type (retrieval, llm_call, output, etc.) a separate clickable node
+      // This makes each event type (retrieval, llm_call, output, feedback, etc.) a separate clickable node
       if (
         event.parent_span_id === null &&
         (event.event_type === "retrieval" ||
           event.event_type === "llm_call" ||
           event.event_type === "tool_call" ||
-          event.event_type === "output")
+          event.event_type === "output" ||
+          event.event_type === "feedback")
       ) {
         // Create a unique span ID for this event type
         spanId = `${event.span_id}-${event.event_type}`;
@@ -1275,6 +1276,10 @@ export class TraceQueryService {
           spanName = "Retrieval";
         } else if (event.event_type === "output") {
           spanName = "Output";
+        } else if (event.event_type === "feedback") {
+          const feedbackType = event.attributes?.feedback?.type || "unknown";
+          const feedbackTypeLabel = feedbackType.charAt(0).toUpperCase() + feedbackType.slice(1);
+          spanName = `Feedback: ${feedbackTypeLabel}`;
         } else if (event.parent_span_id === null) {
           spanName = "Trace";
         }
@@ -1350,6 +1355,22 @@ export class TraceQueryService {
       const errorEvent = spanEvents.find(
         (e: any) => e.event_type === "error"
       );
+      const feedbackEvent = spanEvents.find(
+        (e: any) => e.event_type === "feedback"
+      );
+
+      // Extract feedback details
+      if (feedbackEvent?.attributes?.feedback) {
+        const feedbackAttrs = feedbackEvent.attributes.feedback;
+        span.feedback = {
+          type: feedbackAttrs.type || null,
+          outcome: feedbackAttrs.outcome || null,
+          rating: feedbackAttrs.rating !== undefined && feedbackAttrs.rating !== null 
+            ? parseFloat(String(feedbackAttrs.rating)) 
+            : null,
+          comment: feedbackAttrs.comment || null,
+        };
+      }
 
       // Extract LLM call details
       if (llmCallEvent?.attributes?.llm_call) {
@@ -1557,6 +1578,20 @@ export class TraceQueryService {
         // Keep nested structure for compatibility
         span.details = span.output;
         span.hasOutput = !!span.output.final_output;
+      } else if (span.feedback) {
+        span.type = "feedback";
+        // Flatten ALL feedback data to top level
+        span.feedback_type = span.feedback.type;
+        span.feedback_outcome = span.feedback.outcome;
+        span.feedback_rating = span.feedback.rating;
+        span.feedback_comment = span.feedback.comment;
+        // Keep nested structure for compatibility
+        span.details = span.feedback;
+        span.hasFeedback = true;
+        span.hasComment = !!span.feedback.comment;
+        // Ensure feedback span has all necessary fields for frontend
+        span.hasDetails = true;
+        span.selectable = true;
       } else {
         span.type = "trace";
         // For root trace spans, only show trace-level metadata, not child data
@@ -1583,6 +1618,8 @@ export class TraceQueryService {
         retrieval:
           e.event_type === "retrieval" ? e.attributes?.retrieval : undefined,
         output: e.event_type === "output" ? e.attributes?.output : undefined,
+        feedback:
+          e.event_type === "feedback" ? e.attributes?.feedback : undefined,
         // Keep original attributes structure for compatibility
         attributes: e.attributes,
       }));
@@ -1596,6 +1633,9 @@ export class TraceQueryService {
         }
         if (span.tool_call && firstEvent.event_type === "tool_call") {
           firstEvent.tool_call = span.tool_call;
+        }
+        if (span.feedback && firstEvent.event_type === "feedback") {
+          firstEvent.feedback = span.feedback;
         }
         if (span.retrieval && firstEvent.event_type === "retrieval") {
           firstEvent.retrieval = span.retrieval;

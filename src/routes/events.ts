@@ -419,7 +419,8 @@ router.post(
             has_attributes: !!fe.attributes_json,
             attributes_json_type: typeof fe.attributes_json,
             attributes_json_length: fe.attributes_json?.length || 0,
-            attributes_json_preview: fe.attributes_json?.substring(0, 300) || "N/A",
+            attributes_json_preview:
+              fe.attributes_json?.substring(0, 300) || "N/A",
           });
         });
       }
@@ -443,26 +444,32 @@ router.post(
             attributes_json_length: fe.attributes_json?.length || 0,
             attributes_json_type: typeof fe.attributes_json,
           });
-          
+
           // Try to parse and show feedback object
           try {
-            const parsed = typeof fe.attributes_json === 'string' 
-              ? JSON.parse(fe.attributes_json) 
-              : fe.attributes_json;
+            const parsed =
+              typeof fe.attributes_json === "string"
+                ? JSON.parse(fe.attributes_json)
+                : fe.attributes_json;
             console.log(`[Events API] Formatted Feedback ${i + 1} parsed:`, {
               has_feedback: !!parsed?.feedback,
               feedback_type: parsed?.feedback?.type,
               feedback_outcome: parsed?.feedback?.outcome,
             });
           } catch (e) {
-            console.error(`[Events API] Failed to parse formatted feedback ${i + 1}:`, e);
+            console.error(
+              `[Events API] Failed to parse formatted feedback ${i + 1}:`,
+              e
+            );
           }
         });
       } else if (feedbackEventsBeforeFormat.length > 0) {
         console.error(
           `[Events API] ⚠️ WARNING: ${feedbackEventsBeforeFormat.length} feedback events BEFORE formatting, but 0 AFTER formatting!`
         );
-        console.error(`[Events API] This suggests formatTinybirdEvents is removing them!`);
+        console.error(
+          `[Events API] This suggests formatTinybirdEvents is removing them!`
+        );
       }
 
       // Forward to Tinybird (use formatted events, not raw tinybirdEvents)
