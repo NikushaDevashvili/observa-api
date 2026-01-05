@@ -979,39 +979,76 @@ export class DashboardMetricsService {
       const results = Array.isArray(result) ? result : result?.data || [];
       
       // Parse JSON in JavaScript for reliable extraction
-      const parsedResults = results.map((row: any) => {
+      // Handle different response formats from Tinybird (string, object, or already parsed)
+      const parsedResults = results.map((row: any, index: number) => {
         let type = "";
         let outcome = "";
         let rating: number | null = null;
         let comment = "";
         
         try {
-          // Parse the attributes_json string
-          const attrs = typeof row.attributes_json === 'string' 
-            ? JSON.parse(row.attributes_json) 
-            : row.attributes_json || {};
+          // Handle attributes_json - could be string, object, or null
+          let attrs: any = null;
+          const rawAttrs = row.attributes_json;
+          
+          if (rawAttrs === null || rawAttrs === undefined) {
+            // No attributes
+            if (index < 3) {
+              console.log(`[DashboardMetricsService] Row ${index}: attributes_json is null/undefined`);
+            }
+            return { type, outcome, rating, comment };
+          }
+          
+          // Try to parse - handle both string and already-parsed object
+          if (typeof rawAttrs === 'string') {
+            try {
+              attrs = JSON.parse(rawAttrs);
+            } catch (parseError) {
+              // If parsing fails, try to convert to string and parse again
+              const rawStr = String(rawAttrs);
+              if (rawStr && rawStr !== 'null' && rawStr !== 'undefined') {
+                attrs = JSON.parse(rawStr);
+              }
+            }
+          } else if (typeof rawAttrs === 'object') {
+            // Already an object
+            attrs = rawAttrs;
+          } else {
+            // Try to convert to string and parse
+            const rawStr = String(rawAttrs);
+            if (rawStr && rawStr !== 'null' && rawStr !== 'undefined') {
+              attrs = JSON.parse(rawStr);
+            }
+          }
           
           // Extract feedback data
-          if (attrs && attrs.feedback) {
-            type = attrs.feedback.type || "";
-            outcome = attrs.feedback.outcome || "";
-            rating = attrs.feedback.rating !== undefined && attrs.feedback.rating !== null 
-              ? parseFloat(String(attrs.feedback.rating)) 
+          if (attrs && typeof attrs === 'object' && attrs.feedback) {
+            const feedback = attrs.feedback;
+            type = feedback.type || "";
+            outcome = feedback.outcome || "";
+            rating = feedback.rating !== undefined && feedback.rating !== null 
+              ? parseFloat(String(feedback.rating)) 
               : null;
-            comment = attrs.feedback.comment || "";
+            comment = feedback.comment || "";
           } else {
-            // Debug: log if feedback object is missing
-            if (results.length > 0 && results.indexOf(row) < 3) {
-              console.log(`[DashboardMetricsService] Sample feedback event missing feedback object:`, {
+            // Debug: log if feedback object is missing (only for first few rows)
+            if (index < 3) {
+              console.log(`[DashboardMetricsService] Row ${index}: Missing feedback object. Attrs:`, {
                 hasAttrs: !!attrs,
-                attrsKeys: attrs ? Object.keys(attrs) : [],
-                rawAttrs: typeof row.attributes_json === 'string' ? row.attributes_json.substring(0, 200) : 'not a string'
+                attrsType: typeof attrs,
+                attrsKeys: attrs && typeof attrs === 'object' ? Object.keys(attrs) : [],
+                rawAttrsType: typeof rawAttrs,
+                rawAttrsSample: typeof rawAttrs === 'string' ? rawAttrs.substring(0, 200) : String(rawAttrs).substring(0, 200)
               });
             }
           }
         } catch (e) {
-          console.warn(`[DashboardMetricsService] Failed to parse feedback JSON:`, e, {
-            sample: typeof row.attributes_json === 'string' ? row.attributes_json.substring(0, 100) : 'not a string'
+          console.warn(`[DashboardMetricsService] Failed to parse feedback JSON for row ${index}:`, e instanceof Error ? e.message : String(e), {
+            rowKeys: Object.keys(row),
+            attributesJsonType: typeof row.attributes_json,
+            attributesJsonSample: typeof row.attributes_json === 'string' 
+              ? row.attributes_json.substring(0, 100) 
+              : String(row.attributes_json).substring(0, 100)
           });
           // Continue with empty values
         }
@@ -1021,7 +1058,10 @@ export class DashboardMetricsService {
       
       // Debug: log sample of parsed results
       if (parsedResults.length > 0) {
-        console.log(`[DashboardMetricsService] Parsed ${parsedResults.length} feedback events. Sample:`, parsedResults.slice(0, 3));
+        const nonEmpty = parsedResults.filter(r => r.type || r.outcome);
+        console.log(`[DashboardMetricsService] Parsed ${parsedResults.length} feedback events. ${nonEmpty.length} have type/outcome. Sample:`, parsedResults.slice(0, 5));
+      } else {
+        console.log(`[DashboardMetricsService] No feedback events found in results. Results length: ${results.length}`);
       }
 
       // Initialize counters
