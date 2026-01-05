@@ -150,6 +150,126 @@ All events share these fields:
 }
 ```
 
+### feedback
+
+User feedback events capture likes, dislikes, ratings, and corrections.
+
+**Feedback Types**:
+- `"like"` - User liked the response
+- `"dislike"` - User disliked the response
+- `"rating"` - User provided a 1-5 star rating
+- `"correction"` - User provided correction/feedback
+
+**Examples**:
+
+#### Like Feedback
+
+```json
+{
+  "event_type": "feedback",
+  "trace_id": "550e8400-e29b-41d4-a716-446655440000",
+  "span_id": "bb0e8400-e29b-41d4-a716-446655440006",
+  "parent_span_id": "770e8400-e29b-41d4-a716-446655440002",
+  "timestamp": "2024-01-01T00:00:02.000Z",
+  "conversation_id": "conv-123",
+  "session_id": "session-456",
+  "user_id": "user-789",
+  "attributes": {
+    "feedback": {
+      "type": "like",
+      "outcome": "success",
+      "comment": null,
+      "rating": null
+    }
+  }
+}
+```
+
+#### Dislike Feedback with Comment
+
+```json
+{
+  "event_type": "feedback",
+  "trace_id": "550e8400-e29b-41d4-a716-446655440000",
+  "span_id": "cc0e8400-e29b-41d4-a716-446655440007",
+  "parent_span_id": "770e8400-e29b-41d4-a716-446655440002",
+  "timestamp": "2024-01-01T00:00:02.100Z",
+  "conversation_id": "conv-123",
+  "user_id": "user-789",
+  "attributes": {
+    "feedback": {
+      "type": "dislike",
+      "outcome": "failure",
+      "comment": "The answer was incorrect",
+      "rating": null
+    }
+  }
+}
+```
+
+#### Rating Feedback
+
+```json
+{
+  "event_type": "feedback",
+  "trace_id": "550e8400-e29b-41d4-a716-446655440000",
+  "span_id": "dd0e8400-e29b-41d4-a716-446655440008",
+  "parent_span_id": "770e8400-e29b-41d4-a716-446655440002",
+  "timestamp": "2024-01-01T00:00:02.200Z",
+  "conversation_id": "conv-123",
+  "user_id": "user-789",
+  "message_index": 1,
+  "attributes": {
+    "feedback": {
+      "type": "rating",
+      "rating": 5,
+      "comment": "Excellent response!",
+      "outcome": "success"
+    }
+  }
+}
+```
+
+#### Correction Feedback
+
+```json
+{
+  "event_type": "feedback",
+  "trace_id": "550e8400-e29b-41d4-a716-446655440000",
+  "span_id": "ee0e8400-e29b-41d4-a716-446655440009",
+  "parent_span_id": "770e8400-e29b-41d4-a716-446655440002",
+  "timestamp": "2024-01-01T00:00:02.300Z",
+  "conversation_id": "conv-123",
+  "user_id": "user-789",
+  "agent_name": "customer-support-bot",
+  "version": "v2.1.0",
+  "route": "/api/chat",
+  "attributes": {
+    "feedback": {
+      "type": "correction",
+      "comment": "The capital of France is Paris, not Lyon",
+      "outcome": "partial",
+      "rating": null
+    }
+  }
+}
+```
+
+**Feedback Attributes**:
+
+- `type` (required): `"like"` | `"dislike"` | `"rating"` | `"correction"`
+- `rating` (optional): Number 1-5 (required for `"rating"` type, automatically clamped)
+- `comment` (optional): User comment/feedback text
+- `outcome` (optional): `"success"` | `"failure"` | `"partial"` | `null`
+
+**Best Practices**:
+
+1. Always include `conversation_id`, `user_id`, and `session_id` for analytics
+2. Use `parent_span_id` to link feedback to specific LLM calls or operations
+3. Include `message_index` for conversation context
+4. Set `outcome` to classify feedback (`"success"` for positive, `"failure"` for negative, `"partial"` for mixed)
+5. Provide `comment` for qualitative feedback
+
 ## Span Hierarchy
 
 Events form a tree structure using `span_id` and `parent_span_id`:
@@ -161,8 +281,12 @@ trace_start (span_id: root, parent: null)
   │   ├── tool_call (span_id: tool1, parent: llm1)
   │   │   └── error (span_id: err1, parent: tool1)
   │   └── tool_call (span_id: tool2, parent: llm1)
+  ├── output (span_id: out1, parent: root)
+  ├── feedback (span_id: fb1, parent: llm1)  ← Feedback linked to LLM call
   └── trace_end (span_id: root, parent: null)
 ```
+
+**Feedback Linking**: Feedback events can be linked to specific spans (e.g., LLM calls) using `parent_span_id` to provide context about which operation the user is providing feedback on.
 
 ## Related Documentation
 
