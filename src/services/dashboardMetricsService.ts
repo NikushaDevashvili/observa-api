@@ -964,8 +964,20 @@ export class DashboardMetricsService {
     try {
       // Get all feedback events - parse JSON in JavaScript for reliability
       // ClickHouse JSONExtractString may not work reliably, so we'll parse the full JSON
+      // IMPORTANT: Select all columns to match parseTSVResponse column order
       const feedbackSql = `
         SELECT 
+          tenant_id,
+          project_id,
+          environment,
+          trace_id,
+          span_id,
+          parent_span_id,
+          timestamp,
+          event_type,
+          conversation_id,
+          session_id,
+          user_id,
           attributes_json
         FROM canonical_events
         ${whereClause}

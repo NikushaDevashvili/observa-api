@@ -8,7 +8,9 @@ import fetch from "node-fetch";
 dotenv.config();
 
 const API_URL = process.env.API_URL || "https://observa-api.vercel.app";
-const JWT_TOKEN = process.env.JWT_TOKEN || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0ZW5hbnRJZCI6IjRmNjJkMmE1LTZhMzQtNGQ1My1hMzAxLWMwYzY2MWIwYzRkNiIsInByb2plY3RJZCI6IjdhY2E5MmZlLWFkMjctNDFjMi1iYzBiLTk2ZTk0ZGQyZDE2NSIsImVudmlyb25tZW50IjoicHJvZCIsImlhdCI6MTc2NzYzOTgyMywiZXhwIjoxNzc1NDE1ODIzfQ.-9e6srUY-EkfIU-6_UUxDF6psVN0wfoPPyk2Z-RPnwE";
+const JWT_TOKEN =
+  process.env.JWT_TOKEN ||
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0ZW5hbnRJZCI6IjRmNjJkMmE1LTZhMzQtNGQ1My1hMzAxLWMwYzY2MWIwYzRkNiIsInByb2plY3RJZCI6IjdhY2E5MmZlLWFkMjctNDFjMi1iYzBiLTk2ZTk0ZGQyZDE2NSIsImVudmlyb25tZW50IjoicHJvZCIsImlhdCI6MTc2NzYzOTgyMywiZXhwIjoxNzc1NDE1ODIzfQ.-9e6srUY-EkfIU-6_UUxDF6psVN0wfoPPyk2Z-RPnwE";
 
 const tenantId = "4f62d2a5-6a34-4d53-a301-c0c661b0c4d6";
 const projectId = "7aca92fe-ad27-41c2-bc0b-96e94dd2d165";
@@ -98,5 +100,6 @@ console.log(`   event_type = 'feedback'`);
 console.log(`   trace_id = '${feedbackEvent.trace_id}'`);
 console.log(`   timestamp >= '${feedbackEvent.timestamp}'`);
 console.log("\n   attributes_json should contain:");
-console.log(`   {"feedback":{"type":"like","outcome":"success","comment":"Test feedback from script"}}`);
-
+console.log(
+  `   {"feedback":{"type":"like","outcome":"success","comment":"Test feedback from script"}}`
+);

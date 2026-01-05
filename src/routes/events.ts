@@ -356,11 +356,11 @@ router.post(
                 // This prevents attributes_json from being lost during conversion
                 const attributes = event.attributes || {};
                 const cleaned = cleanNullValues(attributes);
-                
+
                 // Ensure cleaned is an object (not undefined)
                 const finalAttributes = cleaned !== undefined ? cleaned : {};
                 const jsonStr = JSON.stringify(finalAttributes);
-                
+
                 // Validate it can be parsed back
                 JSON.parse(jsonStr);
 
@@ -381,7 +381,9 @@ router.post(
                   console.log(
                     `[Events API] Has feedback object:`,
                     finalAttributes?.feedback ? "YES" : "NO",
-                    finalAttributes?.feedback ? JSON.stringify(finalAttributes.feedback) : "missing"
+                    finalAttributes?.feedback
+                      ? JSON.stringify(finalAttributes.feedback)
+                      : "missing"
                   );
                 }
 
