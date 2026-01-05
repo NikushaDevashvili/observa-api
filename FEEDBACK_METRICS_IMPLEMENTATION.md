@@ -9,6 +9,7 @@ This document describes the implementation of user feedback metrics tracking and
 ### ✅ Completed Features
 
 1. **Feedback Metrics Service** (`src/services/dashboardMetricsService.ts`)
+
    - Added `FeedbackMetrics` interface with comprehensive feedback data
    - Implemented `getFeedbackMetrics()` method that queries Tinybird for feedback events
    - Tracks: likes, dislikes, ratings, corrections, comments, outcomes
@@ -17,11 +18,13 @@ This document describes the implementation of user feedback metrics tracking and
    - Includes PostgreSQL fallback (returns empty metrics as PostgreSQL doesn't store feedback events)
 
 2. **Dashboard Overview Integration** (`src/routes/dashboard.ts`)
+
    - Added feedback metrics to `/api/v1/dashboard/overview` endpoint
    - Feedback data included in main dashboard response
    - Logs feedback metrics for debugging
 
 3. **Dedicated Feedback Endpoint** (`src/routes/dashboard.ts`)
+
    - New `GET /api/v1/dashboard/feedback` endpoint
    - Returns comprehensive feedback analytics
    - Includes insights:
@@ -38,9 +41,11 @@ This document describes the implementation of user feedback metrics tracking and
 ## API Endpoints
 
 ### 1. Dashboard Overview (Updated)
+
 **GET** `/api/v1/dashboard/overview`
 
 **Response includes:**
+
 ```json
 {
   "metrics": {
@@ -71,14 +76,17 @@ This document describes the implementation of user feedback metrics tracking and
 ```
 
 ### 2. Dedicated Feedback Endpoint (New)
+
 **GET** `/api/v1/dashboard/feedback`
 
 **Query Parameters:**
+
 - `projectId` (optional): Filter by project
 - `startTime` (optional): Start time (ISO 8601), defaults to 7 days ago
 - `endTime` (optional): End time (ISO 8601), defaults to now
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -119,9 +127,11 @@ This document describes the implementation of user feedback metrics tracking and
 ```
 
 ### 3. Time-Series (Updated)
+
 **GET** `/api/v1/dashboard/overview/time-series`
 
 **Response includes feedback in each time bucket:**
+
 ```json
 {
   "series": [
@@ -146,6 +156,7 @@ This document describes the implementation of user feedback metrics tracking and
 ## Data Source
 
 Feedback metrics are queried from **Tinybird's `canonical_events` table**:
+
 - Event type: `event_type = 'feedback'`
 - Feedback data stored in: `attributes_json.feedback`
 - Fields:
@@ -157,17 +168,20 @@ Feedback metrics are queried from **Tinybird's `canonical_events` table**:
 ## Implementation Details
 
 ### Security
+
 - All queries validate UUID format for `tenant_id` and `project_id` to prevent SQL injection
 - Tenant isolation enforced at query level
 - Input sanitization for all user-provided parameters
 
 ### Performance
+
 - Queries use Tinybird (OLAP) for fast aggregation
 - Parallel query execution for time-series data
 - Caching support (inherited from dashboard overview endpoint)
 - PostgreSQL fallback for resilience (though returns empty for feedback)
 
 ### Error Handling
+
 - Graceful fallback to PostgreSQL if Tinybird fails
 - Comprehensive error logging
 - Returns empty metrics structure if no data available
@@ -175,18 +189,21 @@ Feedback metrics are queried from **Tinybird's `canonical_events` table**:
 ## Usage Examples
 
 ### Get Feedback Metrics for Last 7 Days
+
 ```bash
 curl -X GET "https://api.observa.ai/api/v1/dashboard/feedback" \
   -H "Authorization: Bearer YOUR_SESSION_TOKEN"
 ```
 
 ### Get Feedback Metrics for Specific Project
+
 ```bash
 curl -X GET "https://api.observa.ai/api/v1/dashboard/feedback?projectId=PROJECT_ID" \
   -H "Authorization: Bearer YOUR_SESSION_TOKEN"
 ```
 
 ### Get Feedback Metrics for Custom Time Range
+
 ```bash
 curl -X GET "https://api.observa.ai/api/v1/dashboard/feedback?startTime=2024-01-01T00:00:00.000Z&endTime=2024-01-08T00:00:00.000Z" \
   -H "Authorization: Bearer YOUR_SESSION_TOKEN"
@@ -195,14 +212,17 @@ curl -X GET "https://api.observa.ai/api/v1/dashboard/feedback?startTime=2024-01-
 ## Key Metrics Explained
 
 1. **Feedback Rate**: Percentage of traces that received user feedback
+
    - Formula: `(total_feedback / total_traces) * 100`
    - Higher rate = more engaged users
 
 2. **Like/Dislike Ratio**: Ratio of positive to negative feedback
+
    - Formula: `likes / dislikes`
    - Higher ratio = better user satisfaction
 
 3. **Satisfaction Score**: Weighted score combining likes and ratings
+
    - Formula: `((likes + ratings * (avg_rating / 5)) / total_feedback) * 100`
    - Range: 0-100, higher = better
 
@@ -213,6 +233,7 @@ curl -X GET "https://api.observa.ai/api/v1/dashboard/feedback?startTime=2024-01-
 ## Frontend Integration
 
 The frontend can now:
+
 1. Display feedback metrics in dashboard overview cards
 2. Show feedback trends in time-series charts
 3. Create dedicated feedback analytics page using `/api/v1/dashboard/feedback`
@@ -232,6 +253,7 @@ The frontend can now:
 To test the implementation:
 
 1. **Send feedback events** via the events API:
+
 ```json
 {
   "event_type": "feedback",
@@ -256,4 +278,3 @@ To test the implementation:
 - All metrics are calculated in real-time from Tinybird queries
 - Feedback rate is calculated against total trace count
 - Average rating only includes feedback of type "rating"
-

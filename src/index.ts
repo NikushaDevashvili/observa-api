@@ -27,7 +27,7 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
-import onboardingRouter from "./routes/onboarding.js";
+// import onboardingRouter from "./routes/onboarding.js"; // Removed - onboarding moved to observa-app
 import tenantsRouter from "./routes/tenants.js";
 import tracesRouter from "./routes/traces.js";
 import metricsRouter from "./routes/metrics.js";
@@ -364,7 +364,7 @@ app.get("/diagnostics", (req, res) => {
 // This removes the 5-second delay on every request
 
 // API Routes
-app.use("/api/v1/onboarding", onboardingRouter);
+// app.use("/api/v1/onboarding", onboardingRouter); // Removed - onboarding moved to observa-app
 app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/tenants", tenantsRouter);
 app.use("/api/v1/traces", tracesRouter);

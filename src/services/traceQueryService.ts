@@ -33,6 +33,7 @@ export interface TraceSummary {
   time_to_first_token_ms?: number | null;
   quality_score?: number | null;
   status?: number | null;
+  status_text?: string | null;
 
   // From analysis_results (if available)
   is_hallucination?: boolean | null;

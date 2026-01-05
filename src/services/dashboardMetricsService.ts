@@ -961,22 +961,15 @@ export class DashboardMetricsService {
       )}', 3)`;
     }
 
-    // Extract feedback fields from attributes_json.feedback
-    const feedbackTypeExpr = `JSONExtractString(attributes_json, '$.feedback.type')`;
-    const feedbackRatingExpr = `toFloat64OrNull(JSONExtractString(attributes_json, '$.feedback.rating'))`;
-    const feedbackOutcomeExpr = `JSONExtractString(attributes_json, '$.feedback.outcome')`;
-    const feedbackCommentExpr = `JSONExtractString(attributes_json, '$.feedback.comment')`;
-
     try {
-      // Get all feedback events (we'll aggregate in memory for better flexibility)
+      // Get all feedback events - parse JSON in JavaScript for reliability
+      // ClickHouse JSONExtractString may not work reliably, so we'll parse the full JSON
       const feedbackSql = `
         SELECT 
-          ${feedbackTypeExpr} as type,
-          ${feedbackOutcomeExpr} as outcome,
-          ${feedbackRatingExpr} as rating,
-          ${feedbackCommentExpr} as comment
+          attributes_json
         FROM canonical_events
         ${whereClause}
+        LIMIT 10000
       `;
 
       const result = await TinybirdRepository.rawQuery(feedbackSql, {
@@ -984,6 +977,36 @@ export class DashboardMetricsService {
         projectId: projectId || undefined,
       });
       const results = Array.isArray(result) ? result : result?.data || [];
+      
+      // Parse JSON in JavaScript for reliable extraction
+      const parsedResults = results.map((row: any) => {
+        let type = "";
+        let outcome = "";
+        let rating: number | null = null;
+        let comment = "";
+        
+        try {
+          // Parse the attributes_json string
+          const attrs = typeof row.attributes_json === 'string' 
+            ? JSON.parse(row.attributes_json) 
+            : row.attributes_json || {};
+          
+          // Extract feedback data
+          if (attrs && attrs.feedback) {
+            type = attrs.feedback.type || "";
+            outcome = attrs.feedback.outcome || "";
+            rating = attrs.feedback.rating !== undefined && attrs.feedback.rating !== null 
+              ? parseFloat(attrs.feedback.rating) 
+              : null;
+            comment = attrs.feedback.comment || "";
+          }
+        } catch (e) {
+          console.warn(`[DashboardMetricsService] Failed to parse feedback JSON:`, e);
+          // Continue with empty values
+        }
+        
+        return { type, outcome, rating, comment };
+      });
 
       // Initialize counters
       let total = 0;
@@ -1008,14 +1031,14 @@ export class DashboardMetricsService {
       };
 
       // Aggregate results
-      for (const row of results) {
+      for (const row of parsedResults) {
         total += 1;
         
-        const type = (row.type || "").toLowerCase();
-        const outcome = (row.outcome || "unknown").toLowerCase();
-        const rating = parseFloat(row.rating) || null;
-        const comment = row.comment || "";
-        const hasComment = comment && comment.trim() !== "" && comment.toLowerCase() !== "null";
+        const type = (row.type || "").toLowerCase().trim();
+        const outcome = (row.outcome || "unknown").toLowerCase().trim();
+        const rating = row.rating !== null && row.rating !== undefined ? parseFloat(row.rating) : null;
+        const comment = (row.comment || "").trim();
+        const hasComment = comment && comment !== "" && comment.toLowerCase() !== "null";
 
         // Count by type
         if (type === "like") {
@@ -1387,13 +1410,14 @@ export class DashboardMetricsService {
       `;
 
       // Query for feedback by time bucket
+      // Use countIf for better ClickHouse compatibility
       const feedbackTypeExpr = `JSONExtractString(attributes_json, '$.feedback.type')`;
       const feedbackSql = `
         SELECT 
           ${timeGroupExpr} as time_bucket,
           count(*) as total,
-          sum(CASE WHEN ${feedbackTypeExpr} = 'like' THEN 1 ELSE 0 END) as likes,
-          sum(CASE WHEN ${feedbackTypeExpr} = 'dislike' THEN 1 ELSE 0 END) as dislikes
+          countIf(${feedbackTypeExpr} = 'like') as likes,
+          countIf(${feedbackTypeExpr} = 'dislike') as dislikes
         FROM canonical_events
         ${whereClause}
           AND event_type = 'feedback'

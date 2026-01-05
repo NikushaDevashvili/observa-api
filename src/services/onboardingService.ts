@@ -1,6 +1,4 @@
 import { TenantService } from "./tenantService.js";
-import { OnboardingTrackerService } from "./onboardingTrackerService.js";
-import { EmailService } from "./emailService.js";
 import { query } from "../db/client.js";
 
 /**
@@ -81,46 +79,6 @@ export class OnboardingService {
       environment: "prod",
       message: "Welcome! Your API key is ready to use.",
     };
-  }
-
-  /**
-   * Initialize onboarding for a user after account creation
-   */
-  static async initializeUserOnboarding(
-    userId: string,
-    tenantId: string,
-    email: string,
-    apiKey: string,
-    role?: string,
-    useCase?: string
-  ): Promise<void> {
-    // Initialize onboarding tracking
-    await OnboardingTrackerService.initializeOnboarding(userId, tenantId, role, useCase);
-
-    // Mark api_key_retrieved as complete since they just got it
-    await OnboardingTrackerService.completeTask(userId, "api_key_retrieved", {
-      source: "signup",
-    });
-
-    // Send welcome email (async, don't block)
-    EmailService.sendWelcomeEmail(userId, email, email.split("@")[0], apiKey).catch(
-      (err) => {
-        console.error("Failed to send welcome email:", err);
-        // Don't throw - email failures shouldn't break signup
-      }
-    );
-
-    // Send email verification if enabled
-    const { env } = await import("../config/env.js");
-    if (env.EMAIL_VERIFICATION_ENABLED) {
-      try {
-        const token = await EmailService.generateVerificationToken(userId);
-        await EmailService.sendEmailVerificationEmail(userId, email, token);
-      } catch (err) {
-        console.error("Failed to send verification email:", err);
-        // Don't throw - email failures shouldn't break signup
-      }
-    }
   }
 
   /**

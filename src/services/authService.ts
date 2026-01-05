@@ -133,17 +133,6 @@ export class AuthService {
     // Create session
     const sessionToken = await this.createSession(userId);
 
-    // Initialize onboarding (async, don't block signup)
-    OnboardingService.initializeUserOnboarding(
-      userId,
-      onboardingResult.tenantId,
-      data.email,
-      onboardingResult.apiKey
-    ).catch((err) => {
-      console.error("Failed to initialize onboarding:", err);
-      // Don't throw - onboarding initialization failures shouldn't break signup
-    });
-
     return {
       user,
       apiKey: onboardingResult.apiKey,
