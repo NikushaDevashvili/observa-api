@@ -35,9 +35,27 @@ export class CanonicalEventService {
     if (feedbackEvents.length > 0) {
       console.log(`[CanonicalEventService] 📝 Sending ${feedbackEvents.length} FEEDBACK events to Tinybird`);
       feedbackEvents.forEach((fe: any, i: number) => {
-        console.log(`[CanonicalEventService] Feedback ${i+1} NDJSON: ${JSON.stringify(fe)}`);
-        console.log(`[CanonicalEventService] Feedback ${i+1} attributes_json: ${fe.attributes_json}`);
+        console.log(`[CanonicalEventService] Feedback ${i+1} Full Event:`, JSON.stringify(fe, null, 2));
+        console.log(`[CanonicalEventService] Feedback ${i+1} attributes_json type:`, typeof fe.attributes_json);
+        console.log(`[CanonicalEventService] Feedback ${i+1} attributes_json value:`, fe.attributes_json);
+        console.log(`[CanonicalEventService] Feedback ${i+1} attributes_json length:`, fe.attributes_json?.length || 0);
+        
+        // Try to parse and show feedback object
+        try {
+          const parsed = typeof fe.attributes_json === 'string' ? JSON.parse(fe.attributes_json) : fe.attributes_json;
+          console.log(`[CanonicalEventService] Feedback ${i+1} parsed attributes:`, JSON.stringify(parsed, null, 2));
+          console.log(`[CanonicalEventService] Feedback ${i+1} has feedback object:`, !!parsed?.feedback);
+          if (parsed?.feedback) {
+            console.log(`[CanonicalEventService] Feedback ${i+1} feedback type:`, parsed.feedback.type);
+          }
+        } catch (e) {
+          console.error(`[CanonicalEventService] Feedback ${i+1} failed to parse attributes_json:`, e);
+        }
       });
+      
+      // Also log the NDJSON line for the first feedback event
+      const firstFeedbackNDJSON = JSON.stringify(feedbackEvents[0]);
+      console.log(`[CanonicalEventService] First feedback event NDJSON line:`, firstFeedbackNDJSON);
     }
 
     try {
