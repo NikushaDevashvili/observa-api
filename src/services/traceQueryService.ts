@@ -1291,7 +1291,7 @@ export class TraceQueryService {
           spanName = "Trace";
         }
 
-        spansMap.set(spanId, {
+        const spanData: any = {
           id: spanId, // Add id field for frontend compatibility
           span_id: spanId,
           parent_span_id: parentSpanId,
@@ -1311,7 +1311,26 @@ export class TraceQueryService {
           original_span_id: event.span_id,
           // Include event type for easy filtering/identification
           event_type: event.event_type,
-        });
+        };
+
+        // Add feedback-specific metadata for frontend styling
+        if (event.event_type === "feedback" && event.attributes?.feedback) {
+          const feedback = event.attributes.feedback;
+          spanData.feedback_metadata = {
+            type: feedback.type, // "like", "dislike", "rating", "correction"
+            outcome: feedback.outcome, // "success", "failure", "partial"
+            rating: feedback.rating || null,
+            has_comment: !!feedback.comment,
+            comment: feedback.comment || null,
+            // Icon suggestions for frontend
+            icon: feedback.type === "like" ? "👍" : feedback.type === "dislike" ? "👎" : feedback.type === "rating" ? "⭐" : "✏️",
+            // Color suggestions for frontend
+            color_class: feedback.type === "like" ? "text-green-600" : feedback.type === "dislike" ? "text-red-600" : feedback.type === "rating" ? "text-yellow-600" : "text-blue-600",
+            bg_color_class: feedback.type === "like" ? "bg-green-50 border-green-200" : feedback.type === "dislike" ? "bg-red-50 border-red-200" : feedback.type === "rating" ? "bg-yellow-50 border-yellow-200" : "bg-blue-50 border-blue-200",
+          };
+        }
+
+        spansMap.set(spanId, spanData);
         spanEventsMap.set(spanId, []);
       }
 
