@@ -787,7 +787,7 @@ router.get("/feedback/debug", async (req: Request, res: Response) => {
       });
     }
 
-    const { projectId, days = 7 } = req.query;
+    const { projectId, days = 1 } = req.query; // Default to 1 day to get recent events
     const end = new Date();
     const start = new Date(
       end.getTime() - parseInt(days as string) * 24 * 60 * 60 * 1000
@@ -806,7 +806,9 @@ router.get("/feedback/debug", async (req: Request, res: Response) => {
     whereClause += ` AND timestamp >= parseDateTime64BestEffort('${start.toISOString()}', 3)`;
     whereClause += ` AND timestamp <= parseDateTime64BestEffort('${end.toISOString()}', 3)`;
 
-    const sql = `SELECT attributes_json, timestamp FROM canonical_events ${whereClause} LIMIT 5`;
+    // Select all columns in the order expected by TSV parser
+    // The TSV parser expects: tenant_id, project_id, environment, trace_id, span_id, parent_span_id, timestamp, event_type, conversation_id, session_id, user_id, attributes_json
+    const sql = `SELECT tenant_id, project_id, environment, trace_id, span_id, parent_span_id, timestamp, event_type, conversation_id, session_id, user_id, attributes_json FROM canonical_events ${whereClause} ORDER BY timestamp DESC LIMIT 10`;
 
     const { TinybirdRepository } = await import(
       "../services/tinybirdRepository.js"
