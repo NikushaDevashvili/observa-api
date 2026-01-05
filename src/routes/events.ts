@@ -394,6 +394,20 @@ router.post(
       // Format events to omit null fields and ensure required fields are present (for Tinybird strict type checking)
       const formattedEvents = formatTinybirdEvents(tinybirdEvents);
 
+      // DEBUG: Log feedback events before sending to Tinybird
+      const feedbackEventsBeforeSend = formattedEvents.filter((e: any) => e.event_type === "feedback");
+      if (feedbackEventsBeforeSend.length > 0) {
+        console.log(`[Events API] 📝 About to send ${feedbackEventsBeforeSend.length} feedback event(s) to Tinybird`);
+        feedbackEventsBeforeSend.forEach((fe: any, i: number) => {
+          console.log(`[Events API] Feedback ${i+1} before send:`, {
+            event_type: fe.event_type,
+            attributes_json: fe.attributes_json?.substring(0, 200),
+            has_attributes_json: !!fe.attributes_json,
+            attributes_json_length: fe.attributes_json?.length || 0
+          });
+        });
+      }
+
       // Forward to Tinybird (use formatted events, not raw tinybirdEvents)
       // CRITICAL: This must succeed - if it fails, the request should fail
       try {
