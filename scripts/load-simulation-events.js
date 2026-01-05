@@ -205,7 +205,7 @@ const CONVERSATION_TEMPLATES = [
     name: "Technical Support",
     queries: [
       "How do I reset my password?",
-      "I'm getting an error when trying to login",
+      "I am getting an error when trying to login",
       "Can you explain the API rate limits?",
       "How do I integrate your SDK?",
     ],

@@ -1155,8 +1155,15 @@ export class TraceQueryService {
       try {
         if (typeof event.attributes_json === "string") {
           // Validate JSON string before parsing
-          const jsonStr = event.attributes_json.trim();
+          let jsonStr = event.attributes_json.trim();
           if (jsonStr && jsonStr.length > 0) {
+            // Fix common JSON escaping issues
+            // Replace incorrect single quote escaping (\') with just the quote (')
+            // This handles cases where single quotes are incorrectly escaped
+            jsonStr = jsonStr.replace(/\\'/g, "'");
+            // Also fix double-escaped backslashes if needed
+            jsonStr = jsonStr.replace(/\\\\'/g, "\\'");
+            
             attributes = JSON.parse(jsonStr);
           }
         } else if (event.attributes) {
