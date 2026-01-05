@@ -1,6 +1,6 @@
 /**
  * Dashboard Routes
- * 
+ *
  * SOTA: Endpoints for dashboard overview, metrics, and alerts
  * Following the Trace-First plan architecture
  */
@@ -14,11 +14,14 @@ const router = Router();
 
 // Secure dashboard cache: key = cacheKey, value = { data, expires, tenantId }
 // Cache key includes tenant_id FIRST to prevent cross-tenant access
-const dashboardCache = new Map<string, { 
-  data: any; 
-  expires: number;
-  tenantId: string; // Store tenant for validation
-}>();
+const dashboardCache = new Map<
+  string,
+  {
+    data: any;
+    expires: number;
+    tenantId: string; // Store tenant for validation
+  }
+>();
 
 const CACHE_TTL = 60 * 1000; // 1 minute cache TTL
 
@@ -27,7 +30,7 @@ let cacheCleanupInterval: NodeJS.Timeout | null = null;
 
 function initializeCacheCleanup(): void {
   if (cacheCleanupInterval) return;
-  
+
   // Clean up expired cache entries every 5 minutes
   cacheCleanupInterval = setInterval(() => {
     const now = Date.now();
@@ -50,7 +53,7 @@ initializeCacheCleanup();
 /**
  * GET /api/v1/dashboard/overview
  * Get dashboard overview with key metrics
- * 
+ *
  * Returns:
  * - Error rate
  * - P95/P99 latency
@@ -92,24 +95,30 @@ router.get("/overview", async (req: Request, res: Response) => {
     // Default to last 7 days if no time range provided
     let start: string;
     let end: string;
-    
+
     if (startTime && endTime) {
       // Explicit time range provided
       start = startTime;
       end = endTime;
-      console.log(`[Dashboard] Querying metrics for explicit time range: ${start} to ${end}`);
+      console.log(
+        `[Dashboard] Querying metrics for explicit time range: ${start} to ${end}`
+      );
     } else {
       // Default to last 7 days
       end = new Date().toISOString();
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - 7);
       start = startDate.toISOString();
-      console.log(`[Dashboard] Querying metrics for default time range (last 7 days): ${start} to ${end}`);
+      console.log(
+        `[Dashboard] Querying metrics for default time range (last 7 days): ${start} to ${end}`
+      );
     }
 
     // Build cache key with tenant_id FIRST to prevent cross-tenant access
-    const cacheKey = `dashboard:${user.tenantId}:${projectId || 'all'}:${start}:${end}`;
-    
+    const cacheKey = `dashboard:${user.tenantId}:${
+      projectId || "all"
+    }:${start}:${end}`;
+
     // Check cache
     const cached = dashboardCache.get(cacheKey);
     if (cached && cached.expires > Date.now()) {
@@ -120,13 +129,19 @@ router.get("/overview", async (req: Request, res: Response) => {
       } else {
         // Security violation detected - remove bad cache entry
         dashboardCache.delete(cacheKey);
-        console.error(`[Dashboard] Security: Cache tenant mismatch detected for key: ${cacheKey}`);
+        console.error(
+          `[Dashboard] Security: Cache tenant mismatch detected for key: ${cacheKey}`
+        );
       }
     }
 
     // Cache miss or expired - fetch data
-    console.log(`[Dashboard] Cache miss - fetching metrics for tenant ${user.tenantId}, project ${projectId || "all"}`);
-    
+    console.log(
+      `[Dashboard] Cache miss - fetching metrics for tenant ${
+        user.tenantId
+      }, project ${projectId || "all"}`
+    );
+
     const [
       latencyMetrics,
       errorRateMetrics,
@@ -200,43 +215,56 @@ router.get("/overview", async (req: Request, res: Response) => {
     // Calculate health indicators
     const healthIndicators = {
       error_rate: {
-        status: errorRateMetrics.error_rate < 1 ? "healthy" : errorRateMetrics.error_rate < 5 ? "warning" : "critical",
+        status:
+          errorRateMetrics.error_rate < 1
+            ? "healthy"
+            : errorRateMetrics.error_rate < 5
+            ? "warning"
+            : "critical",
         threshold: 5.0,
         value: errorRateMetrics.error_rate,
       },
       latency: {
-        status: latency.p95 < 1000 ? "healthy" : latency.p95 < 5000 ? "warning" : "critical",
+        status:
+          latency.p95 < 1000
+            ? "healthy"
+            : latency.p95 < 5000
+            ? "warning"
+            : "critical",
         threshold: 5000,
         value: latency.p95,
       },
       active_issues: {
-        status: signalCounts.high === 0 ? "healthy" : signalCounts.high < 10 ? "warning" : "critical",
+        status:
+          signalCounts.high === 0
+            ? "healthy"
+            : signalCounts.high < 10
+            ? "warning"
+            : "critical",
         threshold: 10,
         value: signalCounts.high,
       },
     };
 
     // Determine overall health
-    const overallHealth = 
-      healthIndicators.error_rate.status === "critical" || 
-      healthIndicators.latency.status === "critical" || 
+    const overallHealth =
+      healthIndicators.error_rate.status === "critical" ||
+      healthIndicators.latency.status === "critical" ||
       healthIndicators.active_issues.status === "critical"
         ? "critical"
-        : healthIndicators.error_rate.status === "warning" || 
-          healthIndicators.latency.status === "warning" || 
+        : healthIndicators.error_rate.status === "warning" ||
+          healthIndicators.latency.status === "warning" ||
           healthIndicators.active_issues.status === "warning"
         ? "warning"
         : "healthy";
 
     // Get top 5 issues
-    const topIssues = signalSummary
-      .slice(0, 5)
-      .map((issue) => ({
-        signal_name: issue.signal_name,
-        count: issue.count,
-        severity: issue.severity,
-        latest_timestamp: issue.latest_timestamp,
-      }));
+    const topIssues = signalSummary.slice(0, 5).map((issue) => ({
+      signal_name: issue.signal_name,
+      count: issue.count,
+      severity: issue.severity,
+      latest_timestamp: issue.latest_timestamp,
+    }));
 
     // Get top models by usage (trace count)
     const topModels = Object.entries(tokenMetrics.tokens_by_model)
@@ -256,12 +284,20 @@ router.get("/overview", async (req: Request, res: Response) => {
     // Log results for debugging
     console.log(`[Dashboard] Metrics fetched:`);
     console.log(`  - Trace count: ${traceCount}`);
-    console.log(`  - Error rate: ${errorRateMetrics.error_rate}% (${errorRateMetrics.errors}/${errorRateMetrics.total})`);
+    console.log(
+      `  - Error rate: ${errorRateMetrics.error_rate}% (${errorRateMetrics.errors}/${errorRateMetrics.total})`
+    );
     console.log(`  - Latency P95: ${latency.p95}ms`);
     console.log(`  - Cost: $${costMetrics.total_cost}`);
     console.log(`  - Tokens: ${tokenMetrics.total_tokens}`);
-    console.log(`  - Active issues: ${signalCounts.high + signalCounts.medium + signalCounts.low}`);
-    console.log(`  - Feedback: ${feedbackMetrics.total} total (${feedbackMetrics.likes} likes, ${feedbackMetrics.dislikes} dislikes, ${feedbackMetrics.feedback_rate}% rate)`);
+    console.log(
+      `  - Active issues: ${
+        signalCounts.high + signalCounts.medium + signalCounts.low
+      }`
+    );
+    console.log(
+      `  - Feedback: ${feedbackMetrics.total} total (${feedbackMetrics.likes} likes, ${feedbackMetrics.dislikes} dislikes, ${feedbackMetrics.feedback_rate}% rate)`
+    );
     console.log(`  - Overall health: ${overallHealth}`);
 
     const responseData = {
@@ -334,7 +370,7 @@ router.get("/overview", async (req: Request, res: Response) => {
     dashboardCache.set(cacheKey, {
       data: responseData,
       expires: Date.now() + CACHE_TTL,
-      tenantId: user.tenantId // Store tenant for validation
+      tenantId: user.tenantId, // Store tenant for validation
     });
 
     return res.status(200).json(responseData);
@@ -342,20 +378,23 @@ router.get("/overview", async (req: Request, res: Response) => {
     const errorMessage =
       error instanceof Error ? error.message : "Internal server error";
     const errorStack = error instanceof Error ? error.stack : undefined;
-    
+
     console.error("[Dashboard API] ❌ Error fetching overview:", errorMessage);
     if (errorStack) {
       console.error("[Dashboard API] Stack trace:", errorStack);
     }
-    
+
     // Log the full error object for debugging
     console.error("[Dashboard API] Full error:", error);
-    
+
     return res.status(500).json({
       error: {
         code: "INTERNAL_ERROR",
         message: errorMessage,
-        details: process.env.NODE_ENV === "development" ? { stack: errorStack } : undefined,
+        details:
+          process.env.NODE_ENV === "development"
+            ? { stack: errorStack }
+            : undefined,
       },
     });
   }
@@ -364,7 +403,7 @@ router.get("/overview", async (req: Request, res: Response) => {
 /**
  * GET /api/v1/dashboard/alerts
  * Get active alerts (high-severity signals)
- * 
+ *
  * Returns alerts for the last 1-24 hours (configurable)
  */
 router.get("/alerts", async (req: Request, res: Response) => {
@@ -479,7 +518,7 @@ router.get("/alerts", async (req: Request, res: Response) => {
 /**
  * GET /api/v1/dashboard/overview/time-series
  * Get time-series metrics for chart visualization
- * 
+ *
  * Returns metrics aggregated by time intervals (hourly/daily/weekly)
  */
 router.get("/overview/time-series", async (req: Request, res: Response) => {
@@ -524,11 +563,13 @@ router.get("/overview/time-series", async (req: Request, res: Response) => {
     const start = new Date(startTime);
     const end = new Date(endTime);
     const durationHours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
-    
+
     let selectedInterval: "hour" | "day" | "week" = interval;
-    if (interval === "hour" && durationHours > 168) { // > 7 days, use day
+    if (interval === "hour" && durationHours > 168) {
+      // > 7 days, use day
       selectedInterval = "day";
-    } else if (interval === "day" && durationHours > 720) { // > 30 days, use week
+    } else if (interval === "day" && durationHours > 720) {
+      // > 30 days, use week
       selectedInterval = "week";
     }
 
@@ -565,7 +606,7 @@ router.get("/overview/time-series", async (req: Request, res: Response) => {
 /**
  * GET /api/v1/dashboard/overview/comparison
  * Get metrics comparison between current period and previous period
- * 
+ *
  * Returns percentage changes for trend indicators
  */
 router.get("/overview/comparison", async (req: Request, res: Response) => {
@@ -617,7 +658,10 @@ router.get("/overview/comparison", async (req: Request, res: Response) => {
       period: {
         current: { start: startTime, end: endTime },
         previous: {
-          start: new Date(new Date(startTime).getTime() - (new Date(endTime).getTime() - new Date(startTime).getTime())).toISOString(),
+          start: new Date(
+            new Date(startTime).getTime() -
+              (new Date(endTime).getTime() - new Date(startTime).getTime())
+          ).toISOString(),
           end: startTime,
         },
       },
@@ -639,7 +683,7 @@ router.get("/overview/comparison", async (req: Request, res: Response) => {
 /**
  * GET /api/v1/dashboard/metrics/breakdown
  * Get detailed metrics breakdowns
- * 
+ *
  * Returns error types, latency distribution, cost by model, token usage by model
  */
 router.get("/metrics/breakdown", async (req: Request, res: Response) => {
@@ -715,24 +759,45 @@ router.get("/metrics/breakdown", async (req: Request, res: Response) => {
 /**
  * GET /api/v1/dashboard/feedback
  * Get detailed feedback metrics and analytics
- * 
+ *
  * Returns comprehensive feedback data including likes, dislikes, ratings, and comments
  */
 // Debug endpoint to inspect raw feedback data
 router.get("/feedback/debug", async (req: Request, res: Response) => {
   try {
-    const user = await AuthService.getUserFromRequest(req);
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({
+        error: {
+          code: "UNAUTHORIZED",
+          message: "Missing or invalid Authorization header",
+        },
+      });
+    }
+
+    const sessionToken = authHeader.substring(7);
+    const user = await AuthService.validateSession(sessionToken);
+
     if (!user) {
-      return res.status(401).json({ error: { code: "UNAUTHORIZED", message: "Authentication required" } });
+      return res.status(401).json({
+        error: {
+          code: "UNAUTHORIZED",
+          message: "Invalid or expired session",
+        },
+      });
     }
 
     const { projectId, days = 7 } = req.query;
     const end = new Date();
-    const start = new Date(end.getTime() - parseInt(days as string) * 24 * 60 * 60 * 1000);
+    const start = new Date(
+      end.getTime() - parseInt(days as string) * 24 * 60 * 60 * 1000
+    );
 
     // Get raw feedback events from Tinybird
     const escapedTenantId = user.tenantId.replace(/'/g, "''");
-    const escapedProjectId = projectId ? (projectId as string).replace(/'/g, "''") : null;
+    const escapedProjectId = projectId
+      ? (projectId as string).replace(/'/g, "''")
+      : null;
 
     let whereClause = `WHERE tenant_id = '${escapedTenantId}' AND event_type = 'feedback'`;
     if (escapedProjectId) {
@@ -743,7 +808,9 @@ router.get("/feedback/debug", async (req: Request, res: Response) => {
 
     const sql = `SELECT attributes_json, timestamp FROM canonical_events ${whereClause} LIMIT 5`;
 
-    const { TinybirdRepository } = await import("../services/tinybirdRepository.js");
+    const { TinybirdRepository } = await import(
+      "../services/tinybirdRepository.js"
+    );
     const result = await TinybirdRepository.rawQuery(sql, {
       tenantId: user.tenantId,
       projectId: projectId as string | null | undefined,
@@ -756,7 +823,7 @@ router.get("/feedback/debug", async (req: Request, res: Response) => {
       let feedback = null;
       try {
         const raw = row.attributes_json;
-        if (typeof raw === 'string') {
+        if (typeof raw === "string") {
           parsed = JSON.parse(raw);
         } else {
           parsed = raw;
@@ -841,13 +908,26 @@ router.get("/feedback", async (req: Request, res: Response) => {
     );
 
     // Calculate additional insights
-    const likeDislikeRatio = feedbackMetrics.dislikes > 0 
-      ? parseFloat((feedbackMetrics.likes / feedbackMetrics.dislikes).toFixed(2))
-      : feedbackMetrics.likes > 0 ? 999 : 0;
-    
-    const satisfactionScore = feedbackMetrics.total > 0
-      ? parseFloat((((feedbackMetrics.likes + feedbackMetrics.ratings * (feedbackMetrics.avg_rating / 5)) / feedbackMetrics.total) * 100).toFixed(2))
-      : 0;
+    const likeDislikeRatio =
+      feedbackMetrics.dislikes > 0
+        ? parseFloat(
+            (feedbackMetrics.likes / feedbackMetrics.dislikes).toFixed(2)
+          )
+        : feedbackMetrics.likes > 0
+        ? 999
+        : 0;
+
+    const satisfactionScore =
+      feedbackMetrics.total > 0
+        ? parseFloat(
+            (
+              ((feedbackMetrics.likes +
+                feedbackMetrics.ratings * (feedbackMetrics.avg_rating / 5)) /
+                feedbackMetrics.total) *
+              100
+            ).toFixed(2)
+          )
+        : 0;
 
     return res.status(200).json({
       success: true,
@@ -859,12 +939,23 @@ router.get("/feedback", async (req: Request, res: Response) => {
       insights: {
         like_dislike_ratio: likeDislikeRatio,
         satisfaction_score: satisfactionScore,
-        negative_feedback_rate: feedbackMetrics.total > 0
-          ? parseFloat(((feedbackMetrics.dislikes / feedbackMetrics.total) * 100).toFixed(2))
-          : 0,
-        positive_feedback_rate: feedbackMetrics.total > 0
-          ? parseFloat(((feedbackMetrics.likes / feedbackMetrics.total) * 100).toFixed(2))
-          : 0,
+        negative_feedback_rate:
+          feedbackMetrics.total > 0
+            ? parseFloat(
+                (
+                  (feedbackMetrics.dislikes / feedbackMetrics.total) *
+                  100
+                ).toFixed(2)
+              )
+            : 0,
+        positive_feedback_rate:
+          feedbackMetrics.total > 0
+            ? parseFloat(
+                ((feedbackMetrics.likes / feedbackMetrics.total) * 100).toFixed(
+                  2
+                )
+              )
+            : 0,
       },
       timestamp: new Date().toISOString(),
     });
@@ -910,7 +1001,7 @@ router.get("/health", async (req: Request, res: Response) => {
     }
 
     const projectId = req.query.projectId as string | undefined;
-    
+
     // Test basic query
     const end = new Date().toISOString();
     const startDate = new Date();
@@ -977,7 +1068,8 @@ router.get("/health", async (req: Request, res: Response) => {
     diagnostics.tinybird_token = {
       configured: !!process.env.TINYBIRD_ADMIN_TOKEN,
       token_length: process.env.TINYBIRD_ADMIN_TOKEN?.length || 0,
-      token_prefix: process.env.TINYBIRD_ADMIN_TOKEN?.substring(0, 10) || "not set",
+      token_prefix:
+        process.env.TINYBIRD_ADMIN_TOKEN?.substring(0, 10) || "not set",
     };
 
     return res.status(200).json({
@@ -996,5 +1088,3 @@ router.get("/health", async (req: Request, res: Response) => {
 });
 
 export default router;
-
-
