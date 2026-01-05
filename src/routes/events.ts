@@ -352,8 +352,15 @@ router.post(
             // Validate JSON is valid before storing
             attributes_json: (() => {
               try {
-                const cleaned = cleanNullValues(event.attributes);
-                const jsonStr = JSON.stringify(cleaned);
+                // CRITICAL: Ensure attributes is always an object (not undefined/null)
+                // This prevents attributes_json from being lost during conversion
+                const attributes = event.attributes || {};
+                const cleaned = cleanNullValues(attributes);
+                
+                // Ensure cleaned is an object (not undefined)
+                const finalAttributes = cleaned !== undefined ? cleaned : {};
+                const jsonStr = JSON.stringify(finalAttributes);
+                
                 // Validate it can be parsed back
                 JSON.parse(jsonStr);
 
@@ -365,11 +372,16 @@ router.post(
                   );
                   console.log(
                     `[Events API] Original attributes:`,
-                    JSON.stringify(event.attributes, null, 2).substring(0, 500)
+                    JSON.stringify(attributes, null, 2).substring(0, 500)
                   );
                   console.log(
                     `[Events API] Cleaned attributes:`,
-                    JSON.stringify(cleaned, null, 2).substring(0, 500)
+                    JSON.stringify(finalAttributes, null, 2).substring(0, 500)
+                  );
+                  console.log(
+                    `[Events API] Has feedback object:`,
+                    finalAttributes?.feedback ? "YES" : "NO",
+                    finalAttributes?.feedback ? JSON.stringify(finalAttributes.feedback) : "missing"
                   );
                 }
 
@@ -395,15 +407,19 @@ router.post(
       const formattedEvents = formatTinybirdEvents(tinybirdEvents);
 
       // DEBUG: Log feedback events before sending to Tinybird
-      const feedbackEventsBeforeSend = formattedEvents.filter((e: any) => e.event_type === "feedback");
+      const feedbackEventsBeforeSend = formattedEvents.filter(
+        (e: any) => e.event_type === "feedback"
+      );
       if (feedbackEventsBeforeSend.length > 0) {
-        console.log(`[Events API] 📝 About to send ${feedbackEventsBeforeSend.length} feedback event(s) to Tinybird`);
+        console.log(
+          `[Events API] 📝 About to send ${feedbackEventsBeforeSend.length} feedback event(s) to Tinybird`
+        );
         feedbackEventsBeforeSend.forEach((fe: any, i: number) => {
-          console.log(`[Events API] Feedback ${i+1} before send:`, {
+          console.log(`[Events API] Feedback ${i + 1} before send:`, {
             event_type: fe.event_type,
             attributes_json: fe.attributes_json?.substring(0, 200),
             has_attributes_json: !!fe.attributes_json,
-            attributes_json_length: fe.attributes_json?.length || 0
+            attributes_json_length: fe.attributes_json?.length || 0,
           });
         });
       }

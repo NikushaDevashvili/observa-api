@@ -183,6 +183,15 @@ export class SecretsScrubbingService {
     containsSecrets: boolean;
     secretTypes: string[];
   } {
+    // CRITICAL: Ensure attributes is always an object (preserve feedback and other fields)
+    if (!attributes || typeof attributes !== "object") {
+      return {
+        attributes: {},
+        containsSecrets: false,
+        secretTypes: [],
+      };
+    }
+
     // Focus on fields that commonly contain secrets
     const sensitiveFields = [
       "input",
@@ -195,6 +204,7 @@ export class SecretsScrubbingService {
     let containsSecrets = false;
     const allSecretTypes: string[] = [];
 
+    // Preserve all attributes (including feedback) - only scrub sensitive fields
     const scrubbedAttributes = { ...attributes };
 
     // Scrub sensitive fields in attributes
