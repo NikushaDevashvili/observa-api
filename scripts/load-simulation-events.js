@@ -28,7 +28,8 @@ const CONFIG = {
   concurrentRequests: parseInt(process.env.CONCURRENT_REQUESTS || "5"),
   // Phase 4: Enhanced configuration
   errorRate: parseFloat(process.env.ERROR_RATE || "0.25"), // 25% error rate (increased for better visibility)
-  feedbackRate: parseFloat(process.env.FEEDBACK_RATE || "0.10"), // 10% feedback
+  feedbackRate: parseFloat(process.env.FEEDBACK_RATE || "0.30"), // 30% feedback (increased to show more user engagement)
+  likeDislikeRate: parseFloat(process.env.LIKE_DISLIKE_RATE || "0.70"), // 70% of feedback is like/dislike (most important for issue detection)
   multiLLMRate: parseFloat(process.env.MULTI_LLM_RATE || "0.20"), // 20% multi-LLM traces
   maxToolsPerTrace: parseInt(process.env.MAX_TOOLS_PER_TRACE || "4"),
   maxRetrievalsPerTrace: parseInt(process.env.MAX_RETRIEVALS_PER_TRACE || "3"),
@@ -481,17 +482,70 @@ function generateFeedbackEvent(params) {
     agentName,
     version,
     route,
+    hasError, // Pass error state to influence feedback
   } = params;
 
-  const feedbackTypes = ["like", "dislike", "rating", "correction"];
-  const feedbackType = randomChoice(feedbackTypes);
-  const outcome = randomChoice(["success", "failure", "partial"]);
+  // Prioritize likes/dislikes (most important for issue detection)
+  let feedbackType;
+  if (Math.random() < CONFIG.likeDislikeRate) {
+    // 70% of feedback is like/dislike
+    // If there's an error, more likely to be dislike
+    if (hasError) {
+      feedbackType = Math.random() < 0.8 ? "dislike" : "like"; // 80% dislike when error
+    } else {
+      feedbackType = Math.random() < 0.7 ? "like" : "dislike"; // 70% like when no error
+    }
+  } else {
+    // 30% other feedback types
+    const otherTypes = ["rating", "correction"];
+    feedbackType = randomChoice(otherTypes);
+  }
+
+  // Determine outcome based on feedback type and error state
+  let outcome;
+  if (hasError) {
+    outcome = Math.random() < 0.7 ? "failure" : "partial"; // More failures when error
+  } else {
+    outcome = Math.random() < 0.8 ? "success" : "partial"; // More success when no error
+  }
+
+  // Generate realistic comments based on feedback type
+  let comment = null;
+  const hasComment = Math.random() < 0.4; // 40% have comments
+  
+  if (hasComment) {
+    if (feedbackType === "like") {
+      const likeComments = [
+        "Great response!",
+        "Very helpful, thank you!",
+        "Exactly what I needed",
+        "Perfect answer",
+        "This solved my problem",
+      ];
+      comment = randomChoice(likeComments);
+    } else if (feedbackType === "dislike") {
+      const dislikeComments = [
+        "This is incorrect",
+        "Wrong information",
+        "Not helpful",
+        "Response doesn't make sense",
+        "This doesn't answer my question",
+        "The system seems broken",
+        "This is not what I asked for",
+      ];
+      comment = randomChoice(dislikeComments);
+    } else if (feedbackType === "rating") {
+      comment = "User provided rating feedback";
+    } else {
+      comment = "User correction provided";
+    }
+  }
 
   const attributes = {
     feedback: {
       type: feedbackType,
       outcome: outcome,
-      comment: Math.random() > 0.5 ? "User feedback comment" : null,
+      comment: comment,
     },
   };
 
@@ -1107,7 +1161,12 @@ function generateCanonicalEvents(params) {
   });
 
   // Phase 1.2: Feedback event (conditional)
-  if (Math.random() < CONFIG.feedbackRate) {
+  // Increase feedback rate if there's an error (users more likely to give feedback when something goes wrong)
+  const adjustedFeedbackRate = hasError 
+    ? CONFIG.feedbackRate * 1.5 // 50% more likely when error
+    : CONFIG.feedbackRate;
+    
+  if (Math.random() < adjustedFeedbackRate) {
     const feedbackTime = addMilliseconds(outputTime, 100);
     const feedbackEvent = generateFeedbackEvent({
       traceId,
@@ -1119,6 +1178,7 @@ function generateCanonicalEvents(params) {
       agentName,
       version,
       route,
+      hasError, // Pass error state to influence feedback type
     });
     events.push(feedbackEvent);
 
@@ -1342,7 +1402,7 @@ async function runSimulation() {
     ).toFixed(1)}%)`
   );
   console.log(`  Hallucinations enabled: ${CONFIG.enableHallucinations}`);
-  console.log(`  Feedback rate: ${(CONFIG.feedbackRate * 100).toFixed(1)}%`);
+  console.log(`  Feedback rate: ${(CONFIG.feedbackRate * 100).toFixed(1)}% (${(CONFIG.likeDislikeRate * 100).toFixed(0)}% like/dislike)`);
   console.log(`  Multi-LLM rate: ${(CONFIG.multiLLMRate * 100).toFixed(1)}%`);
   console.log(`  Max tools per trace: ${CONFIG.maxToolsPerTrace}`);
   console.log(`  Max retrievals per trace: ${CONFIG.maxRetrievalsPerTrace}`);
