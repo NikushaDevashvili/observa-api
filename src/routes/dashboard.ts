@@ -718,6 +718,80 @@ router.get("/metrics/breakdown", async (req: Request, res: Response) => {
  * 
  * Returns comprehensive feedback data including likes, dislikes, ratings, and comments
  */
+// Debug endpoint to inspect raw feedback data
+router.get("/feedback/debug", async (req: Request, res: Response) => {
+  try {
+    const user = await AuthService.getUserFromRequest(req);
+    if (!user) {
+      return res.status(401).json({ error: { code: "UNAUTHORIZED", message: "Authentication required" } });
+    }
+
+    const { projectId, days = 7 } = req.query;
+    const end = new Date();
+    const start = new Date(end.getTime() - parseInt(days as string) * 24 * 60 * 60 * 1000);
+
+    // Get raw feedback events from Tinybird
+    const escapedTenantId = user.tenantId.replace(/'/g, "''");
+    const escapedProjectId = projectId ? (projectId as string).replace(/'/g, "''") : null;
+
+    let whereClause = `WHERE tenant_id = '${escapedTenantId}' AND event_type = 'feedback'`;
+    if (escapedProjectId) {
+      whereClause += ` AND project_id = '${escapedProjectId}'`;
+    }
+    whereClause += ` AND timestamp >= parseDateTime64BestEffort('${start.toISOString()}', 3)`;
+    whereClause += ` AND timestamp <= parseDateTime64BestEffort('${end.toISOString()}', 3)`;
+
+    const sql = `SELECT attributes_json, timestamp FROM canonical_events ${whereClause} LIMIT 5`;
+
+    const { TinybirdRepository } = await import("../services/tinybirdRepository.js");
+    const result = await TinybirdRepository.rawQuery(sql, {
+      tenantId: user.tenantId,
+      projectId: projectId as string | null | undefined,
+    });
+
+    const results = Array.isArray(result) ? result : result?.data || [];
+
+    const samples = results.map((row: any, index: number) => {
+      let parsed = null;
+      let feedback = null;
+      try {
+        const raw = row.attributes_json;
+        if (typeof raw === 'string') {
+          parsed = JSON.parse(raw);
+        } else {
+          parsed = raw;
+        }
+        feedback = parsed?.feedback || null;
+      } catch (e) {
+        // ignore
+      }
+      return {
+        index,
+        timestamp: row.timestamp,
+        attributes_json_type: typeof row.attributes_json,
+        attributes_json_raw: String(row.attributes_json).substring(0, 300),
+        parsed_keys: parsed ? Object.keys(parsed) : [],
+        has_feedback: !!feedback,
+        feedback: feedback,
+      };
+    });
+
+    return res.json({
+      success: true,
+      total_samples: results.length,
+      samples,
+    });
+  } catch (error) {
+    console.error("[Dashboard] Error in feedback debug endpoint:", error);
+    return res.status(500).json({
+      error: {
+        code: "INTERNAL_ERROR",
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
+    });
+  }
+});
+
 router.get("/feedback", async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
