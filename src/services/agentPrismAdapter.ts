@@ -89,6 +89,23 @@ export interface ObservaSpan {
     final_output?: string | null;
     output_length?: number | null;
   };
+  feedback?: {
+    type?: string;
+    outcome?: string;
+    rating?: number | null;
+    comment?: string | null;
+  };
+  feedback_metadata?: {
+    type?: string;
+    outcome?: string;
+    rating?: number | null;
+    has_comment?: boolean;
+    comment?: string | null;
+  };
+  feedback_type?: string;
+  feedback_outcome?: string;
+  feedback_rating?: number | null;
+  feedback_comment?: string | null;
   error?: {
     error_type?: string | null;
     error_message?: string | null;
@@ -382,6 +399,24 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
     }
   }
 
+  // Add feedback attributes
+  if (span.feedback || span.feedback_metadata || span.feedback_type) {
+    const feedback = span.feedback || {
+      type: span.feedback_metadata?.type || span.feedback_type,
+      outcome: span.feedback_metadata?.outcome || span.feedback_outcome,
+      rating: span.feedback_metadata?.rating || span.feedback_rating,
+      comment: span.feedback_metadata?.comment || span.feedback_comment,
+    };
+    
+    if (feedback.type) attributes["feedback.type"] = feedback.type;
+    if (feedback.outcome) attributes["feedback.outcome"] = feedback.outcome;
+    if (feedback.rating !== null && feedback.rating !== undefined) {
+      attributes["feedback.rating"] = feedback.rating;
+    }
+    if (feedback.comment) attributes["feedback.comment"] = feedback.comment;
+    attributes["feedback.has_comment"] = !!feedback.comment;
+  }
+
   // Map our span types to agent-prism TraceSpanCategory
   // Valid categories: llm_call, tool_execution, agent_invocation, chain_operation,
   // retrieval, embedding, create_agent, span, event, guardrail, unknown
@@ -421,6 +456,15 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
     span.type === "retrieval"
   ) {
     category = "retrieval";
+  } else if (
+    span.feedback ||
+    span.feedback_metadata ||
+    span.feedback_type ||
+    span.event_type === "feedback" ||
+    span.type === "feedback" ||
+    spanNameLower.includes("feedback")
+  ) {
+    category = "event"; // Feedback events map to "event" category
   } else if (
     span.output ||
     span.event_type === "output" ||
@@ -617,13 +661,48 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
   // Reconvert attributes array since we added error fields
   const finalAttributesArray = convertAttributesToArray(attributes);
   
+  // Enhance title for feedback spans with icons
+  let enhancedTitle = span.name;
+  if (span.feedback || span.feedback_metadata || span.feedback_type) {
+    const feedback = span.feedback || {
+      type: span.feedback_metadata?.type || span.feedback_type,
+      outcome: span.feedback_metadata?.outcome || span.feedback_outcome,
+      rating: span.feedback_metadata?.rating || span.feedback_rating,
+      comment: span.feedback_metadata?.comment || span.feedback_comment,
+    };
+    
+    const feedbackType = feedback.type || "unknown";
+    const feedbackTypeLabel = feedbackType.charAt(0).toUpperCase() + feedbackType.slice(1);
+    
+    // Add emoji icon based on feedback type
+    let icon = "";
+    if (feedbackType === "like") {
+      icon = "👍 ";
+    } else if (feedbackType === "dislike") {
+      icon = "👎 ";
+    } else if (feedbackType === "rating") {
+      icon = "⭐ ";
+    } else if (feedbackType === "correction") {
+      icon = "✏️ ";
+    }
+    
+    // Build enhanced title with icon
+    enhancedTitle = `${icon}${feedbackTypeLabel} Feedback`;
+    if (feedback.comment) {
+      enhancedTitle += " 💬";
+    }
+    if (feedback.rating !== null && feedback.rating !== undefined) {
+      enhancedTitle += ` (${feedback.rating}/5)`;
+    }
+  }
+  
   // Build TraceSpan object
   // Note: Agent-prism components expect 'title' not 'name', and startTime/endTime as numbers
   const traceSpan: AgentPrismTraceSpan = {
     id: span.span_id || span.id,
     parentId: span.parent_span_id,
     name: span.name, // Keep name for compatibility
-    title: span.name, // Components use this field
+    title: enhancedTitle, // Components use this field - enhanced with icons for feedback
     startTime, // Number (Unix ms) - components accept this format
     endTime, // Number (Unix ms) - components accept this format
     duration: span.duration_ms,
