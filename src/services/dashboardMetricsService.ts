@@ -996,17 +996,33 @@ export class DashboardMetricsService {
             type = attrs.feedback.type || "";
             outcome = attrs.feedback.outcome || "";
             rating = attrs.feedback.rating !== undefined && attrs.feedback.rating !== null 
-              ? parseFloat(attrs.feedback.rating) 
+              ? parseFloat(String(attrs.feedback.rating)) 
               : null;
             comment = attrs.feedback.comment || "";
+          } else {
+            // Debug: log if feedback object is missing
+            if (results.length > 0 && results.indexOf(row) < 3) {
+              console.log(`[DashboardMetricsService] Sample feedback event missing feedback object:`, {
+                hasAttrs: !!attrs,
+                attrsKeys: attrs ? Object.keys(attrs) : [],
+                rawAttrs: typeof row.attributes_json === 'string' ? row.attributes_json.substring(0, 200) : 'not a string'
+              });
+            }
           }
         } catch (e) {
-          console.warn(`[DashboardMetricsService] Failed to parse feedback JSON:`, e);
+          console.warn(`[DashboardMetricsService] Failed to parse feedback JSON:`, e, {
+            sample: typeof row.attributes_json === 'string' ? row.attributes_json.substring(0, 100) : 'not a string'
+          });
           // Continue with empty values
         }
         
         return { type, outcome, rating, comment };
       });
+      
+      // Debug: log sample of parsed results
+      if (parsedResults.length > 0) {
+        console.log(`[DashboardMetricsService] Parsed ${parsedResults.length} feedback events. Sample:`, parsedResults.slice(0, 3));
+      }
 
       // Initialize counters
       let total = 0;
