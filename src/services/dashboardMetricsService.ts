@@ -1058,7 +1058,7 @@ export class DashboardMetricsService {
       
       // Debug: log sample of parsed results
       if (parsedResults.length > 0) {
-        const nonEmpty = parsedResults.filter(r => r.type || r.outcome);
+        const nonEmpty = parsedResults.filter((r: any) => r.type || r.outcome);
         console.log(`[DashboardMetricsService] Parsed ${parsedResults.length} feedback events. ${nonEmpty.length} have type/outcome. Sample:`, parsedResults.slice(0, 5));
       } else {
         console.log(`[DashboardMetricsService] No feedback events found in results. Results length: ${results.length}`);
