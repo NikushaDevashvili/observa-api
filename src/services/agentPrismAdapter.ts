@@ -200,6 +200,7 @@ export interface ObservaSpan {
   };
   type?: string;
   event_type?: string;
+  isRootTrace?: boolean; // Flag set by TraceQueryService to identify main trace span
 }
 
 /**
@@ -2008,8 +2009,29 @@ export function adaptObservaTraceToAgentPrism(
 ): AgentPrismTraceData {
   const { summary, spans, signals } = observaTrace;
 
+  // Filter to only show the main trace span (isRootTrace = true) if it exists
+  // This prevents orphaned spans or multiple root spans from appearing at the top level
+  let mainSpans = spans;
+  const rootTraceSpan = spans.find((span) => (span as any).isRootTrace === true);
+  
+  if (rootTraceSpan) {
+    // Only show the main trace span
+    mainSpans = [rootTraceSpan];
+  } else if (spans.length > 1) {
+    // If no isRootTrace flag, use the span with the longest duration as the main trace
+    // This handles cases where the flag wasn't set but we still want a single root
+    const rootSpans = spans.filter((span) => !span.parent_span_id);
+    if (rootSpans.length > 0) {
+      // Find the span with the longest duration (most likely the main trace)
+      const mainSpan = rootSpans.reduce((prev, current) => 
+        (current.duration_ms > prev.duration_ms) ? current : prev
+      );
+      mainSpans = [mainSpan];
+    }
+  }
+
   // Transform all spans (recursive transformation handles children)
-  const transformedSpans = spans.map(transformSpan);
+  const transformedSpans = mainSpans.map(transformSpan);
 
   // Count all spans recursively (including nested children)
   const totalSpansCount = countAllSpansRecursively(transformedSpans);
