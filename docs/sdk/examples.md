@@ -425,6 +425,7 @@ app.use(observaMiddleware);
 
 - [SDK Installation](./installation.md)
 - [SDK Migration Guide](./migration.md)
+- [LangChain Integration](./langchain-integration.md) - Agentic workflows with LangChain/LangGraph
 - [Event Reference](./events-reference.md)
 - [API Documentation](../api/endpoints.md)
 

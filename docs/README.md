@@ -13,6 +13,7 @@ Welcome to the Observa Knowledge Hub - your complete guide to using and integrat
 - [SDK Installation](./sdk/installation.md)
 - [SDK Migration Guide](./sdk/migration.md)
 - [SDK Implementation Examples](./sdk/examples.md)
+- [LangChain Integration](./sdk/langchain-integration.md) - Agentic workflows guide
 - [Canonical Events Reference](./sdk/events-reference.md)
 
 ### 📊 API Reference
@@ -60,6 +61,7 @@ Welcome to the Observa Knowledge Hub - your complete guide to using and integrat
 - [Platform Capabilities](./reference/platform-capabilities.md)
 - [API Documentation](../api-docs)
 - [SDK Examples](./sdk/examples.md)
+- [LangChain Integration](./sdk/langchain-integration.md)
 - [Integration Patterns](./sdk/migration.md)
 
 ### For Support
