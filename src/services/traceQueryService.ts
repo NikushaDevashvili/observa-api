@@ -1590,6 +1590,69 @@ export class TraceQueryService {
         span.retrieval_context_ids = span.retrieval.retrieval_context_ids;
         span.similarity_scores = span.retrieval.similarity_scores;
         span.latency_ms = span.retrieval.latency_ms;
+        
+        // CRITICAL FIX: Populate input/output fields for frontend display
+        // Input: Query/metadata (k, top_k)
+        const retrievalInput: any = {};
+        if (span.retrieval.k !== null && span.retrieval.k !== undefined) {
+          retrievalInput.k = span.retrieval.k;
+        }
+        if (span.retrieval.top_k !== null && span.retrieval.top_k !== undefined) {
+          retrievalInput.top_k = span.retrieval.top_k;
+        }
+        if (Object.keys(retrievalInput).length > 0) {
+          span.input = JSON.stringify(retrievalInput, null, 2);
+        }
+        
+        // Output: Retrieval context or formatted summary
+        if (span.retrieval.retrieval_context) {
+          span.output =
+            typeof span.retrieval.retrieval_context === "string"
+              ? span.retrieval.retrieval_context
+              : JSON.stringify(span.retrieval.retrieval_context, null, 2);
+        } else {
+          // Create formatted summary with available data
+          const retrievalOutput: any = {};
+          if (
+            span.retrieval.retrieval_context_ids &&
+            span.retrieval.retrieval_context_ids.length > 0
+          ) {
+            retrievalOutput.retrieved_documents = span.retrieval.retrieval_context_ids;
+            retrievalOutput.document_count = span.retrieval.retrieval_context_ids.length;
+          }
+          if (
+            span.retrieval.similarity_scores &&
+            span.retrieval.similarity_scores.length > 0
+          ) {
+            retrievalOutput.similarity_scores = span.retrieval.similarity_scores;
+            retrievalOutput.avg_similarity =
+              span.retrieval.similarity_scores.reduce((a: number, b: number) => a + b, 0) /
+              span.retrieval.similarity_scores.length;
+            retrievalOutput.max_similarity = Math.max(...span.retrieval.similarity_scores);
+            retrievalOutput.min_similarity = Math.min(...span.retrieval.similarity_scores);
+          }
+          if (span.retrieval.latency_ms !== null && span.retrieval.latency_ms !== undefined) {
+            retrievalOutput.latency_ms = span.retrieval.latency_ms;
+          }
+          if (Object.keys(retrievalOutput).length > 0) {
+            span.output = JSON.stringify(retrievalOutput, null, 2);
+          } else {
+            // Fallback: Basic metadata
+            span.output = JSON.stringify(
+              {
+                type: "retrieval",
+                latency_ms: span.retrieval.latency_ms,
+                k: span.retrieval.k || span.retrieval.top_k,
+              },
+              null,
+              2
+            );
+          }
+        }
+        
+        span.hasInput = !!span.input;
+        span.hasOutput = !!span.output;
+        
         // Keep nested structure for compatibility
         span.details = span.retrieval;
         span.hasContext = !!span.retrieval.retrieval_context;
