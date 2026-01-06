@@ -606,17 +606,120 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
           : JSON.stringify(span.llm_call.output, null, 2);
     }
   } else if (span.tool_call) {
+    // CRITICAL: Comprehensive tool call display - SOTA practices
+    // Input: Show all arguments with enhanced formatting
     if (span.tool_call.args !== null && span.tool_call.args !== undefined) {
-      input =
-        typeof span.tool_call.args === "string"
+      const toolInput: any = {
+        tool_name: span.tool_call.tool_name,
+        ...(typeof span.tool_call.args === "object" && span.tool_call.args !== null
           ? span.tool_call.args
-          : JSON.stringify(span.tool_call.args, null, 2);
+          : { args: span.tool_call.args }),
+      };
+      
+      // Add any additional metadata that might be in args
+      if (typeof span.tool_call.args === "object" && span.tool_call.args !== null) {
+        // Preserve all fields from args
+        Object.assign(toolInput, span.tool_call.args);
+      }
+      
+      input = JSON.stringify(toolInput, null, 2);
+    } else {
+      // Still show tool name even if args are missing
+      input = JSON.stringify({ tool_name: span.tool_call.tool_name }, null, 2);
     }
+
+    // Output: Comprehensive result display with all metadata
     if (span.tool_call.result !== null && span.tool_call.result !== undefined) {
-      output =
-        typeof span.tool_call.result === "string"
-          ? span.tool_call.result
-          : JSON.stringify(span.tool_call.result, null, 2);
+      const toolOutput: any = {};
+      
+      // For web_search and similar tools, ensure all results are shown
+      if (span.tool_call.tool_name === "web_search" || span.tool_call.tool_name?.includes("search")) {
+        const result = span.tool_call.result;
+        
+        // If result is already an object with results array, preserve structure
+        if (typeof result === "object" && result !== null) {
+          // Preserve all fields
+          Object.assign(toolOutput, result);
+          
+          // Ensure results array is fully expanded (not just summaries)
+          if (result.results && Array.isArray(result.results)) {
+            toolOutput.results = result.results;
+            toolOutput.total_results = result.results.length;
+          }
+          
+          // If result has items/items_found, preserve those too
+          if (result.items_found !== undefined) {
+            toolOutput.items_found = result.items_found;
+          }
+          if (result.data !== undefined) {
+            toolOutput.data = result.data;
+          }
+          
+          // Add metadata if present
+          if (result.metadata) {
+            toolOutput.metadata = result.metadata;
+          }
+          if (result.query !== undefined) {
+            toolOutput.query = result.query;
+          }
+          if (result.urls !== undefined) {
+            toolOutput.urls = result.urls;
+          }
+          if (result.snippets !== undefined) {
+            toolOutput.snippets = result.snippets;
+          }
+        } else {
+          // If result is a string or other format, include it
+          toolOutput.result = result;
+        }
+        
+        // Add execution metadata
+        toolOutput.execution = {
+          status: span.tool_call.result_status,
+          latency_ms: span.tool_call.latency_ms,
+          ...(span.tool_call.error_message && {
+            error_message: span.tool_call.error_message,
+          }),
+        };
+      } else {
+        // For other tools, show complete result with metadata
+        if (typeof span.tool_call.result === "object" && span.tool_call.result !== null) {
+          Object.assign(toolOutput, span.tool_call.result);
+        } else {
+          toolOutput.result = span.tool_call.result;
+        }
+        
+        // Always include execution metadata
+        toolOutput.execution = {
+          status: span.tool_call.result_status,
+          latency_ms: span.tool_call.latency_ms,
+          ...(span.tool_call.error_message && {
+            error_message: span.tool_call.error_message,
+          }),
+        };
+      }
+      
+      output = JSON.stringify(toolOutput, null, 2);
+    } else {
+      // Even if no result, show execution metadata (especially for errors/timeouts)
+      const errorOutput: any = {
+        execution: {
+          status: span.tool_call.result_status,
+          latency_ms: span.tool_call.latency_ms,
+          ...(span.tool_call.error_message && {
+            error_message: span.tool_call.error_message,
+          }),
+        },
+      };
+      
+      if (span.tool_call.result_status === "error" || span.tool_call.result_status === "timeout") {
+        errorOutput.error = {
+          status: span.tool_call.result_status,
+          message: span.tool_call.error_message || "No result returned",
+        };
+      }
+      
+      output = JSON.stringify(errorOutput, null, 2);
     }
   } else if (span.retrieval) {
     // For retrieval spans, create a formatted summary as input (query/metadata)

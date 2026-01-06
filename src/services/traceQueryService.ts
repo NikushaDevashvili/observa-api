@@ -1574,6 +1574,101 @@ export class TraceQueryService {
         span.tool_status = span.tool_call.result_status;
         span.latency_ms = span.tool_call.latency_ms;
         span.error_message = span.tool_call.error_message;
+        
+        // CRITICAL: Populate input/output fields comprehensively for frontend
+        // Input: All arguments with tool name
+        if (span.tool_call.args !== null && span.tool_call.args !== undefined) {
+          const toolInput: any = {
+            tool_name: span.tool_call.tool_name,
+            ...(typeof span.tool_call.args === "object" && span.tool_call.args !== null
+              ? span.tool_call.args
+              : { args: span.tool_call.args }),
+          };
+          span.input = JSON.stringify(toolInput, null, 2);
+        } else {
+          span.input = JSON.stringify({ tool_name: span.tool_call.tool_name }, null, 2);
+        }
+        
+        // Output: Complete result with all metadata
+        const toolOutput: any = {};
+        
+        // For search tools, ensure all results are preserved
+        if (span.tool_call.tool_name === "web_search" || 
+            span.tool_call.tool_name?.includes("search") ||
+            span.tool_call.tool_name?.includes("Search")) {
+          if (span.tool_call.result) {
+            if (typeof span.tool_call.result === "object" && span.tool_call.result !== null) {
+              // Preserve all fields from result
+              Object.assign(toolOutput, span.tool_call.result);
+              
+              // Ensure results array is complete (not truncated)
+              if (Array.isArray(span.tool_call.result.results)) {
+                toolOutput.results = span.tool_call.result.results;
+                toolOutput.total_results = span.tool_call.result.results.length;
+              }
+              
+              // Preserve all result fields (items_found, data, urls, snippets, etc.)
+              if (span.tool_call.result.items_found !== undefined) {
+                toolOutput.items_found = span.tool_call.result.items_found;
+              }
+              if (span.tool_call.result.data !== undefined) {
+                toolOutput.data = span.tool_call.result.data;
+              }
+              if (span.tool_call.result.metadata !== undefined) {
+                toolOutput.metadata = span.tool_call.result.metadata;
+              }
+              if (span.tool_call.result.query !== undefined) {
+                toolOutput.query = span.tool_call.result.query;
+              }
+              if (span.tool_call.result.urls !== undefined) {
+                toolOutput.urls = span.tool_call.result.urls;
+              }
+              if (span.tool_call.result.snippets !== undefined) {
+                toolOutput.snippets = span.tool_call.result.snippets;
+              }
+            } else {
+              toolOutput.result = span.tool_call.result;
+            }
+          }
+        } else {
+          // For all other tools, preserve complete result structure
+          if (span.tool_call.result !== null && span.tool_call.result !== undefined) {
+            if (typeof span.tool_call.result === "object") {
+              Object.assign(toolOutput, span.tool_call.result);
+            } else {
+              toolOutput.result = span.tool_call.result;
+            }
+          }
+        }
+        
+        // Always include execution metadata
+        toolOutput.execution = {
+          status: span.tool_call.result_status,
+          latency_ms: span.tool_call.latency_ms,
+          tool_name: span.tool_call.tool_name,
+          ...(span.tool_call.error_message && {
+            error_message: span.tool_call.error_message,
+          }),
+        };
+        
+        // Include error details if present
+        if (span.tool_call.result_status === "error" || span.tool_call.result_status === "timeout") {
+          toolOutput.error = {
+            status: span.tool_call.result_status,
+            message: span.tool_call.error_message || "No result returned",
+          };
+        }
+        
+        if (Object.keys(toolOutput).length > 0) {
+          span.output = JSON.stringify(toolOutput, null, 2);
+        } else {
+          // Fallback: Show at least execution metadata
+          span.output = JSON.stringify(toolOutput.execution, null, 2);
+        }
+        
+        span.hasInput = !!span.input;
+        span.hasOutput = !!span.output;
+        
         // Keep nested structure for compatibility
         span.details = span.tool_call;
         span.hasArgs = !!span.tool_call.args;
