@@ -152,6 +152,52 @@ export interface SpanErrorInfo {
   stackTrace?: string;
   context?: Record<string, any>;
   timestamp?: string;
+  
+  // SOTA: Comprehensive error context
+  operation?: {
+    tool_name?: string;
+    operation_type?: string;
+    endpoint?: string;
+    method?: string;
+    args?: any;
+  };
+  request?: {
+    url?: string;
+    headers?: Record<string, string>;
+    body?: any;
+    timeout_ms?: number;
+    retry_count?: number;
+    max_retries?: number;
+  };
+  timing?: {
+    started_at?: string;
+    timeout_at?: string;
+    elapsed_ms?: number;
+    timeout_threshold_ms?: number;
+    retry_attempts?: number;
+  };
+  network?: {
+    error_category?: string;
+    dns_resolved?: boolean;
+    connection_established?: boolean;
+    bytes_sent?: number;
+    bytes_received?: number;
+    partial_response?: any;
+  };
+  relatedContext?: {
+    parent_operation?: string;
+    previous_operations?: string[];
+    affected_operations?: string[];
+    related_errors_in_trace?: number;
+  };
+  suggestedFixes?: string[];
+  classification?: {
+    category?: string;
+    severity?: "low" | "medium" | "high" | "critical";
+    impact?: string;
+    known_issue?: boolean;
+    similar_errors_count?: number;
+  };
 }
 
 /**
@@ -284,6 +330,199 @@ function convertAttributesToArray(
       };
     }
   });
+}
+
+/**
+ * Generate suggested fixes based on error type and context (SOTA practice)
+ */
+function generateSuggestedFixes(
+  errorType: string,
+  errorMessage: string,
+  context: any,
+  span?: ObservaSpan
+): string[] {
+  const fixes: string[] = [];
+  const errorLower = errorType.toLowerCase();
+  const messageLower = errorMessage.toLowerCase();
+
+  // Timeout errors
+  if (errorLower.includes("timeout") || messageLower.includes("timeout")) {
+    fixes.push("Check if the API endpoint/service is reachable and responding");
+    fixes.push("Verify network connectivity to the target service");
+    if (context?.timeout_ms || context?.timeout) {
+      fixes.push(`Consider increasing timeout threshold (current: ${context.timeout_ms || context.timeout}ms)`);
+    } else {
+      fixes.push("Consider increasing timeout threshold for this operation");
+    }
+    fixes.push("Check API service status page or health endpoints");
+    fixes.push("Review retry policy and implement exponential backoff");
+    fixes.push("Check for network congestion or firewall rules blocking the connection");
+  }
+
+  // Connection errors
+  if (errorLower.includes("connection") || messageLower.includes("connection")) {
+    if (messageLower.includes("refused")) {
+      fixes.push("Verify the service is running and listening on the expected port");
+      fixes.push("Check firewall rules and network security groups");
+    } else if (messageLower.includes("reset")) {
+      fixes.push("Server closed the connection - check server logs for issues");
+      fixes.push("Verify the service is handling requests correctly");
+    } else {
+      fixes.push("Check network connectivity and DNS resolution");
+      fixes.push("Verify the endpoint URL is correct");
+      fixes.push("Check if the service is behind a load balancer or proxy");
+    }
+  }
+
+  // HTTP errors
+  if (errorLower.includes("http") || messageLower.includes("http")) {
+    if (messageLower.includes("404")) {
+      fixes.push("Verify the endpoint URL and path are correct");
+      fixes.push("Check if the resource exists on the server");
+    } else if (messageLower.includes("401") || messageLower.includes("403")) {
+      fixes.push("Verify authentication credentials are valid and not expired");
+      fixes.push("Check API key permissions and scope");
+      fixes.push("Review authorization policies");
+    } else if (messageLower.includes("500") || messageLower.includes("502") || messageLower.includes("503")) {
+      fixes.push("Server error - check server logs for details");
+      fixes.push("Verify the service is healthy and not overloaded");
+      fixes.push("Check if dependencies (databases, APIs) are available");
+    } else if (messageLower.includes("429")) {
+      fixes.push("Rate limit exceeded - implement exponential backoff");
+      fixes.push("Reduce request frequency or upgrade rate limits");
+      fixes.push("Check if retry logic is causing rate limit violations");
+    }
+  }
+
+  // DNS errors
+  if (errorLower.includes("dns") || messageLower.includes("dns") || messageLower.includes("eai_again")) {
+    fixes.push("Check DNS resolution - verify domain name is correct");
+    fixes.push("Verify DNS server is reachable");
+    fixes.push("Check network DNS configuration");
+  }
+
+  // Tool-specific errors
+  if (context?.tool_name || span?.tool_call?.tool_name) {
+    const toolName = context?.tool_name || span?.tool_call?.tool_name || "";
+    if (toolName.includes("fetch") || toolName.includes("http") || toolName.includes("api")) {
+      fixes.push(`Verify ${toolName} service is available and responding`);
+      fixes.push("Check API documentation for expected request format");
+      fixes.push("Review request headers and authentication");
+    } else if (toolName.includes("database") || toolName.includes("db") || toolName.includes("query")) {
+      fixes.push("Check database connection pool status");
+      fixes.push("Verify database server is running and accessible");
+      fixes.push("Review query performance and indexes");
+      fixes.push("Check for database locks or long-running transactions");
+    } else if (toolName.includes("search") || toolName.includes("retrieval")) {
+      fixes.push("Check search/index service availability");
+      fixes.push("Verify search query parameters are valid");
+      fixes.push("Review index status and update frequency");
+    }
+  }
+
+  // Generic suggestions if no specific fixes
+  if (fixes.length === 0) {
+    fixes.push("Review error message and stack trace for specific failure point");
+    fixes.push("Check application logs for additional context");
+    fixes.push("Verify all required parameters and configuration are correct");
+    fixes.push("Check if this is a transient issue by retrying the operation");
+  }
+
+  return fixes;
+}
+
+/**
+ * Classify error category (SOTA practice)
+ */
+function classifyErrorCategory(errorType: string, errorMessage: string, context: any): string {
+  const errorLower = errorType.toLowerCase();
+  const messageLower = errorMessage.toLowerCase();
+
+  if (errorLower.includes("timeout") || messageLower.includes("timeout")) {
+    return "network_timeout";
+  }
+  if (errorLower.includes("connection") || messageLower.includes("connection") || messageLower.includes("econn")) {
+    return "network_connection";
+  }
+  if (errorLower.includes("dns") || messageLower.includes("dns") || messageLower.includes("eai_again")) {
+    return "dns_resolution";
+  }
+  if (errorLower.includes("http") || messageLower.includes("http") || messageLower.includes("status")) {
+    return "http_error";
+  }
+  if (errorLower.includes("auth") || messageLower.includes("unauthorized") || messageLower.includes("forbidden")) {
+    return "authentication_error";
+  }
+  if (errorLower.includes("permission") || messageLower.includes("permission denied")) {
+    return "permission_error";
+  }
+  if (errorLower.includes("database") || errorLower.includes("db") || messageLower.includes("sql")) {
+    return "database_error";
+  }
+  if (errorLower.includes("validation") || messageLower.includes("invalid") || messageLower.includes("malformed")) {
+    return "validation_error";
+  }
+  if (errorLower.includes("tool") || errorLower.includes("function")) {
+    return "tool_execution_error";
+  }
+  if (errorLower.includes("llm") || errorLower.includes("model")) {
+    return "llm_error";
+  }
+  
+  return "unknown_error";
+}
+
+/**
+ * Classify error severity (SOTA practice)
+ */
+function classifySeverity(errorType: string, errorMessage: string): "low" | "medium" | "high" | "critical" {
+  const errorLower = errorType.toLowerCase();
+  const messageLower = errorMessage.toLowerCase();
+
+  // Critical: System failures, data loss, security issues
+  if (errorLower.includes("critical") || messageLower.includes("data loss") || 
+      messageLower.includes("security") || messageLower.includes("unauthorized access")) {
+    return "critical";
+  }
+
+  // High: Timeouts on critical operations, connection failures
+  if (errorLower.includes("timeout") || errorLower.includes("connection") || 
+      messageLower.includes("unavailable") || messageLower.includes("down")) {
+    return "high";
+  }
+
+  // Medium: HTTP errors, validation errors, tool failures
+  if (errorLower.includes("http") || errorLower.includes("validation") || 
+      errorLower.includes("tool") || errorLower.includes("error")) {
+    return "medium";
+  }
+
+  // Low: Warnings, non-critical issues
+  return "low";
+}
+
+/**
+ * Determine impact of error (SOTA practice)
+ */
+function determineImpact(span: ObservaSpan | undefined, errorType: string): string {
+  if (!span) return "unknown";
+  
+  // Check if error blocks the main flow
+  const isRootOperation = !span.parent_span_id;
+  const isCriticalTool = span.tool_call?.tool_name && 
+    (span.tool_call.tool_name.includes("payment") || 
+     span.tool_call.tool_name.includes("auth") ||
+     span.tool_call.tool_name.includes("checkout"));
+  
+  if (isRootOperation || isCriticalTool) {
+    return "blocks_user_request";
+  }
+  
+  if (errorType.includes("timeout") || errorType.includes("connection")) {
+    return "degrades_functionality";
+  }
+  
+  return "minimal_impact";
 }
 
 /**
@@ -506,7 +745,7 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
   const errorEvent = span.events?.find((e: any) => e.event_type === "error");
   const hasErrorEvent = !!errorEvent;
 
-  // Extract error information
+  // Extract error information with comprehensive SOTA context
   if (span.error || errorEvent) {
     status = "error";
     const errorData = span.error || errorEvent?.attributes?.error;
@@ -514,7 +753,9 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
     if (errorData) {
       const errorMessage = errorData.error_message || "Unknown error";
       const errorType = errorData.error_type || "error";
+      const errorContext = errorData.context || {};
 
+      // Build comprehensive error info
       errorInfo = {
         type: errorType,
         message:
@@ -523,8 +764,70 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
             : errorMessage,
         fullMessage: errorMessage,
         stackTrace: errorData.stack_trace || undefined,
-        context: errorData.context || undefined,
+        context: errorContext,
         timestamp: errorEvent?.timestamp || span.start_time || undefined,
+        
+        // SOTA: Operation context
+        operation: {
+          tool_name: span.tool_call?.tool_name || errorContext.tool_name || span.name,
+          operation_type: errorContext.operation_type || (span.tool_call ? "tool_call" : "unknown"),
+          endpoint: errorContext.endpoint || errorContext.url,
+          method: errorContext.method || errorContext.http_method,
+          args: span.tool_call?.args || errorContext.args,
+        },
+        
+        // SOTA: Request details
+        request: {
+          url: errorContext.url || errorContext.endpoint || errorContext.request_url,
+          headers: errorContext.headers || errorContext.request_headers,
+          body: errorContext.body || errorContext.request_body,
+          timeout_ms: errorContext.timeout_ms || errorContext.timeout || span.tool_call?.latency_ms,
+          retry_count: errorContext.retry_count || errorContext.attempt || 0,
+          max_retries: errorContext.max_retries || errorContext.max_attempts,
+        },
+        
+        // SOTA: Timing context
+        timing: {
+          started_at: span.start_time,
+          timeout_at: span.end_time || errorEvent?.timestamp,
+          elapsed_ms: span.duration_ms ?? errorContext.elapsed_ms ?? undefined,
+          timeout_threshold_ms: errorContext.timeout_ms ?? errorContext.timeout ?? 30000,
+          retry_attempts: errorContext.retry_count ?? errorContext.attempt ?? 0,
+        },
+        
+        // SOTA: Network/infrastructure context
+        network: {
+          error_category: errorContext.error_category || errorContext.network_error_type || 
+                          (errorType.includes("timeout") ? "connection_timeout" : 
+                           errorType.includes("connection") ? "connection_error" : "unknown"),
+          dns_resolved: errorContext.dns_resolved,
+          connection_established: errorContext.connection_established || errorContext.connected,
+          bytes_sent: errorContext.bytes_sent ?? undefined,
+          bytes_received: errorContext.bytes_received ?? undefined,
+          partial_response: errorContext.partial_response || errorContext.response,
+        },
+        
+        // SOTA: Related context
+        relatedContext: {
+          parent_operation: span.parent_span_id ? `Parent span: ${span.parent_span_id}` : "Root operation",
+          ...(span.metadata?.conversation_id && {
+            conversation_id: span.metadata.conversation_id,
+          }),
+          ...(span.metadata?.session_id && {
+            session_id: span.metadata.session_id,
+          }),
+        },
+        
+        // SOTA: Suggested fixes based on error type
+        suggestedFixes: generateSuggestedFixes(errorType, errorMessage, errorContext, span),
+        
+        // SOTA: Error classification
+        classification: {
+          category: classifyErrorCategory(errorType, errorMessage, errorContext),
+          severity: classifySeverity(errorType, errorMessage),
+          impact: determineImpact(span, errorType),
+          known_issue: errorContext.known_issue || false,
+        },
       };
     }
   } else if (
@@ -535,21 +838,97 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
     const errorMessage =
       span.tool_call.error_message ||
       `Tool call failed with status: ${span.tool_call.result_status}`;
+    const isTimeout = span.tool_call.result_status === "timeout";
+    
+    // Extract args for operation context
+    const toolArgs = span.tool_call.args || {};
+    const toolName = span.tool_call.tool_name || span.name;
+    
+    // Try to extract URL/endpoint from args or context
+    let endpoint: string | undefined;
+    if (typeof toolArgs === "object" && toolArgs !== null) {
+      endpoint = toolArgs.url || toolArgs.endpoint || toolArgs.uri || toolArgs.path;
+    }
+    
     errorInfo = {
-      type:
-        span.tool_call.result_status === "timeout"
-          ? "timeout_error"
-          : "tool_error",
+      type: isTimeout ? "timeout_error" : "tool_error",
       message:
         errorMessage.length > 100
           ? errorMessage.substring(0, 100) + "..."
           : errorMessage,
       fullMessage: errorMessage,
       timestamp: span.start_time,
+      
+      // SOTA: Operation context from tool call
+      operation: {
+        tool_name: toolName,
+        operation_type: "tool_call",
+        endpoint: endpoint,
+        method: toolArgs.method || toolArgs.http_method || (toolArgs.url ? "GET" : undefined),
+        args: toolArgs,
+      },
+      
+      // SOTA: Request details
+      request: {
+        url: endpoint || toolArgs.url || toolArgs.endpoint,
+        headers: toolArgs.headers || toolArgs.request_headers,
+        body: toolArgs.body || toolArgs.payload || toolArgs.data,
+        timeout_ms: toolArgs.timeout || toolArgs.timeout_ms || span.tool_call.latency_ms,
+        retry_count: toolArgs.retry_count || toolArgs.attempt || 0,
+        max_retries: toolArgs.max_retries || toolArgs.max_attempts,
+      },
+      
+      // SOTA: Timing context
+      timing: {
+        started_at: span.start_time,
+        timeout_at: span.end_time,
+        elapsed_ms: span.duration_ms ?? span.tool_call?.latency_ms ?? undefined,
+        timeout_threshold_ms: toolArgs.timeout ?? toolArgs.timeout_ms ?? 30000,
+        retry_attempts: toolArgs.retry_count ?? toolArgs.attempt ?? 0,
+      },
+      
+      // SOTA: Network context
+      network: {
+        error_category: isTimeout ? "connection_timeout" : "tool_execution_error",
+        connection_established: !isTimeout, // Timeout implies connection wasn't established
+      },
+      
+      // SOTA: Related context
+      relatedContext: {
+        parent_operation: span.parent_span_id ? `Parent span: ${span.parent_span_id}` : "Root operation",
+        ...(span.metadata?.conversation_id && {
+          conversation_id: span.metadata.conversation_id,
+        }),
+        ...(span.metadata?.session_id && {
+          session_id: span.metadata.session_id,
+        }),
+      },
+      
+      // SOTA: Suggested fixes
+      suggestedFixes: generateSuggestedFixes(
+        isTimeout ? "timeout_error" : "tool_error",
+        errorMessage,
+        toolArgs,
+        span
+      ),
+      
+      // SOTA: Error classification
+      classification: {
+        category: classifyErrorCategory(
+          isTimeout ? "timeout_error" : "tool_error",
+          errorMessage,
+          toolArgs
+        ),
+        severity: classifySeverity(isTimeout ? "timeout_error" : "tool_error", errorMessage),
+        impact: determineImpact(span, isTimeout ? "timeout_error" : "tool_error"),
+      },
     };
   } else if (span.tool_call?.error_message) {
     status = "error";
     const errorMessage = span.tool_call.error_message;
+    const toolArgs = span.tool_call.args || {};
+    const toolName = span.tool_call.tool_name || span.name;
+    
     errorInfo = {
       type: "tool_error",
       message:
@@ -558,6 +937,19 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
           : errorMessage,
       fullMessage: errorMessage,
       timestamp: span.start_time,
+      
+      // SOTA: Basic operation context
+      operation: {
+        tool_name: toolName,
+        operation_type: "tool_call",
+        args: toolArgs,
+      },
+      
+      suggestedFixes: generateSuggestedFixes("tool_error", errorMessage, toolArgs, span),
+      classification: {
+        category: classifyErrorCategory("tool_error", errorMessage, toolArgs),
+        severity: classifySeverity("tool_error", errorMessage),
+      },
     };
   } else if (span.llm_call?.finish_reason === "error") {
     status = "error";
@@ -611,17 +1003,21 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
     if (span.tool_call.args !== null && span.tool_call.args !== undefined) {
       const toolInput: any = {
         tool_name: span.tool_call.tool_name,
-        ...(typeof span.tool_call.args === "object" && span.tool_call.args !== null
+        ...(typeof span.tool_call.args === "object" &&
+        span.tool_call.args !== null
           ? span.tool_call.args
           : { args: span.tool_call.args }),
       };
-      
+
       // Add any additional metadata that might be in args
-      if (typeof span.tool_call.args === "object" && span.tool_call.args !== null) {
+      if (
+        typeof span.tool_call.args === "object" &&
+        span.tool_call.args !== null
+      ) {
         // Preserve all fields from args
         Object.assign(toolInput, span.tool_call.args);
       }
-      
+
       input = JSON.stringify(toolInput, null, 2);
     } else {
       // Still show tool name even if args are missing
@@ -631,22 +1027,25 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
     // Output: Comprehensive result display with all metadata
     if (span.tool_call.result !== null && span.tool_call.result !== undefined) {
       const toolOutput: any = {};
-      
+
       // For web_search and similar tools, ensure all results are shown
-      if (span.tool_call.tool_name === "web_search" || span.tool_call.tool_name?.includes("search")) {
+      if (
+        span.tool_call.tool_name === "web_search" ||
+        span.tool_call.tool_name?.includes("search")
+      ) {
         const result = span.tool_call.result;
-        
+
         // If result is already an object with results array, preserve structure
         if (typeof result === "object" && result !== null) {
           // Preserve all fields
           Object.assign(toolOutput, result);
-          
+
           // Ensure results array is fully expanded (not just summaries)
           if (result.results && Array.isArray(result.results)) {
             toolOutput.results = result.results;
             toolOutput.total_results = result.results.length;
           }
-          
+
           // If result has items/items_found, preserve those too
           if (result.items_found !== undefined) {
             toolOutput.items_found = result.items_found;
@@ -654,7 +1053,7 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
           if (result.data !== undefined) {
             toolOutput.data = result.data;
           }
-          
+
           // Add metadata if present
           if (result.metadata) {
             toolOutput.metadata = result.metadata;
@@ -672,7 +1071,7 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
           // If result is a string or other format, include it
           toolOutput.result = result;
         }
-        
+
         // Add execution metadata
         toolOutput.execution = {
           status: span.tool_call.result_status,
@@ -683,12 +1082,15 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
         };
       } else {
         // For other tools, show complete result with metadata
-        if (typeof span.tool_call.result === "object" && span.tool_call.result !== null) {
+        if (
+          typeof span.tool_call.result === "object" &&
+          span.tool_call.result !== null
+        ) {
           Object.assign(toolOutput, span.tool_call.result);
         } else {
           toolOutput.result = span.tool_call.result;
         }
-        
+
         // Always include execution metadata
         toolOutput.execution = {
           status: span.tool_call.result_status,
@@ -698,7 +1100,7 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
           }),
         };
       }
-      
+
       output = JSON.stringify(toolOutput, null, 2);
     } else {
       // Even if no result, show execution metadata (especially for errors/timeouts)
@@ -711,14 +1113,17 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
           }),
         },
       };
-      
-      if (span.tool_call.result_status === "error" || span.tool_call.result_status === "timeout") {
+
+      if (
+        span.tool_call.result_status === "error" ||
+        span.tool_call.result_status === "timeout"
+      ) {
         errorOutput.error = {
           status: span.tool_call.result_status,
           message: span.tool_call.error_message || "No result returned",
         };
       }
-      
+
       output = JSON.stringify(errorOutput, null, 2);
     }
   } else if (span.retrieval) {
