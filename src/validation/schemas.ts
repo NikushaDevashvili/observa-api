@@ -63,6 +63,10 @@ export const eventTypeSchema = z.enum([
   "output",
   "trace_start",
   "trace_end",
+  "embedding",
+  "vector_db_operation",
+  "cache_operation",
+  "agent_create",
 ]);
 
 export const canonicalEventSchema = z.object({

@@ -1417,6 +1417,30 @@ export class TraceQueryService {
           temperature: llmAttrs.temperature || null,
           max_tokens: llmAttrs.max_tokens || null,
           cost: llmAttrs.cost || null,
+          // TIER 1: OTEL Semantic Conventions
+          operation_name: llmAttrs.operation_name || null,
+          provider_name: llmAttrs.provider_name || null,
+          response_model: llmAttrs.response_model || null,
+          // TIER 2: Sampling parameters
+          top_k: llmAttrs.top_k || null,
+          top_p: llmAttrs.top_p || null,
+          frequency_penalty: llmAttrs.frequency_penalty || null,
+          presence_penalty: llmAttrs.presence_penalty || null,
+          stop_sequences: llmAttrs.stop_sequences || null,
+          seed: llmAttrs.seed || null,
+          // TIER 2: Structured cost tracking
+          input_cost: llmAttrs.input_cost || null,
+          output_cost: llmAttrs.output_cost || null,
+          // TIER 1: Structured message objects
+          input_messages: llmAttrs.input_messages || null,
+          output_messages: llmAttrs.output_messages || null,
+          system_instructions: llmAttrs.system_instructions || null,
+          // TIER 2: Server metadata
+          server_address: llmAttrs.server_address || null,
+          server_port: llmAttrs.server_port || null,
+          // TIER 2: Conversation grouping
+          conversation_id_otel: llmAttrs.conversation_id_otel || null,
+          choice_count: llmAttrs.choice_count || null,
         };
       }
 
@@ -1430,6 +1454,13 @@ export class TraceQueryService {
           result_status: toolAttrs.result_status,
           latency_ms: toolAttrs.latency_ms || null,
           error_message: toolAttrs.error_message || null,
+          // TIER 2: OTEL Tool Standardization
+          operation_name: toolAttrs.operation_name || null,
+          tool_type: toolAttrs.tool_type || null,
+          tool_description: toolAttrs.tool_description || null,
+          tool_call_id: toolAttrs.tool_call_id || null,
+          error_type: toolAttrs.error_type || null,
+          error_category: toolAttrs.error_category || null,
         };
       }
 
@@ -1444,6 +1475,14 @@ export class TraceQueryService {
           similarity_scores: retrievalAttrs.similarity_scores || null,
           // Note: retrieval_context might be in a different field or redacted
           retrieval_context: retrievalAttrs.retrieval_context || null,
+          // TIER 2: Retrieval enrichment
+          embedding_model: retrievalAttrs.embedding_model || null,
+          embedding_dimensions: retrievalAttrs.embedding_dimensions || null,
+          vector_metric: retrievalAttrs.vector_metric || null,
+          rerank_score: retrievalAttrs.rerank_score || null,
+          fusion_method: retrievalAttrs.fusion_method || null,
+          deduplication_removed_count: retrievalAttrs.deduplication_removed_count || null,
+          quality_score: retrievalAttrs.quality_score || null,
         };
         // Ensure retrieval data is available even if event is not found directly
         if (
@@ -1453,6 +1492,75 @@ export class TraceQueryService {
           span.retrieval.retrieval_context =
             retrievalEvent.attributes.retrieval.retrieval_context;
         }
+      }
+      
+      // TIER 1: Extract embedding details
+      const embeddingEvent = spanEvents.find((e) => e.event_type === "embedding");
+      if (embeddingEvent?.attributes?.embedding) {
+        const embeddingAttrs = embeddingEvent.attributes.embedding;
+        span.embedding = {
+          model: embeddingAttrs.model,
+          dimension_count: embeddingAttrs.dimension_count || null,
+          encoding_formats: embeddingAttrs.encoding_formats || null,
+          input_tokens: embeddingAttrs.input_tokens || null,
+          output_tokens: embeddingAttrs.output_tokens || null,
+          latency_ms: embeddingAttrs.latency_ms || null,
+          cost: embeddingAttrs.cost || null,
+          input_text: embeddingAttrs.input_text || null,
+          input_hash: embeddingAttrs.input_hash || null,
+          embeddings: embeddingAttrs.embeddings || null,
+          embeddings_hash: embeddingAttrs.embeddings_hash || null,
+          operation_name: embeddingAttrs.operation_name || null,
+          provider_name: embeddingAttrs.provider_name || null,
+        };
+      }
+      
+      // TIER 3: Extract vector DB operation details
+      const vectorDbEvent = spanEvents.find((e) => e.event_type === "vector_db_operation");
+      if (vectorDbEvent?.attributes?.vector_db_operation) {
+        const vdbAttrs = vectorDbEvent.attributes.vector_db_operation;
+        span.vector_db_operation = {
+          operation_type: vdbAttrs.operation_type,
+          index_name: vdbAttrs.index_name || null,
+          index_version: vdbAttrs.index_version || null,
+          vector_dimensions: vdbAttrs.vector_dimensions || null,
+          vector_metric: vdbAttrs.vector_metric || null,
+          results_count: vdbAttrs.results_count || null,
+          scores: vdbAttrs.scores || null,
+          latency_ms: vdbAttrs.latency_ms || null,
+          cost: vdbAttrs.cost || null,
+          api_version: vdbAttrs.api_version || null,
+          provider_name: vdbAttrs.provider_name || null,
+        };
+      }
+      
+      // TIER 3: Extract cache operation details
+      const cacheEvent = spanEvents.find((e) => e.event_type === "cache_operation");
+      if (cacheEvent?.attributes?.cache_operation) {
+        const cacheAttrs = cacheEvent.attributes.cache_operation;
+        span.cache_operation = {
+          cache_backend: cacheAttrs.cache_backend || null,
+          cache_key: cacheAttrs.cache_key || null,
+          cache_namespace: cacheAttrs.cache_namespace || null,
+          hit_status: cacheAttrs.hit_status,
+          latency_ms: cacheAttrs.latency_ms || null,
+          saved_cost: cacheAttrs.saved_cost || null,
+          ttl: cacheAttrs.ttl || null,
+          eviction_info: cacheAttrs.eviction_info || null,
+        };
+      }
+      
+      // TIER 3: Extract agent creation details
+      const agentCreateEvent = spanEvents.find((e) => e.event_type === "agent_create");
+      if (agentCreateEvent?.attributes?.agent_create) {
+        const agentAttrs = agentCreateEvent.attributes.agent_create;
+        span.agent_create = {
+          agent_name: agentAttrs.agent_name,
+          agent_config: agentAttrs.agent_config || null,
+          tools_bound: agentAttrs.tools_bound || null,
+          model_config: agentAttrs.model_config || null,
+          operation_name: agentAttrs.operation_name || null,
+        };
       }
 
       // Extract output details
@@ -1487,6 +1595,9 @@ export class TraceQueryService {
           error_message: errorEvent.attributes.error.error_message || null,
           stack_trace: errorEvent.attributes.error.stack_trace || null,
           context: errorEvent.attributes.error.context || null,
+          // TIER 2: Structured error classification
+          error_category: errorEvent.attributes.error.error_category || null,
+          error_code: errorEvent.attributes.error.error_code || null,
         };
       }
 
@@ -1752,6 +1863,58 @@ export class TraceQueryService {
         span.details = span.retrieval;
         span.hasContext = !!span.retrieval.retrieval_context;
         // Ensure retrieval span has all necessary fields for frontend
+        span.hasDetails = true;
+        span.selectable = true;
+      } else if (span.embedding) {
+        span.type = "embedding";
+        // Flatten ALL embedding data to top level
+        span.model = span.embedding.model;
+        span.dimension_count = span.embedding.dimension_count;
+        span.input_tokens = span.embedding.input_tokens;
+        span.output_tokens = span.embedding.output_tokens;
+        span.latency_ms = span.embedding.latency_ms;
+        span.cost = span.embedding.cost;
+        
+        // Input: Embedding input text or metadata
+        const embeddingInput: any = {
+          model: span.embedding.model,
+        };
+        if (span.embedding.input_text) {
+          embeddingInput.input_text = span.embedding.input_text;
+        } else if (span.embedding.input_hash) {
+          embeddingInput.input_hash = span.embedding.input_hash;
+        }
+        if (span.embedding.encoding_formats) {
+          embeddingInput.encoding_formats = span.embedding.encoding_formats;
+        }
+        span.input = JSON.stringify(embeddingInput, null, 2);
+        
+        // Output: Embedding results
+        const embeddingOutput: any = {
+          dimension_count: span.embedding.dimension_count,
+          input_tokens: span.embedding.input_tokens,
+          output_tokens: span.embedding.output_tokens,
+          latency_ms: span.embedding.latency_ms,
+        };
+        if (span.embedding.cost !== null && span.embedding.cost !== undefined) {
+          embeddingOutput.cost = span.embedding.cost;
+        }
+        if (span.embedding.embeddings) {
+          // Show summary if embeddings are available
+          embeddingOutput.embeddings_count = span.embedding.embeddings.length;
+          embeddingOutput.embeddings_preview = span.embedding.embeddings.slice(0, 3).map((emb: number[]) => 
+            `[${emb.slice(0, 5).join(", ")}, ...] (${emb.length} dims)`
+          );
+        } else if (span.embedding.embeddings_hash) {
+          embeddingOutput.embeddings_hash = span.embedding.embeddings_hash;
+        }
+        span.output = JSON.stringify(embeddingOutput, null, 2);
+        
+        span.hasInput = !!span.input;
+        span.hasOutput = !!span.output;
+        
+        // Keep nested structure for compatibility
+        span.details = span.embedding;
         span.hasDetails = true;
         span.selectable = true;
       } else if (span.output) {
