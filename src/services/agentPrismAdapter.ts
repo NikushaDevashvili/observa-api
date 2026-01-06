@@ -407,7 +407,7 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
       rating: span.feedback_metadata?.rating || span.feedback_rating,
       comment: span.feedback_metadata?.comment || span.feedback_comment,
     };
-    
+
     if (feedback.type) attributes["feedback.type"] = feedback.type;
     if (feedback.outcome) attributes["feedback.outcome"] = feedback.outcome;
     if (feedback.rating !== null && feedback.rating !== undefined) {
@@ -501,35 +501,49 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
   // Determine status from span data and extract error information
   let status: "success" | "error" | "pending" | "warning" = "success";
   let errorInfo: SpanErrorInfo | undefined;
-  
+
   // Check for error events associated with this span
   const errorEvent = span.events?.find((e: any) => e.event_type === "error");
   const hasErrorEvent = !!errorEvent;
-  
+
   // Extract error information
   if (span.error || errorEvent) {
     status = "error";
     const errorData = span.error || errorEvent?.attributes?.error;
-    
+
     if (errorData) {
       const errorMessage = errorData.error_message || "Unknown error";
       const errorType = errorData.error_type || "error";
-      
+
       errorInfo = {
         type: errorType,
-        message: errorMessage.length > 100 ? errorMessage.substring(0, 100) + "..." : errorMessage,
+        message:
+          errorMessage.length > 100
+            ? errorMessage.substring(0, 100) + "..."
+            : errorMessage,
         fullMessage: errorMessage,
         stackTrace: errorData.stack_trace || undefined,
         context: errorData.context || undefined,
         timestamp: errorEvent?.timestamp || span.start_time || undefined,
       };
     }
-  } else if (span.tool_call?.result_status === "error" || span.tool_call?.result_status === "timeout") {
+  } else if (
+    span.tool_call?.result_status === "error" ||
+    span.tool_call?.result_status === "timeout"
+  ) {
     status = "error";
-    const errorMessage = span.tool_call.error_message || `Tool call failed with status: ${span.tool_call.result_status}`;
+    const errorMessage =
+      span.tool_call.error_message ||
+      `Tool call failed with status: ${span.tool_call.result_status}`;
     errorInfo = {
-      type: span.tool_call.result_status === "timeout" ? "timeout_error" : "tool_error",
-      message: errorMessage.length > 100 ? errorMessage.substring(0, 100) + "..." : errorMessage,
+      type:
+        span.tool_call.result_status === "timeout"
+          ? "timeout_error"
+          : "tool_error",
+      message:
+        errorMessage.length > 100
+          ? errorMessage.substring(0, 100) + "..."
+          : errorMessage,
       fullMessage: errorMessage,
       timestamp: span.start_time,
     };
@@ -538,7 +552,10 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
     const errorMessage = span.tool_call.error_message;
     errorInfo = {
       type: "tool_error",
-      message: errorMessage.length > 100 ? errorMessage.substring(0, 100) + "..." : errorMessage,
+      message:
+        errorMessage.length > 100
+          ? errorMessage.substring(0, 100) + "..."
+          : errorMessage,
       fullMessage: errorMessage,
       timestamp: span.start_time,
     };
@@ -550,7 +567,10 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
       fullMessage: "LLM call finished with error status",
       timestamp: span.start_time,
     };
-  } else if (span.metadata?.status && (span.metadata.status < 200 || span.metadata.status >= 400)) {
+  } else if (
+    span.metadata?.status &&
+    (span.metadata.status < 200 || span.metadata.status >= 400)
+  ) {
     // Check HTTP status codes for errors (if stored in metadata)
     status = "error";
     errorInfo = {
@@ -635,7 +655,7 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
 
   // Recursively transform children first to calculate error count
   const transformedChildren = span.children?.map(transformSpan) || [];
-  
+
   // Calculate error count (errors in this span + errors in children)
   let errorCount = errorInfo ? 1 : 0;
   for (const child of transformedChildren) {
@@ -645,7 +665,7 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
       errorCount += 1;
     }
   }
-  
+
   // Add error attributes to attributes for backward compatibility
   if (errorInfo) {
     attributes["error.type"] = errorInfo.type;
@@ -657,10 +677,10 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
       attributes["error.context"] = errorInfo.context;
     }
   }
-  
+
   // Reconvert attributes array since we added error fields
   const finalAttributesArray = convertAttributesToArray(attributes);
-  
+
   // Enhance title for feedback spans with icons
   let enhancedTitle = span.name;
   if (span.feedback || span.feedback_metadata || span.feedback_type) {
@@ -670,10 +690,11 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
       rating: span.feedback_metadata?.rating || span.feedback_rating,
       comment: span.feedback_metadata?.comment || span.feedback_comment,
     };
-    
+
     const feedbackType = feedback.type || "unknown";
-    const feedbackTypeLabel = feedbackType.charAt(0).toUpperCase() + feedbackType.slice(1);
-    
+    const feedbackTypeLabel =
+      feedbackType.charAt(0).toUpperCase() + feedbackType.slice(1);
+
     // Add emoji icon based on feedback type
     let icon = "";
     if (feedbackType === "like") {
@@ -685,7 +706,7 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
     } else if (feedbackType === "correction") {
       icon = "✏️ ";
     }
-    
+
     // Build enhanced title with icon
     enhancedTitle = `${icon}${feedbackTypeLabel} Feedback`;
     if (feedback.comment) {
@@ -695,7 +716,7 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
       enhancedTitle += ` (${feedback.rating}/5)`;
     }
   }
-  
+
   // Build TraceSpan object
   // Note: Agent-prism components expect 'title' not 'name', and startTime/endTime as numbers
   const traceSpan: AgentPrismTraceSpan = {
@@ -784,7 +805,7 @@ function countAllSpansRecursively(spans: AgentPrismTraceSpan[]): number {
 function calculateErrorSummary(spans: AgentPrismTraceSpan[]): ErrorSummary {
   const errorTypes: Record<string, number> = {};
   const errorSpans: string[] = [];
-  
+
   function traverseSpans(spans: AgentPrismTraceSpan[]) {
     for (const span of spans) {
       // Count spans with errorInfo OR status="error"
@@ -799,17 +820,17 @@ function calculateErrorSummary(spans: AgentPrismTraceSpan[]): ErrorSummary {
           errorTypes["error"] = (errorTypes["error"] || 0) + 1;
         }
       }
-      
+
       if (span.children && span.children.length > 0) {
         traverseSpans(span.children);
       }
     }
   }
-  
+
   traverseSpans(spans);
-  
+
   const totalErrors = errorSpans.length;
-  
+
   return {
     totalErrors,
     errorTypes,

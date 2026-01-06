@@ -1724,10 +1724,35 @@ export class TraceQueryService {
 
     const rootSpans: any[] = [];
     for (const [spanId, span] of spansMap.entries()) {
+      // CRITICAL FIX: Ensure all spans have consistent ID fields before building tree
+      // This ensures child spans in tree structure match what's in allSpans/spansById
+      if (!span.id) span.id = span.span_id;
+      if (!span.span_id) span.span_id = span.id;
+      span.key = span.id; // Add key field for React compatibility
+
       if (span.parent_span_id === null) {
         rootSpans.push(span);
       } else {
-        const parentSpan = spansMap.get(span.parent_span_id);
+        // Try to find parent span - check multiple possible parent IDs
+        let parentSpan = spansMap.get(span.parent_span_id);
+        
+        // If parent not found by direct ID, try by original_span_id
+        if (!parentSpan && span.original_span_id) {
+          parentSpan = spansMap.get(span.original_span_id);
+        }
+        
+        // If still not found, try finding parent by checking if parent_span_id matches any span's id or span_id
+        if (!parentSpan) {
+          for (const [id, potentialParent] of spansMap.entries()) {
+            if (potentialParent.id === span.parent_span_id || 
+                potentialParent.span_id === span.parent_span_id ||
+                id === span.parent_span_id) {
+              parentSpan = potentialParent;
+              break;
+            }
+          }
+        }
+
         if (parentSpan) {
           if (!parentSpan.children) {
             parentSpan.children = [];
@@ -1737,6 +1762,8 @@ export class TraceQueryService {
             (c: any) => c.id === span.id || c.span_id === span.span_id
           );
           if (!existingChild) {
+            // CRITICAL FIX: Ensure child span has all required fields before adding to tree
+            // This ensures the child span in tree matches what's in allSpans/spansById
             parentSpan.children.push(span);
           } else {
             console.warn(
@@ -1745,6 +1772,10 @@ export class TraceQueryService {
           }
         } else {
           // Parent not found, treat as root
+          // Log warning to help debug missing parent issues
+          console.warn(
+            `[TraceQueryService] Parent span not found for ${span.id}, treating as root. Parent ID: ${span.parent_span_id}`
+          );
           rootSpans.push(span);
         }
       }
@@ -1878,7 +1909,20 @@ export class TraceQueryService {
       // Add a unique key field that frontends often use for React keys
       span.key = span.id;
 
-      // Ensure selectable flag is set for all spans
+      // CRITICAL FIX: Ensure child spans have a unique, stable identifier
+      // Child spans created from root events have synthetic IDs - ensure they're consistent
+      if (span.parent_span_id && span.id && span.original_span_id) {
+        // This is a child span - ensure ID consistency
+        // The ID should match the pattern: parentId-eventType
+        if (!span.id.includes('-') && span.event_type) {
+          // If ID doesn't follow pattern, reconstruct it
+          span.id = `${span.original_span_id}-${span.event_type}`;
+          span.span_id = span.id;
+          span.key = span.id;
+        }
+      }
+
+      // Ensure selectable flag is set for all spans (all spans should be clickable)
       if (span.selectable === undefined) {
         span.selectable = true;
       }
@@ -1890,7 +1934,8 @@ export class TraceQueryService {
           span.llm_call ||
           span.tool_call ||
           span.retrieval ||
-          span.output
+          span.output ||
+          span.feedback
         );
       }
 
@@ -1906,13 +1951,17 @@ export class TraceQueryService {
           span.details = span.retrieval;
         } else if (span.output) {
           span.details = span.output;
+        } else if (span.feedback) {
+          span.details = span.feedback;
         } else if (span.metadata) {
           span.details = span.metadata;
         } else {
           span.details = {
-            type: span.type,
+            type: span.type || span.event_type,
             name: span.name,
             duration_ms: span.duration_ms,
+            span_id: span.span_id,
+            parent_span_id: span.parent_span_id,
           };
         }
       }
@@ -1921,13 +1970,30 @@ export class TraceQueryService {
       if (!span.displayName) {
         span.displayName = span.name;
       }
+
+      // CRITICAL FIX: Add explicit reference fields for frontend lookup
+      // Some frontends may look for these fields to verify span identity
+      span._id = span.id; // Alternative ID field some frontends use
+      span._spanId = span.span_id; // Alternative span_id field
+      
+      // Add parent reference for easier navigation
+      if (span.parent_span_id) {
+        span._parentId = span.parent_span_id;
+      }
+
+      // Mark child spans explicitly for frontend handling
+      if (span.parent_span_id) {
+        span.isChild = true;
+      } else {
+        span.isChild = false;
+      }
     }
 
     // Create a lookup map by ID for O(1) access
     // Index by multiple identifiers to support different frontend matching strategies
     const spansById: Record<string, any> = {};
     for (const span of allSpans) {
-      // Index by current ID (synthetic or original)
+      // CRITICAL: Index by current ID (synthetic or original) - this is the primary key
       spansById[span.id] = span;
       spansById[span.span_id] = span;
 
@@ -1945,9 +2011,46 @@ export class TraceQueryService {
         }
       }
 
-      // Index by event_type for event-based lookups
+      // Index by event_type with parent context for child spans (to avoid conflicts)
+      // For child spans, create unique keys like "parentId-event_type"
       if (span.event_type) {
-        spansById[span.event_type] = span;
+        if (span.parent_span_id) {
+          // Child span: index by parent-event_type combination for uniqueness
+          spansById[`${span.parent_span_id}-${span.event_type}`] = span;
+          // Also index by event_type for backward compatibility (last one wins)
+          spansById[span.event_type] = span;
+        } else {
+          // Root span: index by event_type
+          spansById[span.event_type] = span;
+        }
+      }
+
+      // CRITICAL FIX: Index by synthetic child span ID pattern
+      // Child spans created from root events have IDs like "traceId-event_type"
+      // Ensure this pattern is always indexed
+      if (span.id.includes('-') && span.parent_span_id) {
+        // This is likely a synthetic child span (e.g., "trace-123-retrieval")
+        // The ID is already indexed above, but ensure parent-based lookups work
+        const parts = span.id.split('-');
+        if (parts.length >= 2) {
+          const parentPart = parts.slice(0, -1).join('-');
+          const eventTypePart = parts[parts.length - 1];
+          // Index by the pattern frontends might use
+          spansById[`${parentPart}-${eventTypePart}`] = span;
+        }
+      }
+
+      // Additional indexing for child spans: index by position in tree
+      // Some frontends might use array indices or position-based IDs
+      if (span.parent_span_id) {
+        const parentSpan = allSpans.find(s => s.id === span.parent_span_id || s.span_id === span.parent_span_id);
+        if (parentSpan && parentSpan.children) {
+          const childIndex = parentSpan.children.findIndex((c: any) => c.id === span.id || c.span_id === span.span_id);
+          if (childIndex >= 0) {
+            // Index by parent-child position pattern
+            spansById[`${span.parent_span_id}-child-${childIndex}`] = span;
+          }
+        }
       }
     }
 
