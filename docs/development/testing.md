@@ -35,9 +35,9 @@ npm install observa-sdk
 
 ```bash
 # Signup
-curl -X POST http://localhost:3000/api/v1/onboarding/signup \
+curl -X POST http://localhost:3000/api/v1/auth/signup \
   -H "Content-Type: application/json" \
-  -d '{"email": "test@example.com", "companyName": "Test"}'
+  -d '{"email": "test@example.com", "password": "test-password-123", "companyName": "Test"}'
 
 # Send events
 curl -X POST http://localhost:3000/api/v1/events/ingest \
@@ -120,6 +120,7 @@ curl -H "Authorization: Bearer TOKEN" \
 ---
 
 **Need help?** Check the [Troubleshooting Guide](../troubleshooting/common-issues.md).
+
 
 
 

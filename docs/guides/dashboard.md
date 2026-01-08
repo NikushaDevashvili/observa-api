@@ -93,7 +93,40 @@ The dashboard shows active alerts for:
 
 ## Exporting Data
 
-(Feature coming soon)
+### Export Traces
+
+You can export traces in CSV or JSON format:
+
+1. Go to Traces page
+2. Apply filters if needed
+3. Click "Export" button
+4. Select format (CSV or JSON)
+5. Download the file
+
+**API Endpoint**: `GET /api/v1/traces/export`
+
+### Export Single Trace
+
+Export a specific trace:
+
+**API Endpoint**: `GET /api/v1/traces/:traceId/export`
+
+---
+
+## Dashboard API Endpoints
+
+### Overview
+
+- `GET /api/v1/dashboard/overview` - Main dashboard metrics
+- `GET /api/v1/dashboard/overview/time-series` - Time-series metrics
+- `GET /api/v1/dashboard/overview/comparison` - Comparison between periods
+- `GET /api/v1/dashboard/metrics/breakdown` - Metrics breakdown by dimension
+- `GET /api/v1/dashboard/alerts` - Active alerts
+- `GET /api/v1/dashboard/feedback` - Feedback metrics
+- `GET /api/v1/dashboard/feedback/debug` - Feedback debug info
+- `GET /api/v1/dashboard/health` - Dashboard health status
+
+See [API Endpoints Reference](../api/endpoints.md) for complete details.
 
 ## Related Documentation
 
@@ -107,6 +140,7 @@ The dashboard shows active alerts for:
 ---
 
 **Need help?** Check the [Troubleshooting Guide](../troubleshooting/common-issues.md).
+
 
 
 

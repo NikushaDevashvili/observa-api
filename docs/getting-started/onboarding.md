@@ -24,10 +24,11 @@ This guide walks you through:
 Use the onboarding endpoint to create an account programmatically:
 
 ```bash
-curl -X POST https://observa-api.vercel.app/api/v1/onboarding/signup \
+curl -X POST https://observa-api.vercel.app/api/v1/auth/signup \
   -H "Content-Type: application/json" \
   -d '{
     "email": "your@email.com",
+    "password": "your-secure-password-min-8-chars",
     "companyName": "Your Company Name",
     "plan": "free"
   }'
@@ -36,11 +37,17 @@ curl -X POST https://observa-api.vercel.app/api/v1/onboarding/signup \
 **Response:**
 ```json
 {
+  "success": true,
+  "user": {
+    "id": "user-id",
+    "email": "your@email.com",
+    "tenantId": "abc-123-..."
+  },
   "apiKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "sessionToken": "session-token-here",
   "tenantId": "abc-123-...",
   "projectId": "def-456-...",
-  "environment": "prod",
-  "message": "Welcome! Your API key is ready to use."
+  "message": "Account created successfully"
 }
 ```
 
@@ -225,6 +232,7 @@ async function sendFirstTrace() {
 - **Documentation**: Check other guides in this knowledge hub
 - **Issues**: Report on GitHub
 - **Email**: support@observa.ai
+
 
 
 

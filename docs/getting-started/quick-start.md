@@ -14,13 +14,25 @@ Get up and running with Observa in 5 minutes.
 ### Option B: Via API
 
 ```bash
-curl -X POST https://observa-api.vercel.app/api/v1/onboarding/signup \
+curl -X POST https://observa-api.vercel.app/api/v1/auth/signup \
   -H "Content-Type: application/json" \
   -d '{
     "email": "your@email.com",
+    "password": "your-secure-password",
     "companyName": "Your Company",
     "plan": "free"
   }'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "apiKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "sessionToken": "session-token-here",
+  "tenantId": "abc-123-...",
+  "projectId": "def-456-..."
+}
 ```
 
 Save the `apiKey` from the response.
@@ -78,5 +90,6 @@ await observa.endTrace();
 ---
 
 **That's it!** You're now tracking your AI applications with Observa.
+
 
 

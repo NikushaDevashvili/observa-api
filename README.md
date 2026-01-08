@@ -7,6 +7,14 @@ Backend API service for Observa - handles customer onboarding, tenant management
 - **Automated Customer Onboarding**: Self-service signup with automatic token provisioning
 - **Per-Tenant Token Security**: Each tenant gets a unique Tinybird token for isolation
 - **JWT Authentication**: Secure API key generation for SDK usage
+- **Trace Ingestion**: High-performance trace and event ingestion (NDJSON and JSON array support)
+- **Real-time Analytics**: Dashboard with metrics, alerts, and insights
+- **ML Analysis**: Hallucination detection, quality scoring, and issue detection
+- **Session & Conversation Tracking**: Track user sessions and conversations
+- **Cost Monitoring**: Track and analyze LLM costs by model and route
+- **Issue Detection**: Automatic detection of errors, anomalies, and quality issues
+- **Export & Integration**: Export traces (CSV/JSON) and RESTful API
+- **Health Monitoring**: Detailed health checks for all dependencies
 
 ## Setup
 
@@ -20,11 +28,19 @@ npm install
 cp .env.example .env
 ```
 
-3. Configure your `.env` file with:
-   - `TINYBIRD_ADMIN_TOKEN`: Your Tinybird admin token (with permissions to create tokens)
-   - `JWT_SECRET`: Secret for signing JWT tokens
-   - `TINYBIRD_HOST`: Your Tinybird API host
-   - `TINYBIRD_DATASOURCE_NAME`: Name of your traces datasource
+3. Configure your `.env` file with required variables:
+   - `DATABASE_URL`: PostgreSQL connection string (required)
+   - `TINYBIRD_ADMIN_TOKEN`: Your Tinybird admin token (required)
+   - `JWT_SECRET`: Secret for signing JWT tokens, minimum 32 characters (required)
+   - `TINYBIRD_HOST`: Your Tinybird API host (required, default: `https://api.europe-west2.gcp.tinybird.co`)
+   
+   Optional variables:
+   - `SENTRY_DSN`: Sentry error monitoring DSN
+   - `REDIS_URL` or `UPSTASH_REDIS_URL`: Redis connection for analysis queue
+   - `ANALYSIS_SERVICE_URL`: ML analysis service URL
+   - `FRONTEND_URL`: Frontend application URL
+   
+   See [Environment Setup Guide](./docs/development/env-setup.md) for complete details.
 
 4. Build and run:
 ```bash
@@ -39,61 +55,37 @@ npm run dev
 
 ## API Endpoints
 
-### POST /api/v1/onboarding/signup
+### SDK Endpoints
 
-Customer signup endpoint that automatically:
-- Creates a tenant
-- Creates a default "Production" project
-- Provisions Tinybird token (per-tenant)
-- Generates JWT API key
-- Returns API key ready for SDK use
+- `POST /api/v1/events/ingest` - Ingest canonical events (primary endpoint, supports NDJSON and JSON array)
+- `POST /api/v1/traces/ingest` - Legacy trace ingestion (backward compatibility)
 
-**Request:**
-```json
-{
-  "email": "user@company.com",
-  "companyName": "Acme Corp",
-  "plan": "free"
-}
-```
+### Dashboard Endpoints
 
-**Response:**
-```json
-{
-  "apiKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "tenantId": "abc-123-...",
-  "projectId": "def-456-...",
-  "environment": "prod",
-  "message": "Welcome! Your API key is ready to use."
-}
-```
+- `GET /api/v1/traces` - List traces with filtering
+- `GET /api/v1/traces/:traceId` - Get trace detail
+- `GET /api/v1/sessions` - List sessions
+- `GET /api/v1/conversations` - List conversations
+- `GET /api/v1/users` - List users
+- `GET /api/v1/issues` - List issues timeline
+- `GET /api/v1/dashboard/overview` - Dashboard metrics overview
+- `GET /api/v1/costs/overview` - Cost overview
 
-### DELETE /api/v1/tenants/:tenantId/tokens
+### Authentication Endpoints
 
-Revoke all tokens for a tenant (both JWT and Tinybird token). This is useful for:
-- Security incidents
-- Tenant deletion
-- Token rotation
+- `POST /api/v1/auth/signup` - Create account
+- `POST /api/v1/auth/login` - Login
+- `POST /api/v1/auth/logout` - Logout
+- `GET /api/v1/auth/me` - Get current user
 
-**Request:**
-```
-DELETE /api/v1/tenants/{tenantId}/tokens
-```
+### System Endpoints
 
-**Response (200):**
-```json
-{
-  "message": "Tokens revoked successfully for tenant {tenantId}",
-  "tenantId": "abc-123-..."
-}
-```
+- `GET /health` - Basic health check
+- `GET /health/detailed` - Detailed health check (includes DB, Tinybird, Redis, Analysis Service status)
+- `GET /api/v1/version` - API version and deployment info
+- `GET /api-docs` - Interactive API documentation (Swagger UI)
 
-**Response (404):**
-```json
-{
-  "error": "No tokens found for tenant {tenantId}"
-}
-```
+> **Complete API Reference**: See [API Endpoints Documentation](./docs/api/endpoints.md) for full details on all endpoints, request/response formats, and examples.
 
 ## Architecture
 
@@ -102,6 +94,17 @@ This is part of a multi-repo architecture:
 - **`observa-sdk`**: npm package for customer SDK
 - **`observa-api`** (this repo): Backend API service
 - **`observa-app`**: Customer-facing web app (signup UI, dashboard)
+
+### Technology Stack
+
+- **Runtime**: Node.js with TypeScript
+- **Framework**: Express.js
+- **Database**: PostgreSQL (Neon, Vercel Postgres, or Supabase)
+- **Data Warehouse**: Tinybird (for trace storage and analytics)
+- **Queue**: Redis/Upstash (optional, for analysis jobs)
+- **Deployment**: Vercel (serverless functions)
+- **Monitoring**: Sentry (optional)
+- **Documentation**: Swagger/OpenAPI
 
 ## SDK Migration
 

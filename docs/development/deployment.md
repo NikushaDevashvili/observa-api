@@ -58,7 +58,7 @@ See [Environment Setup Guide](./env-setup.md) for details.
 ### Step 5: Verify Deployment
 
 1. Check health: `https://your-api.vercel.app/health`
-2. Test signup: `POST /api/v1/onboarding/signup`
+2. Test signup: `POST /api/v1/auth/signup`
 3. Check API docs: `https://your-api.vercel.app/api-docs`
 
 ---
@@ -126,6 +126,7 @@ Deployment includes:
 ---
 
 **Need help?** Check the [Troubleshooting Guide](../troubleshooting/common-issues.md).
+
 
 
 

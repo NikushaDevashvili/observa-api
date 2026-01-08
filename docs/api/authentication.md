@@ -17,16 +17,17 @@ Observa API supports two authentication methods:
 
 **Via Signup:**
 ```bash
-curl -X POST https://observa-api.vercel.app/api/v1/onboarding/signup \
+curl -X POST https://observa-api.vercel.app/api/v1/auth/signup \
   -H "Content-Type: application/json" \
   -d '{
     "email": "your@email.com",
+    "password": "your-secure-password",
     "companyName": "Your Company",
     "plan": "free"
   }'
 ```
 
-Response includes `apiKey` - save this securely.
+Response includes `apiKey` and `sessionToken` - save these securely.
 
 **Via Dashboard:**
 1. Log in to dashboard
@@ -141,6 +142,7 @@ curl -X GET https://observa-api.vercel.app/api/v1/traces \
 ---
 
 **Need help?** Check the [Troubleshooting Guide](../troubleshooting/common-issues.md).
+
 
 
 
