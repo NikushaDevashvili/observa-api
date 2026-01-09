@@ -83,7 +83,6 @@ await observa.endTrace();
 
 ## Next Steps
 
-- [Full Onboarding Guide](./onboarding.md)
 - [SDK Installation](./../sdk/installation.md)
 - [Dashboard Guide](./../guides/dashboard.md)
 

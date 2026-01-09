@@ -431,7 +431,7 @@ Get dashboard-specific health metrics.
 
 ### POST /api/v1/auth/signup
 
-Create a new account (replaces `/onboarding/signup`).
+Create a new account.
 
 **No Authentication Required**
 

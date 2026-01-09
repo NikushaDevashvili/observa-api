@@ -93,7 +93,7 @@ Session tokens are obtained via login endpoint.
 
 ### Authentication Endpoints
 
-- `POST /api/v1/auth/signup` - Create account (replaces `/onboarding/signup`)
+- `POST /api/v1/auth/signup` - Create account
 - `POST /api/v1/auth/login` - Login
 - `POST /api/v1/auth/logout` - Logout
 - `GET /api/v1/auth/me` - Get current user

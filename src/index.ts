@@ -27,7 +27,6 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
-// import onboardingRouter from "./routes/onboarding.js"; // Removed - onboarding moved to observa-app
 import tenantsRouter from "./routes/tenants.js";
 import tracesRouter from "./routes/traces.js";
 import metricsRouter from "./routes/metrics.js";
@@ -249,7 +248,6 @@ app.get("/", (req, res) => {
       metrics: "/api/v1/metrics",
       auth: "/api/v1/auth",
       analytics: "/api/v1/analytics",
-      onboarding: "/api/v1/onboarding",
       tenants: "/api/v1/tenants",
       traces: "/api/v1/traces",
       events: "/api/v1/events",
@@ -364,7 +362,6 @@ app.get("/diagnostics", (req, res) => {
 // This removes the 5-second delay on every request
 
 // API Routes
-// app.use("/api/v1/onboarding", onboardingRouter); // Removed - onboarding moved to observa-app
 app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/tenants", tenantsRouter);
 app.use("/api/v1/traces", tracesRouter);
@@ -434,9 +431,6 @@ if (process.env.VERCEL !== "1") {
   const server = app.listen(PORT, () => {
     console.log(`🚀 Observa API running on port ${PORT}`);
     console.log(`📡 Health check: http://localhost:${PORT}/health`);
-    console.log(
-      `🎯 Onboarding API: http://localhost:${PORT}/api/v1/onboarding`
-    );
     console.log(`🔐 Tenants API: http://localhost:${PORT}/api/v1/tenants`);
     console.log(`📊 Traces API: http://localhost:${PORT}/api/v1/traces`);
     console.log(`✅ Environment variables validated and loaded`);

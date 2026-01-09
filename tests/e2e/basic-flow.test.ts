@@ -18,15 +18,16 @@ describe("Observa E2E Tests", () => {
   let projectId: string;
   let sessionToken: string;
 
-  describe("1. Onboarding Flow", () => {
+  describe("1. Authentication Flow", () => {
     it("should create a new tenant via signup", async () => {
-      const response = await fetch(`${API_URL}/api/v1/onboarding/signup`, {
+      const response = await fetch(`${API_URL}/api/v1/auth/signup`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
           email: TEST_EMAIL,
+          password: "test-password-123",
           companyName: "Test Company",
           plan: "free",
         }),
@@ -181,5 +182,6 @@ describe("Observa E2E Tests", () => {
 // 2. Test database setup/teardown
 // 3. Session token generation
 // 4. More comprehensive test cases
+
 
 

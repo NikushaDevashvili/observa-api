@@ -30,19 +30,20 @@ const CONFIG = {
 };
 
 /**
- * Create demo tenant via onboarding
+ * Create demo tenant via auth signup
  */
 async function createDemoTenant() {
   console.log("📝 Creating demo tenant...");
   
   try {
-    const response = await fetch(`${API_URL}/api/v1/onboarding/signup`, {
+    const response = await fetch(`${API_URL}/api/v1/auth/signup`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
         email: DEMO_EMAIL,
+        password: "demo-password-123",
         companyName: DEMO_COMPANY,
         plan: "free",
       }),
@@ -386,6 +387,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 }
 
 export { main, createDemoTenant, generateDemoData };
+
 
 
 

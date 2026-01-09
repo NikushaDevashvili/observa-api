@@ -24,17 +24,18 @@ pnpm add observa-sdk
 
 ### 2. Get Your API Key
 
-1. Sign up at [Observa Dashboard](https://your-dashboard-url.com) or use the onboarding endpoint
+1. Sign up at [Observa Dashboard](https://your-dashboard-url.com) or use the auth signup endpoint
 2. After signup, you'll receive an API key (JWT token)
 3. Save it securely (environment variable recommended)
 
-**Via Onboarding Endpoint:**
+**Via Auth Signup Endpoint:**
 
 ```bash
-curl -X POST https://your-api.vercel.app/api/v1/onboarding/signup \
+curl -X POST https://your-api.vercel.app/api/v1/auth/signup \
   -H "Content-Type: application/json" \
   -d '{
     "email": "your@email.com",
+    "password": "your-secure-password",
     "companyName": "Your Company",
     "plan": "free"
   }'
@@ -475,5 +476,6 @@ observa.startTrace({
 - **npm**: https://www.npmjs.com/package/observa-sdk
 - **Latest Version**: Check npm for current version
 - **License**: (Check package.json in SDK repo)
+
 
 

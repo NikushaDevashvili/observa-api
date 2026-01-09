@@ -2012,8 +2012,10 @@ export function adaptObservaTraceToAgentPrism(
   // Filter to only show the main trace span (isRootTrace = true) if it exists
   // This prevents orphaned spans or multiple root spans from appearing at the top level
   let mainSpans = spans;
-  const rootTraceSpan = spans.find((span) => (span as any).isRootTrace === true);
-  
+  const rootTraceSpan = spans.find(
+    (span) => (span as any).isRootTrace === true
+  );
+
   if (rootTraceSpan) {
     // Only show the main trace span
     mainSpans = [rootTraceSpan];
@@ -2023,8 +2025,8 @@ export function adaptObservaTraceToAgentPrism(
     const rootSpans = spans.filter((span) => !span.parent_span_id);
     if (rootSpans.length > 0) {
       // Find the span with the longest duration (most likely the main trace)
-      const mainSpan = rootSpans.reduce((prev, current) => 
-        (current.duration_ms > prev.duration_ms) ? current : prev
+      const mainSpan = rootSpans.reduce((prev, current) =>
+        current.duration_ms > prev.duration_ms ? current : prev
       );
       mainSpans = [mainSpan];
     }

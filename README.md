@@ -1,10 +1,10 @@
 # Observa API
 
-Backend API service for Observa - handles customer onboarding, tenant management, and trace ingestion.
+Backend API service for Observa - handles authentication, tenant management, and trace ingestion.
 
 ## Features
 
-- **Automated Customer Onboarding**: Self-service signup with automatic token provisioning
+- **Authentication**: User signup and login with automatic token provisioning
 - **Per-Tenant Token Security**: Each tenant gets a unique Tinybird token for isolation
 - **JWT Authentication**: Secure API key generation for SDK usage
 - **Trace Ingestion**: High-performance trace and event ingestion (NDJSON and JSON array support)

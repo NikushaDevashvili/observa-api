@@ -16,10 +16,11 @@ You need a JWT token to run the simulation. You can get one by:
 
 **Option A: Sign up via API**
 ```bash
-curl -X POST http://localhost:3000/api/v1/onboarding/signup \
+curl -X POST http://localhost:3000/api/v1/auth/signup \
   -H "Content-Type: application/json" \
   -d '{
     "email": "loadtest@example.com",
+    "password": "test-password-123",
     "companyName": "Load Test Company"
   }'
 ```

@@ -6,7 +6,6 @@ Welcome to the Observa Knowledge Hub - your complete guide to using and integrat
 
 ### 🚀 Getting Started
 - [Quick Start Guide](./getting-started/quick-start.md)
-- [Customer Onboarding](./getting-started/onboarding.md)
 - [Installation Guide](./getting-started/installation.md)
 
 ### 🔧 SDK & Integration
@@ -74,7 +73,7 @@ Welcome to the Observa Knowledge Hub - your complete guide to using and integrat
 
 ```
 docs/
-├── getting-started/     # Onboarding and setup
+├── getting-started/     # Setup and getting started
 ├── sdk/                 # SDK documentation
 ├── api/                 # API reference
 ├── guides/              # Feature guides

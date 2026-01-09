@@ -1,0 +1,179 @@
+f526865 - Nick Devashvili, 21 hours ago : docs: Add comprehensive UX/CX guide for observability features
+6db9556 - Nick Devashvili, 22 hours ago : Fix: Filter to only show main trace span (isRootTrace) to prevent orphaned spans at root level
+70828e8 - Nick Devashvili, 22 hours ago : docs: Add complete SOTA implementation summary across all components
+afbc45b - Nick Devashvili, 23 hours ago : docs: Add frontend update guide for SOTA span implementation
+5809638 - Nick Devashvili, 23 hours ago : feat: Implement SOTA span tracking with 95% OTEL compliance
+6bae30c - Nick Devashvili, 23 hours ago : feat: Comprehensive SOTA error display with full context (CRITICAL)
+6851416 - Nick Devashvili, 23 hours ago : feat: Enhance tool call display with comprehensive information (SOTA)
+63e22f4 - Nick Devashvili, 23 hours ago : fix: Add input/output data for retrieval spans in trace detail
+326b230 - Nick Devashvili, 23 hours ago : docs: Add comprehensive LangChain integration guide
+aff7db7 - Nick Devashvili, 23 hours ago : fix: Fix child span click handlers in trace detail page
+f017d69 - Nick Devashvili, 2 days ago : docs: add feedback tracking examples and event reference
+0faea5b - Nick Devashvili, 2 days ago : feat: Add feedback support to agent-prism adapter
+7d0abff - Nick Devashvili, 2 days ago : feat: Add feedback metadata to trace spans for frontend styling
+cf480d4 - Nick Devashvili, 2 days ago : feat: Add test script and options to generate traces with specific feedback types
+e824e0f - Nick Devashvili, 2 days ago : fix: Handle incorrectly escaped single quotes in JSON parsing
+d6e4685 - Nick Devashvili, 2 days ago : feat: Add feedback events to trace detail view
+3b7d56f - Nick Devashvili, 2 days ago : feat: Add comprehensive debug logging for feedback events at multiple stages
+f8c095b - Nick Devashvili, 2 days ago : feat: Add comprehensive debug logging for feedback events sent to Tinybird
+680818e - Nick Devashvili, 2 days ago : fix: Select all columns in feedback query to match TSV parser column order
+54aadaf - Nick Devashvili, 2 days ago : fix: Ensure attributes_json is preserved for feedback events
+2fcb6d6 - Nick Devashvili, 2 days ago : debug: Add logging to track feedback events before sending to Tinybird
+0c73de0 - Nick Devashvili, 2 days ago : debug: Add detailed logging for feedback events sent to Tinybird
+fc534d1 - Nick Devashvili, 2 days ago : debug: Add logging for feedback event attributes_json conversion
+0389026 - Nick Devashvili, 2 days ago : fix: Select all columns in debug endpoint for proper TSV parsing
+e6f421f - Nick Devashvili, 2 days ago : fix: Use correct AuthService method in debug endpoint
+7b5be55 - Nick Devashvili, 2 days ago : debug: Add debug endpoint to inspect raw feedback data structure
+cddc7e4 - Nick Devashvili, 2 days ago : fix: Add type annotation for TypeScript error
+9293c42 - Nick Devashvili, 2 days ago : fix: Improve feedback JSON parsing with better error handling and debugging
+baabb0f - Nick Devashvili, 2 days ago : debug: Add detailed logging for feedback metrics parsing
+b6dd28c - Nick Devashvili, 2 days ago : fix: Fix feedback metrics JSON extraction and TypeScript errors
+3cb471f - Nick Devashvili, 2 days ago : docs: Add guide for running load simulation with feedback metrics
+53dc857 - Nick Devashvili, 2 days ago : feat: Enhance feedback simulation in load script
+f24eaf4 - Nick Devashvili, 2 days ago : feat: Add comprehensive feedback metrics tracking and display
+7b558cb - Nick Devashvili, 3 days ago : feat: Add comprehensive onboarding system with email service, progress tracking, and checklist
+970ffff - Nick Devashvili, 3 days ago : Fix: Add status_text to traces SQL query
+701e9be - Nick Devashvili, 3 days ago : Add status_text to traces list API response
+75b2028 - Nick Devashvili, 3 days ago : Fix Issues API: Remove non-existent estimated_cost_usd column
+abc7a94 - Nick Devashvili, 3 days ago : Fix Issues page PostgreSQL fallback to use actual column structure
+fc79f6f - Nick Devashvili, 4 days ago : Improve Tinybird error logging: Use warn instead of error for rate limits
+b1b22a9 - Nick Devashvili, 4 days ago : Fix Tinybird 429 rate limit: Return empty array instead of throwing
+1e9ff9c - Nick Devashvili, 4 days ago : Fix error rate and active issues: PostgreSQL fallback corrections
+ab2abd0 - Nick Devashvili, 4 days ago : Fix time-series PostgreSQL fallback: fix status type and handle NULL timestamps
+e4bc11e - Nick Devashvili, 4 days ago : Fix PostgreSQL fallback: check for empty data, not just errors
+fb5bc54 - Nick Devashvili, 4 days ago : Add PostgreSQL fallback for time-series metrics
+9367f9d - Nick Devashvili, 4 days ago : Add PostgreSQL fallback for dashboard metrics when Tinybird returns 0
+d1c7e28 - Nick Devashvili, 4 days ago : Fix TinybirdRepository validation: Allow tenant_id anywhere in WHERE clause
+6ce8bf0 - Nick Devashvili, 4 days ago : Add dashboard API enhancements: time-series, comparison, and breakdown endpoints
+2b31059 - Nick Devashvili, 4 days ago : docs: Add knowledge hub setup documentation
+3bd75ae - Nick Devashvili, 4 days ago : perf: optimize app performance and add secure caching
+e706414 - Nick Devashvili, 4 days ago : feat(traces): add available models endpoint
+6c41795 - Nick Devashvili, 4 days ago : docs: Create comprehensive knowledge hub documentation structure
+54b54b0 - Nick Devashvili, 4 days ago : docs: add reference and debugging guides
+73528cc - Nick Devashvili, 4 days ago : feat(traces): phase 1-2 filters, stats, exports, insights
+a228eed - Nick Devashvili, 4 days ago : feat: Complete production readiness implementation for customer demos
+1dcbd30 - Nick Devashvili, 5 days ago : Remove time filter - show all data by default
+b6068e6 - Nick Devashvili, 5 days ago : fix: include spans with status=error in errorSummary calculation
+dee29c8 - Nick Devashvili, 5 days ago : Add timeRange parameter support and frontend integration guide
+6e774ae - Nick Devashvili, 5 days ago : Add diagnostic scripts and fix documentation
+4dc6fdb - Nick Devashvili, 5 days ago : Add diagnostic logging and health check endpoint for dashboard
+51c599f - Nick Devashvili, 5 days ago : Fix dashboard default time range and add diagnostic scripts
+b4f387f - Nick Devashvili, 5 days ago : Add better error logging for Tinybird permission issues
+14f68b9 - Nick Devashvili, 5 days ago : Fix basic issue detection and add PostgreSQL fallback
+a8dff47 - Nick Devashvili, 5 days ago : Reduce log noise for optional Redis/analysis queue
+08d493c - Nick Devashvili, 5 days ago : feat: enhance error visibility in trace tree view
+db012aa - Nick Devashvili, 5 days ago : Fix JSON parsing errors and issue detection
+143a79d - Nick Devashvili, 5 days ago : Fix critical Tinybird ingestion issue
+f38d58c - Nick Devashvili, 5 days ago : Fix: Inherit conversation_id, session_id, user_id from source events in signals
+ff89a4c - Nick Devashvili, 6 days ago : Fix Tinybird DateTime64 filter + harden signal parsing
+5d3dfd1 - Nick Devashvili, 6 days ago : Fix Tinybird query robustness + add /api/v1/version
+0052bce - Nick Devashvili, 6 days ago : Fix error indicator detection for trace spans
+c8f979b - Nick Devashvili, 6 days ago : Fix Tinybird DateTime64 parsing for ISO timestamps
+acc1d17 - Nick Devashvili, 6 days ago : Fix Tinybird SQL syntax errors
+1818bb4 - Nick Devashvili, 6 days ago : Update all dashboard metrics to query Tinybird canonical_events instead of PostgreSQL analysis_results
+09bf061 - Nick Devashvili, 6 days ago : Fix duplicate toolLatency declaration - calculate after timeout determination
+a4d0460 - Nick Devashvili, 6 days ago : Fix tool timeout latency calculation - move after timeout determination
+1950e6f - Nick Devashvili, 6 days ago : Integrate issue generation (high latency, cost spikes, token spikes, tool timeouts) into main load simulation script
+3a9482a - Nick Devashvili, 6 days ago : Add comment clarifying that agent_name/version/route are removed by formatter (not in Tinybird schema)
+4399d49 - Nick Devashvili, 6 days ago : Add debug logging to track conversation_id/session_id/user_id values
+c366b5c - Nick Devashvili, 6 days ago : Preserve actual conversation_id/session_id/user_id values instead of always using empty strings - important for tracking!
+0171c18 - Nick Devashvili, 6 days ago : Fix deletionService to format tombstone events before sending
+6f74033 - Nick Devashvili, 6 days ago : CRITICAL: Fix all code paths sending null values for required Tinybird fields (conversation_id/session_id/user_id)
+c50f42d - Nick Devashvili, 6 days ago : CRITICAL FIX: Convert conversation_id/session_id/user_id to empty strings (not null) before creating TinybirdCanonicalEvent
+8d290c4 - Nick Devashvili, 6 days ago : Fix dashboard: query Tinybird canonical_events instead of PostgreSQL for trace count
+7089171 - Nick Devashvili, 6 days ago : Add explicit timestamp casting to dashboard metrics queries
+6827011 - Nick Devashvili, 6 days ago : Fix dashboard metrics: Query PostgreSQL instead of Tinybird
+d6d76bc - Nick Devashvili, 6 days ago : fix: Handle Tinybird response format in dashboard metrics queries
+62cb4b2 - Nick Devashvili, 6 days ago : fix: Use correct /api/v1/events/ingest endpoint in generate-issues-test-data script
+f6d9a8d - Nick Devashvili, 6 days ago : feat: Add script to generate test data with issues
+4d18bbf - Nick Devashvili, 6 days ago : feat: Add SOTA dashboard API endpoints
+ecc5c06 - Nick Devashvili, 6 days ago : docs: Add UI visual elements verification document
+a626187 - Nick Devashvili, 6 days ago : fix: Convert attributes to array format for DetailsViewAttributesTab
+a64be87 - Nick Devashvili, 6 days ago : fix: Calculate spansCount recursively for all nested spans
+a7794a6 - Nick Devashvili, 6 days ago : feat: Add input, output, and raw fields to TraceSpan
+ed2498f - Nick Devashvili, 6 days ago : fix: Add status, tokensCount, and cost fields to TraceSpan
+826d2bb - Nick Devashvili, 6 days ago : fix: Add title field to TraceSpan for agent-prism components
+14e7236 - Nick Devashvili, 6 days ago : fix: Add type field to TraceSpan for SpanBadge component
+9becbb7 - Nick Devashvili, 6 days ago : feat: Add agent-prism integration for trace visualization
+c79c422 - Nick Devashvili, 6 days ago : fix: Add query and response fields to trace summary
+fa9c9a2 - Nick Devashvili, 6 days ago : Fix sessions page: create sessions and conversations when events are ingested
+c312ab7 - Nick Devashvili, 6 days ago : Add comprehensive browser QA test results - all critical functionality working
+91ee3a8 - Nick Devashvili, 6 days ago : Add QA fixes summary document
+77a7fd3 - Nick Devashvili, 6 days ago : Fix duplicate spans: deduplicate events and prevent adding same span to children array multiple times
+508d778 - Nick Devashvili, 6 days ago : Fix duplicate spans: filter events by trace_id and return only root spans in main spans array
+ce5c555 - Nick Devashvili, 6 days ago : Ensure all spans have populated details object for frontend compatibility
+6b5efac - Nick Devashvili, 6 days ago : CRITICAL FIX: Include ALL spans in top-level spans array - frontends only search top-level array
+d81116f - Nick Devashvili, 6 days ago : CRITICAL FIX: Include ALL spans in top-level spans array for frontend accessibility - frontends often only search top-level array
+5effb9c - Nick Devashvili, 6 days ago : Add trace metadata and ensure all spans are accessible in multiple formats for frontend compatibility
+f583f10 - Nick Devashvili, 6 days ago : Add comprehensive span lookup indexing by multiple identifiers for frontend compatibility
+59c8d3e - Nick Devashvili, 6 days ago : Improve span accessibility: add lookup maps, consistent IDs, and original span_id references for frontend matching
+455d515 - Nick Devashvili, 6 days ago : Add allSpans flat array for frontend span lookup
+4b40f07 - Nick Devashvili, 6 days ago : Fix critical trace page issues: tree view, span data isolation, and timeline
+8081d63 - Nick Devashvili, 6 days ago : Add trace ID logging to simulation script
+e04692f - Nick Devashvili, 6 days ago : Flatten all span data to top level (Langfuse-style)
+8a77e0b - Nick Devashvili, 6 days ago : Ensure first event has type-specific data for frontend access
+24945a0 - Nick Devashvili, 6 days ago : Add explicit flags and ensure event data is accessible
+9435bc7 - Nick Devashvili, 6 days ago : Expose span data in multiple formats for frontend compatibility
+29e3578 - Nick Devashvili, 6 days ago : Create separate spans for each event type in root span
+70eab81 - Nick Devashvili, 6 days ago : Add id fields and type/details for span click handling
+6e0b500 - Nick Devashvili, 6 days ago : Add retrieval_context to simulation events
+6784d71 - Nick Devashvili, 6 days ago : Add detailed event information to spans for investigation
+ba303c7 - Nick Devashvili, 6 days ago : Fix Tinybird response parsing - handle TSV format
+e8ec02c - Nick Devashvili, 6 days ago : Improve Tinybird response handling and error logging
+2bd4a5c - Nick Devashvili, 6 days ago : Fix Tinybird query - remove non-existent columns (agent_name, version, route)
+e254fc7 - Nick Devashvili, 6 days ago : Fix Tinybird SQL parameter syntax - use direct interpolation instead of {param:Type}
+e682084 - Nick Devashvili, 6 days ago : Improve Tinybird query error handling and logging
+416aa33 - Nick Devashvili, 6 days ago : Fix Tinybird query parameter handling
+e60d026 - Nick Devashvili, 6 days ago : Build hierarchical trace tree from canonical events
+c1cf04d - Nick Devashvili, 6 days ago : Store trace summaries in analysis_results for canonical events
+0f3d417 - Nick Devashvili, 6 days ago : Format dashboard URL code with consistent quotes
+f506d84 - Nick Devashvili, 6 days ago : Fix dashboard URL in events simulation script
+2fbc639 - Nick Devashvili, 6 days ago : Fix dashboard URL to use observa-app instead of observa-api
+0e189a7 - Nick Devashvili, 6 days ago : Add comprehensive load simulation with canonical events
+000fdd2 - Nick Devashvili, 6 days ago : Fix user_id to use proper UUID format in events simulation
+8fa3b22 - Nick Devashvili, 6 days ago : Add API key creation endpoint for events ingestion
+63568f4 - Nick Devashvili, 7 days ago : Add sessions API endpoints with full functionality
+ef8bd62 - Nick Devashvili, 7 days ago : Fix: Preserve trace data when updating existing traces
+63988d4 - Nick Devashvili, 7 days ago : Fix test script to use UUID format for trace/session IDs
+d20b884 - Nick Devashvili, 7 days ago : Add test script for waterfall/timeline view testing
+5439585 - Nick Devashvili, 7 days ago : Add waterfall/timeline trace detail view with tree structure
+153d504 - Nick Devashvili, 7 days ago : feat: implement trace-first architecture with canonical events, security enhancements, and refactored API
+ff0fc2f - Nick Devashvili, 9 days ago : Add more detailed trace ingestion logging with conversationId and messageIndex
+a1cc25d - Nick Devashvili, 9 days ago : Add detailed logging to conversation messages endpoint
+44d5d9d - Nick Devashvili, 9 days ago : Add logging to conversation messages endpoint to debug missing messages
+1665289 - Nick Devashvili, 9 days ago : Add conversation trace count logging to debug missing messages
+7d9325e - Nick Devashvili, 9 days ago : Add detailed logging for trace storage and retrieval debugging
+587f0d4 - Nick Devashvili, 9 days ago : Add critical issue analysis document
+9c6d3b0 - Nick Devashvili, 9 days ago : Fix rate limiting trust proxy warning
+fd8f4e5 - Nick Devashvili, 9 days ago : Add comprehensive trace ingestion debugging guide
+350801a - Nick Devashvili, 9 days ago : Add comprehensive logging for trace ingestion debugging
+daf4909 - Nick Devashvili, 9 days ago : Fix traces not showing in dashboard
+cdea44a - Nick Devashvili, 9 days ago : CRITICAL: Fix analysis results missing conversation tracking and evaluation data
+bc4ccc4 - Nick Devashvili, 9 days ago : Fix migration error: check all columns before adding
+3197799 - Nick Devashvili, 9 days ago : Fix conversation tracking and Tinybird forwarding
+e3bdcb3 - Nick Devashvili, 9 days ago : Improve schema initialization resilience and error handling
+b05bc2d - Nick Devashvili, 9 days ago : Fix 'Database not ready' error with improved schema initialization
+97741c9 - Nick Devashvili, 9 days ago : Fix conversation_id column missing error and make trace storage resilient
+ec4e83e - Nick Devashvili, 9 days ago : feat: Add /account endpoint for settings page with API key, tenant, and project info
+91e34a1 - Nick Devashvili, 9 days ago : feat: Add conversation/session tracking, model preloading, and parallel processing
+d2a545d - Nick Devashvili, 9 days ago : feat: Implement SOTA HTAP architecture - store trace data immediately in PostgreSQL
+47f4865 - Nick Devashvili, 9 days ago : feat: Add automatic migration for trace data columns
+9c93cbb - Nick Devashvili, 9 days ago : feat: Store and return original trace data in analysis results
+279f503 - Nick Devashvili, 9 days ago : fix: Increase Neon database timeout and add retry logic
+98d8839 - Nick Devashvili, 9 days ago : fix: Handle duplicate tenant slugs by appending numbers
+605c1db - Nick Devashvili, 9 days ago : fix: Increase connection timeout for Neon databases
+acafb63 - Nick Devashvili, 9 days ago : fix: Improve database connection error reporting
+b4e5958 - Nick Devashvili, 9 days ago : fix: Improve database initialization error handling and logging
+67c255e - Nick Devashvili, 9 days ago : fix: Ensure database schema initialization in serverless environment
+e338b38 - Nick Devashvili, 9 days ago : fix: Improve error handling for missing environment variables
+5387cc6 - Nick Devashvili, 9 days ago : docs: Add comprehensive environment variables setup guide
+f7d687f - Nick Devashvili, 9 days ago : feat: Add database migration, ML analysis, authentication, and monitoring
+7a2331c - Nick Devashvili, 10 days ago : Fix CORS configuration to allow server-to-server requests
+7fc0d09 - Nick Devashvili, 10 days ago : Add detailed logging to trace ingestion endpoint
+6804616 - Nick Devashvili, 10 days ago : Fix trust proxy setting for Vercel deployment
+79c6f4c - Nick Devashvili, 10 days ago : Update root route documentation link to actual repository URL
+45f4522 - Nick Devashvili, 10 days ago : Fix Vercel deployment: update serverless config and add root route handler
+eabb339 - Nick Devashvili, 10 days ago : removed incorrect createServer
+027230a - Nick Devashvili, 10 days ago : routes changed to rewrites
+3fd9bf0 - Nick Devashvili, 10 days ago : deployment prepartation to vercel
+ba75a2a - Nick Devashvili, 11 days ago : Initial commit: Observa API with onboarding

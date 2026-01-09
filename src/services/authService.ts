@@ -2,7 +2,6 @@ import bcrypt from "bcryptjs";
 import { query } from "../db/client.js";
 import { TokenService } from "./tokenService.js";
 import { TenantService } from "./tenantService.js";
-import { OnboardingService } from "./onboardingService.js";
 import crypto from "crypto";
 
 export interface User {
@@ -97,11 +96,32 @@ export class AuthService {
     // Hash password
     const passwordHash = await this.hashPassword(data.password);
 
-    // Create tenant and project via onboarding service
-    const onboardingResult = await OnboardingService.signup({
+    // Generate slug from company name
+    const slug = this.generateSlug(data.companyName);
+
+    // Ensure slug is unique
+    const uniqueSlug = await this.ensureUniqueSlug(slug);
+
+    // Create tenant
+    const tenant = await TenantService.createTenant({
+      name: data.companyName,
+      slug: uniqueSlug,
+      plan: data.plan ?? "free",
       email: data.email,
-      companyName: data.companyName,
-      plan: data.plan,
+    });
+
+    // Create default project
+    const project = await TenantService.createProject({
+      tenantId: tenant.id,
+      name: "Production",
+      environment: "prod",
+    });
+
+    // Provision tokens
+    const { apiKey } = await TenantService.provisionTokens({
+      tenantId: tenant.id,
+      projectId: project.id,
+      environment: "prod",
     });
 
     // Create user account linked to tenant
@@ -115,7 +135,7 @@ export class AuthService {
         userId,
         data.email,
         passwordHash,
-        onboardingResult.tenantId,
+        tenant.id,
         now,
         now,
       ]
@@ -124,7 +144,7 @@ export class AuthService {
     const user: User = {
       id: userId,
       email: data.email,
-      tenantId: onboardingResult.tenantId,
+      tenantId: tenant.id,
       createdAt: now,
       updatedAt: now,
       lastLoginAt: null,
@@ -135,10 +155,10 @@ export class AuthService {
 
     return {
       user,
-      apiKey: onboardingResult.apiKey,
+      apiKey,
       sessionToken,
-      tenantId: onboardingResult.tenantId,
-      projectId: onboardingResult.projectId,
+      tenantId: tenant.id,
+      projectId: project.id,
     };
   }
 
@@ -387,6 +407,61 @@ export class AuthService {
    */
   static invalidateUserSessionsOnPasswordChange(userId: string): void {
     this.invalidateUserCache(userId);
+  }
+
+  /**
+   * Generate URL-friendly slug from company name
+   */
+  private static generateSlug(companyName: string): string {
+    return companyName
+      .toLowerCase()
+      .trim()
+      .replace(/[^\w\s-]/g, "") // Remove special characters
+      .replace(/\s+/g, "-") // Replace spaces with hyphens
+      .replace(/-+/g, "-") // Replace multiple hyphens with single hyphen
+      .replace(/^-+|-+$/g, ""); // Remove leading/trailing hyphens
+  }
+
+  /**
+   * Ensure slug is unique by appending a number if needed
+   */
+  private static async ensureUniqueSlug(baseSlug: string): Promise<string> {
+    let slug = baseSlug;
+    let counter = 1;
+    
+    // Validate slug is not empty
+    if (!slug) {
+      throw new Error(
+        "Company name must contain at least one alphanumeric character"
+      );
+    }
+    
+    // Check if slug exists
+    while (true) {
+      const existing = await query(
+        `SELECT id FROM tenants WHERE slug = $1`,
+        [slug]
+      );
+      
+      if (existing.length === 0) {
+        // Slug is available
+        return slug;
+      }
+      
+      // Slug exists, try with number suffix
+      slug = `${baseSlug}-${counter}`;
+      counter++;
+      
+      // Safety limit to prevent infinite loop
+      if (counter > 1000) {
+        // Fallback to UUID-based slug
+        const uuid = crypto.randomUUID().substring(0, 8);
+        slug = `${baseSlug}-${uuid}`;
+        break;
+      }
+    }
+    
+    return slug;
   }
 }
 

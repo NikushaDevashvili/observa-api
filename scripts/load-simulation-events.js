@@ -337,6 +337,26 @@ const VERSIONS = ["v1.0.0", "v1.2.3", "v2.0.0", "v2.1.0"];
 
 const ROUTES = ["/api/chat", "/api/agent", "/api/assistant", "/api/v1/chat"];
 
+// Tool descriptions for OTEL tool standardization
+const TOOL_DESCRIPTIONS = {
+  database_query: "Query database for information",
+  api_call: "Make external API call",
+  calculator: "Perform mathematical calculations",
+  file_reader: "Read file contents",
+  email_sender: "Send email message",
+  web_search: "Search the web",
+  get_order_status: "Get order status",
+  update_shipping: "Update shipping information",
+  process_refund: "Process refund request",
+  cancel_order: "Cancel order",
+  verify_user: "Verify user identity",
+  check_api_usage: "Check API usage statistics",
+  generate_docs_link: "Generate documentation link",
+  get_pricing_info: "Get pricing information",
+  fetch_feature_list: "Fetch feature list",
+  check_integrations: "Check available integrations",
+};
+
 // Finish reasons with distribution
 const FINISH_REASONS = [
   { reason: "stop", weight: 90 },
@@ -443,6 +463,24 @@ function generateErrorEvent(params) {
   const errorMessage = randomChoice(template.messages);
   const stackTrace = randomChoice(template.stack_traces);
 
+  // Map error types to categories (OTEL structured error classification)
+  const errorCategoryMap = {
+    tool_error: "execution",
+    llm_error: "provider",
+    retrieval_error: "data",
+    timeout_error: "timeout",
+  };
+  const errorCategory = errorCategoryMap[errorType] || "unknown";
+
+  // Generate error codes based on error type
+  const errorCodeMap = {
+    tool_error: "TOOL_EXECUTION_FAILED",
+    llm_error: "LLM_API_ERROR",
+    retrieval_error: "VECTOR_DB_ERROR",
+    timeout_error: "OPERATION_TIMEOUT",
+  };
+  const errorCode = errorCodeMap[errorType] || "UNKNOWN_ERROR";
+
   return {
     tenant_id: tenantId,
     project_id: projectId,
@@ -468,6 +506,9 @@ function generateErrorEvent(params) {
           parent_span_id: parentSpanId,
           occurred_at: timestamp,
         },
+        // TIER 2: Structured error classification (OTEL)
+        error_category: errorCategory, // error.category
+        error_code: errorCode, // error.code
       },
     },
   };
@@ -750,6 +791,35 @@ function generateCanonicalEvents(params) {
       CONFIG.enableErrors && Math.random() < CONFIG.errorRate * 0.6; // 60% of error rate for retrieval (15% at 25% base)
 
     if (!retrievalError) {
+      // Generate OTEL-enhanced retrieval attributes
+      const embeddingModels = [
+        "text-embedding-ada-002",
+        "text-embedding-3-small",
+        "text-embedding-3-large",
+      ];
+      const embeddingModel = randomChoice(embeddingModels);
+      const embeddingDimensions = embeddingModel.includes("3-large")
+        ? 3072
+        : embeddingModel.includes("3-small")
+        ? 1536
+        : 1536;
+      const vectorMetrics = ["cosine", "euclidean", "dot_product"];
+      const vectorMetric = randomChoice(vectorMetrics);
+      const hasReranker = Math.random() > 0.7;
+      const rerankScore = hasReranker
+        ? parseFloat((0.85 + Math.random() * 0.1).toFixed(3))
+        : null;
+      const fusionMethods = [
+        "reciprocal_rank_fusion",
+        "weighted_mean",
+        "weighted_sum",
+      ];
+      const fusionMethod =
+        Math.random() > 0.8 ? randomChoice(fusionMethods) : null;
+      const deduplicationRemovedCount =
+        Math.random() > 0.6 ? randomInt(0, 3) : null;
+      const qualityScore = parseFloat((0.7 + Math.random() * 0.2).toFixed(2));
+
       events.push({
         ...createBaseEventMetadata(
           traceId,
@@ -773,6 +843,15 @@ function generateCanonicalEvents(params) {
             top_k: k,
             latency_ms: retrievalLatency,
             similarity_scores: similarityScores,
+            // TIER 2: Retrieval enrichment (OTEL)
+            retrieval_context: context, // Actual context text
+            embedding_model: embeddingModel, // Model used for embeddings
+            embedding_dimensions: embeddingDimensions, // Vector dimensions
+            vector_metric: vectorMetric, // Similarity metric ("cosine", "euclidean", "dot_product")
+            rerank_score: rerankScore, // Reranker score (if using reranker)
+            fusion_method: fusionMethod, // Fusion method (if combining multiple sources)
+            deduplication_removed_count: deduplicationRemovedCount, // Chunks filtered
+            quality_score: qualityScore, // Overall retrieval quality
           },
         },
       });
@@ -852,6 +931,18 @@ function generateCanonicalEvents(params) {
           items_found: randomInt(1, 10),
         };
 
+    // Determine tool type based on tool name (OTEL convention)
+    let toolType = "function"; // default
+    if (toolName.includes("database") || toolName.includes("query")) {
+      toolType = "datastore";
+    } else if (toolName.includes("api") || toolName.includes("http")) {
+      toolType = "extension";
+    }
+
+    // Generate tool description (using global TOOL_DESCRIPTIONS)
+    const toolDescription =
+      TOOL_DESCRIPTIONS[toolName] || `Execute ${toolName}`;
+
     events.push({
       ...createBaseEventMetadata(
         traceId,
@@ -880,6 +971,18 @@ function generateCanonicalEvents(params) {
               ? "Request timeout after 30s"
               : "Tool execution failed"
             : null,
+          // TIER 2: OTEL Tool Standardization
+          operation_name: "execute_tool", // gen_ai.operation.name
+          tool_type: toolType, // gen_ai.tool.type
+          tool_description: toolDescription, // gen_ai.tool.description
+          tool_call_id: `tool_call_${generateUUID().substring(0, 16)}`, // gen_ai.tool.call.id (correlate with LLM request)
+          // TIER 2: Structured error classification
+          error_type: toolError
+            ? toolTimeout
+              ? "timeout"
+              : "execution_error"
+            : null,
+          error_category: toolError ? "tool_execution" : null,
         },
       },
     });
@@ -1019,6 +1122,18 @@ function generateCanonicalEvents(params) {
             `nested-ctx-${generateUUID().substring(0, 8)}`,
           ];
 
+          // Generate OTEL-enhanced nested retrieval attributes
+          const nestedEmbeddingModel = randomChoice([
+            "text-embedding-ada-002",
+            "text-embedding-3-small",
+          ]);
+          const nestedEmbeddingDimensions = nestedEmbeddingModel.includes(
+            "3-small"
+          )
+            ? 1536
+            : 1536;
+          const nestedVectorMetric = randomChoice(["cosine", "euclidean"]);
+
           events.push({
             ...createBaseEventMetadata(
               traceId,
@@ -1044,10 +1159,31 @@ function generateCanonicalEvents(params) {
                 top_k: 3,
                 latency_ms: nestedRetrievalLatency,
                 similarity_scores: [0.92, 0.88, 0.85],
+                // TIER 2: Retrieval enrichment (OTEL)
+                retrieval_context: nestedContext,
+                embedding_model: nestedEmbeddingModel,
+                embedding_dimensions: nestedEmbeddingDimensions,
+                vector_metric: nestedVectorMetric,
               },
             },
           });
         }
+
+        // Determine nested tool type (OTEL convention)
+        let nestedToolType = "function";
+        if (
+          nestedToolName.includes("database") ||
+          nestedToolName.includes("query")
+        ) {
+          nestedToolType = "datastore";
+        } else if (
+          nestedToolName.includes("api") ||
+          nestedToolName.includes("http")
+        ) {
+          nestedToolType = "extension";
+        }
+        const nestedToolDescription =
+          TOOL_DESCRIPTIONS[nestedToolName] || `Execute ${nestedToolName}`;
 
         events.push({
           ...createBaseEventMetadata(
@@ -1072,6 +1208,14 @@ function generateCanonicalEvents(params) {
               result_status: "success",
               result: { nested_data: "[DATA] Nested tool result" },
               latency_ms: nestedToolLatency,
+              // TIER 2: OTEL Tool Standardization
+              operation_name: "execute_tool",
+              tool_type: nestedToolType,
+              tool_description: nestedToolDescription,
+              tool_call_id: `nested_tool_call_${generateUUID().substring(
+                0,
+                16
+              )}`,
             },
           },
         });
@@ -1085,6 +1229,62 @@ function generateCanonicalEvents(params) {
       CONFIG.enableErrors && Math.random() < CONFIG.errorRate * 0.5; // 50% of error rate for LLM (12.5% at 25% base)
 
     if (!llmError) {
+      // Determine provider from model name (OTEL convention)
+      const modelLower = selectedModel.toLowerCase();
+      let providerName = "openai"; // default
+      if (modelLower.includes("claude") || modelLower.includes("anthropic")) {
+        providerName = "anthropic";
+      } else if (
+        modelLower.includes("gemini") ||
+        modelLower.includes("google")
+      ) {
+        providerName = "google";
+      } else if (modelLower.includes("vertex")) {
+        providerName = "gcp.vertex_ai";
+      } else if (modelLower.includes("bedrock") || modelLower.includes("aws")) {
+        providerName = "aws.bedrock";
+      }
+
+      // Calculate structured cost tracking (OTEL)
+      const modelConfigForCostCalc =
+        MODELS.find((m) => m.name === selectedModel) || MODELS[0];
+      const inputCost = modelConfigForCostCalc.inputPricePer1K
+        ? (tokensPrompt / 1000) * modelConfigForCostCalc.inputPricePer1K
+        : null;
+      const outputCost = modelConfigForCostCalc.outputPricePer1K
+        ? (tokensCompletion / 1000) * modelConfigForCostCalc.outputPricePer1K
+        : null;
+
+      // Apply cost spike multiplier if applicable
+      const finalInputCost =
+        hasCostSpike && inputCost ? inputCost * randomInt(5, 15) : inputCost;
+      const finalOutputCost =
+        hasCostSpike && outputCost ? outputCost * randomInt(5, 15) : outputCost;
+
+      // Create structured message objects (OTEL opt-in format)
+      const inputMessages = [
+        {
+          role: "user",
+          content: llmInput,
+        },
+      ];
+      const outputMessages = [
+        {
+          role: "assistant",
+          content: llmOutput,
+          finish_reason: finishReason,
+        },
+      ];
+      const systemInstructions =
+        Math.random() > 0.5
+          ? [
+              {
+                type: "system",
+                content: "You are a helpful assistant.",
+              },
+            ]
+          : null;
+
       events.push({
         ...createBaseEventMetadata(
           traceId,
@@ -1120,6 +1320,41 @@ function generateCanonicalEvents(params) {
             streaming_duration_ms: streamingDuration,
             input_hash: Math.random() > 0.8 ? simpleHash(llmInput) : null,
             output_hash: Math.random() > 0.8 ? simpleHash(llmOutput) : null,
+            // TIER 1: OTEL Semantic Conventions
+            operation_name: Math.random() > 0.7 ? "chat" : "text_completion", // gen_ai.operation.name
+            provider_name: providerName, // gen_ai.provider.name
+            response_model:
+              Math.random() > 0.9 ? selectedModel + "-response" : null, // gen_ai.response.model (actual model used)
+            // TIER 2: Sampling parameters
+            top_k: Math.random() > 0.5 ? randomInt(1, 50) : null,
+            top_p:
+              Math.random() > 0.5
+                ? parseFloat((0.7 + Math.random() * 0.3).toFixed(2))
+                : null,
+            frequency_penalty:
+              Math.random() > 0.7
+                ? parseFloat((Math.random() * 0.5).toFixed(2))
+                : null,
+            presence_penalty:
+              Math.random() > 0.7
+                ? parseFloat((Math.random() * 0.5).toFixed(2))
+                : null,
+            stop_sequences: Math.random() > 0.8 ? ["\n\n", "Human:"] : null,
+            seed: Math.random() > 0.8 ? randomInt(1, 1000000) : null,
+            // TIER 2: Structured cost tracking
+            input_cost: finalInputCost,
+            output_cost: finalOutputCost,
+            // TIER 1: Structured message objects (OTEL opt-in)
+            input_messages: inputMessages,
+            output_messages: outputMessages,
+            system_instructions: systemInstructions,
+            // TIER 2: Server metadata
+            server_address: Math.random() > 0.7 ? "api.openai.com" : null,
+            server_port: Math.random() > 0.7 ? 443 : null,
+            // TIER 2: Conversation grouping
+            conversation_id_otel: conversationId || null,
+            // TIER 2: Request metadata
+            choice_count: Math.random() > 0.9 ? randomInt(1, 3) : null,
           },
         },
       });

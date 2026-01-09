@@ -68,12 +68,13 @@ See `TEST_TRACE_SCRIPT.md` for a complete test script.
 Send test traces directly via HTTP:
 
 ```bash
-# Get an API key from the onboarding endpoint first
-curl -X POST http://localhost:3000/api/v1/onboarding \
+# Get an API key from the auth signup endpoint first
+curl -X POST http://localhost:3000/api/v1/auth/signup \
   -H "Content-Type: application/json" \
   -d '{
     "email": "test@example.com",
-    "name": "Test User"
+    "password": "test-password-123",
+    "companyName": "Test Company"
   }'
 
 # Use the returned JWT token to send traces
@@ -136,8 +137,8 @@ NEXT_PUBLIC_APP_URL=http://localhost:3001
   curl http://localhost:3000/health
   ```
 
-- [ ] **Onboarding Flow**
-  - Create a new user/tenant
+- [ ] **Authentication Flow**
+  - Create a new user/tenant via signup
   - Verify JWT token is returned
   - Check database for new records
 

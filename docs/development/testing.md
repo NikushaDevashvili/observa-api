@@ -72,7 +72,7 @@ Simulates heavy load with multiple users and conversations.
 
 ### Test Flow
 
-1. **Signup**: Create account via onboarding
+1. **Signup**: Create account via auth endpoint
 2. **Get API Key**: Extract from signup response
 3. **Send Events**: Ingest canonical events
 4. **View Dashboard**: Check traces appear

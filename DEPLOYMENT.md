@@ -85,7 +85,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ## Step 5: Verify Deployment
 
 1. Check health endpoint: `https://your-api.vercel.app/health`
-2. Test signup endpoint: `https://your-api.vercel.app/api/v1/onboarding/signup`
+2. Test signup endpoint: `https://your-api.vercel.app/api/v1/auth/signup`
 
 ## Security Features Enabled
 

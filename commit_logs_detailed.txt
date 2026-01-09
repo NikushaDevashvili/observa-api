@@ -1,0 +1,1912 @@
+Commit: f526865
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-07 04:20:52 +0400
+Message: docs: Add comprehensive UX/CX guide for observability features
+
+---
+
+Commit: 6db9556
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-07 03:38:03 +0400
+Message: Fix: Filter to only show main trace span (isRootTrace) to prevent orphaned spans at root level
+
+---
+
+Commit: 70828e8
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-07 03:22:42 +0400
+Message: docs: Add complete SOTA implementation summary across all components
+
+---
+
+Commit: afbc45b
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-07 03:11:30 +0400
+Message: docs: Add frontend update guide for SOTA span implementation
+
+---
+
+Commit: 5809638
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-07 03:07:26 +0400
+Message: feat: Implement SOTA span tracking with 95% OTEL compliance
+- TIER 1: Add OTEL discriminators (gen_ai.operation.name, gen_ai.provider.name)
+- TIER 1: Add response model tracking (gen_ai.response.model)
+- TIER 1: Add structured message objects (gen_ai.input.messages, gen_ai.output.messages)
+- TIER 1: Implement embedding span type with full OTEL attributes
+- TIER 2: Add sampling parameters (top_k, top_p, frequency_penalty, presence_penalty, stop_sequences, seed)
+- TIER 2: Add structured cost tracking (gen_ai.usage.input_cost, output_cost, total_cost)
+- TIER 2: Standardize tool spans with OTEL attributes
+- TIER 2: Enrich retrieval spans with vector metadata
+- TIER 2: Add structured error classification
+- TIER 2: Add server metadata (server.address, server.port)
+- TIER 2: Add conversation grouping (gen_ai.conversation.id)
+- TIER 3: Add vector database operation span type
+- TIER 3: Add cache hit/miss span type
+- TIER 3: Add formal create_agent span tracking
+
+Achieves ~95% SOTA coverage matching Langfuse, Phoenix, Braintrust
+
+---
+
+Commit: 6bae30c
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-07 02:56:22 +0400
+Message: feat: Comprehensive SOTA error display with full context (CRITICAL)
+- Enhanced SpanErrorInfo interface with comprehensive error context
+- Added operation context: tool name, args, endpoint, method, URL
+- Added request details: headers, body, timeout settings, retry counts
+- Added timing context: start time, elapsed time, timeout threshold, retries
+- Added network context: error category, DNS, connection status, bytes transferred
+- Added related context: parent operations, conversation/session IDs
+- Added intelligent suggested fixes based on error type and context
+- Added error classification: category, severity, impact assessment
+- Smart error categorization (network, DNS, HTTP, auth, database, etc.)
+- Severity classification (critical, high, medium, low)
+- Impact assessment (blocks request, degrades functionality, minimal)
+- Tool-specific fix suggestions (fetch, database, search, etc.)
+- Timeout-specific diagnostics and recommendations
+
+This is CRITICAL for production debugging - errors now show everything needed
+to understand what happened, why it failed, and how to fix it.
+
+Follows SOTA observability practices for error display.
+
+---
+
+Commit: 6851416
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-07 02:48:02 +0400
+Message: feat: Enhance tool call display with comprehensive information (SOTA)
+- Enhanced tool call input to show tool_name with all arguments
+- Enhanced tool call output to preserve complete results (not summaries)
+- For web_search: preserve all results, URLs, snippets, metadata, query info
+- Added execution metadata (status, latency, error messages) to all tool outputs
+- Handle errors/timeouts with comprehensive error information
+- Preserve complete result structure for all tool types
+- Follow SOTA practices: show everything, not just summaries
+
+Fixes issue where tool calls (especially web_search) showed limited information.
+Now displays comprehensive search results, metadata, and execution context.
+
+---
+
+Commit: 63e22f4
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-07 02:43:15 +0400
+Message: fix: Add input/output data for retrieval spans in trace detail
+- Added retrieval input/output population in agentPrismAdapter.ts
+- Added retrieval input/output flattening in traceQueryService.ts
+- Retrieval spans now show query metadata (k, top_k) as input
+- Retrieval spans show context text or formatted summary (IDs, similarity scores) as output
+- Fixes issue where retrieval spans showed 'No input or output data available'
+
+Related: RETRIEVAL_SPAN_DATA_FIX.md
+
+---
+
+Commit: 326b230
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-07 02:39:27 +0400
+Message: docs: Add comprehensive LangChain integration guide
+- Add complete LangChain/LangGraph integration guide
+- Include callback handler examples
+- Cover chains, agents, and state machines
+- Add best practices and troubleshooting
+- Update documentation index and cross-references
+
+---
+
+Commit: aff7db7
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-07 02:33:47 +0400
+Message: fix: Fix child span click handlers in trace detail page
+- Enhanced spansById indexing to support multiple lookup patterns for child spans
+- Improved parent span lookup with fallback logic for better reliability
+- Added consistent ID enforcement to ensure child spans in tree match spansById
+- Added isChild flag and additional reference fields (_id, _spanId, _parentId)
+- Improved details object population for all span types
+
+Fixes critical issue where clicking on child spans (Retrieval, Tool Call, LLM Call)
+did not update the Node Details panel in the frontend.
+
+Related: QA_TRACE_PAGE_REPORT.md
+
+---
+
+Commit: f017d69
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-06 03:28:33 +0400
+Message: docs: add feedback tracking examples and event reference
+
+---
+
+Commit: 0faea5b
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-06 03:10:15 +0400
+Message: feat: Add feedback support to agent-prism adapter
+- Add feedback attributes extraction
+- Detect feedback spans and set category to 'event'
+- Enhance title with emoji icons (👍 👎 ⭐ ✏️) for feedback types
+- Add feedback fields to ObservaSpan interface
+
+---
+
+Commit: 7d0abff
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-06 02:58:51 +0400
+Message: feat: Add feedback metadata to trace spans for frontend styling
+- Add feedback_metadata field to spans with type, outcome, rating, comment
+- Include icon suggestions and color classes for frontend
+- Helps frontend display feedback spans with distinct styling
+
+---
+
+Commit: cf480d4
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-06 02:48:53 +0400
+Message: feat: Add test script and options to generate traces with specific feedback types
+- New script: test-feedback-traces.js for generating traces with like/dislike/both/none
+- Added FORCE_FEEDBACK_TYPE env var to main load simulation (like/dislike/both)
+- Added FORCE_FEEDBACK env var to always include feedback (100% rate)
+- Users can now easily test traces with specific feedback types
+
+---
+
+Commit: e824e0f
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-06 02:44:54 +0400
+Message: fix: Handle incorrectly escaped single quotes in JSON parsing
+- Fix load simulation script to avoid single quotes in test data
+- Add JSON parsing fix to handle incorrectly escaped single quotes (\')
+- Prevents 'Bad escaped character in JSON' errors when parsing attributes_json
+- Ensures trace detail view can display events even with malformed JSON
+
+---
+
+Commit: d6e4685
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-06 02:37:53 +0400
+Message: feat: Add feedback events to trace detail view
+- Include feedback events in trace tree structure
+- Create separate spans for feedback events (like/dislike/rating/correction)
+- Extract and flatten feedback data (type, outcome, rating, comment)
+- Make feedback spans clickable and show details in trace viewer
+- Users can now see when and where likes/dislikes happened in traces
+
+---
+
+Commit: 3b7d56f
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-06 02:35:35 +0400
+Message: feat: Add comprehensive debug logging for feedback events at multiple stages
+- Log feedback events BEFORE formatTinybirdEvents (raw events)
+- Log feedback events AFTER formatTinybirdEvents (formatted events)
+- Parse and display feedback object structure
+- Warn if feedback events are lost during formatting
+- Helps diagnose where feedback data is being lost in the pipeline
+
+---
+
+Commit: f8c095b
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-06 02:33:09 +0400
+Message: feat: Add comprehensive debug logging for feedback events sent to Tinybird
+- Log full event structure, attributes_json type/value/length
+- Parse and display feedback object from attributes_json
+- Log NDJSON line for first feedback event
+- Helps diagnose why feedback data might not appear in Tinybird
+
+---
+
+Commit: 680818e
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-06 02:31:49 +0400
+Message: fix: Select all columns in feedback query to match TSV parser column order
+- parseTSVResponse expects columns in a specific order
+- When only attributes_json was selected, it was mapped to tenant_id instead
+- Now selecting all columns ensures correct mapping
+
+---
+
+Commit: 54aadaf
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-06 02:26:01 +0400
+Message: fix: Ensure attributes_json is preserved for feedback events
+- Add safety check to ensure attributes is always an object before processing
+- Fix SecretsScrubbingService to handle undefined/null attributes
+- Add enhanced debug logging for feedback events to track attributes_json
+- Prevents attributes_json from being lost during conversion to Tinybird format
+
+---
+
+Commit: 2fcb6d6
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-06 00:11:01 +0400
+Message: debug: Add logging to track feedback events before sending to Tinybird
+
+---
+
+Commit: 0c73de0
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-05 23:32:31 +0400
+Message: debug: Add detailed logging for feedback events sent to Tinybird
+
+---
+
+Commit: fc534d1
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-05 23:24:48 +0400
+Message: debug: Add logging for feedback event attributes_json conversion
+
+---
+
+Commit: 0389026
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-05 23:22:49 +0400
+Message: fix: Select all columns in debug endpoint for proper TSV parsing
+
+---
+
+Commit: e6f421f
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-05 23:18:21 +0400
+Message: fix: Use correct AuthService method in debug endpoint
+
+---
+
+Commit: 7b5be55
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-05 23:18:00 +0400
+Message: debug: Add debug endpoint to inspect raw feedback data structure
+
+---
+
+Commit: cddc7e4
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-05 23:15:53 +0400
+Message: fix: Add type annotation for TypeScript error
+
+---
+
+Commit: 9293c42
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-05 23:15:44 +0400
+Message: fix: Improve feedback JSON parsing with better error handling and debugging
+- Handle attributes_json as string, object, or null
+- Add detailed logging for first few rows to debug parsing issues
+- Better error messages showing actual data types and samples
+- Count non-empty results to verify parsing is working
+
+---
+
+Commit: baabb0f
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-05 23:12:58 +0400
+Message: debug: Add detailed logging for feedback metrics parsing
+
+---
+
+Commit: b6dd28c
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-05 23:12:06 +0400
+Message: fix: Fix feedback metrics JSON extraction and TypeScript errors
+- Change feedback query to parse full JSON in JavaScript instead of ClickHouse JSONExtractString
+- Add fallback JSON parsing for reliability
+- Fix TypeScript errors (remove onboarding router, add status_text to TraceSummary)
+- Add debug logging for feedback metrics
+- Improve error handling in feedback aggregation
+
+This fixes the issue where likes/dislikes were showing as 0 despite feedback events existing.
+
+---
+
+Commit: 3cb471f
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-05 23:03:14 +0400
+Message: docs: Add guide for running load simulation with feedback metrics
+
+---
+
+Commit: 53dc857
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-05 23:02:55 +0400
+Message: feat: Enhance feedback simulation in load script
+- Increase default feedback rate from 10% to 30%
+- Prioritize likes/dislikes (70% of feedback) as most important for issue detection
+- Make feedback more likely when errors occur (50% increase)
+- Add realistic comments for likes/dislikes
+- Improve feedback type distribution based on error state
+- Better outcome correlation with feedback type
+
+---
+
+Commit: f24eaf4
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-05 22:57:07 +0400
+Message: feat: Add comprehensive feedback metrics tracking and display
+- Add FeedbackMetrics interface with likes, dislikes, ratings, corrections
+- Implement getFeedbackMetrics() method in DashboardMetricsService
+- Add feedback metrics to dashboard overview endpoint
+- Create dedicated GET /api/v1/dashboard/feedback endpoint
+- Add feedback metrics to time-series endpoint
+- Include feedback rate, average rating, and breakdown by type/outcome
+- Add comprehensive documentation in FEEDBACK_METRICS_IMPLEMENTATION.md
+
+This is critical for AI developers to understand system issues as users primarily click like/dislike buttons to signal problems.
+
+---
+
+Commit: 7b558cb
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-05 02:35:41 +0400
+Message: feat: Add comprehensive onboarding system with email service, progress tracking, and checklist
+- Add database schema for onboarding tracking (user_onboarding_progress, onboarding_checklist_items, email_verification_tokens, user_preferences)
+- Implement email service with Resend integration (welcome, verification, completion, reminder emails)
+- Create onboarding tracker service for progress management
+- Create checklist service with automatic and manual task detection
+- Add onboarding API endpoints (progress, checklist, next-steps, preferences, task completion)
+- Add email verification endpoints
+- Integrate automatic task detection in traceService, authService, dashboard routes
+- Enhance signup flow with onboarding initialization
+- Add email templates (welcome, verification, completion, reminder)
+- Add environment configuration for email service
+- Update API documentation with onboarding endpoints
+
+---
+
+Commit: 970ffff
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-05 00:51:31 +0400
+Message: Fix: Add status_text to traces SQL query
+- status_text column was missing from the SELECT query in getTracesV2
+- This was causing status_text to always be undefined in API response
+
+---
+
+Commit: 701e9be
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-05 00:49:03 +0400
+Message: Add status_text to traces list API response
+- Include status_text in traceQueryService.getTracesV2
+- Include status_text in traces route response transformation
+- This provides context about error types (tool_error, retrieval_error, etc.)
+
+---
+
+Commit: 75b2028
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-05 00:17:29 +0400
+Message: Fix Issues API: Remove non-existent estimated_cost_usd column
+- Column doesn't exist in analysis_results table
+- Remove from SELECT query
+- Update cost_anomaly signal to use boolean value
+
+---
+
+Commit: abc7a94
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-05 00:15:03 +0400
+Message: Fix Issues page PostgreSQL fallback to use actual column structure
+- Query actual columns (status, is_hallucination, has_context_drop, etc.) instead of metadata_json
+- Detect HTTP errors (status >= 400) as issues with proper severity (500+ = high, 400-499 = medium)
+- Detect hallucination, context drop, faithfulness, model drift, and cost anomaly flags
+- Use COALESCE for timestamp/analyzed_at for proper time filtering
+- Add severity-based filtering for high/medium/low issues
+
+---
+
+Commit: fc79f6f
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-04 02:43:19 +0400
+Message: Improve Tinybird error logging: Use warn instead of error for rate limits
+- Change console.error to console.warn for expected fallback scenarios
+- Distinguish between rate limit (429) and other errors
+- Truncate error messages to reduce log noise
+- The system already falls back to PostgreSQL, these are just informational
+
+---
+
+Commit: b1b22a9
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-04 02:39:08 +0400
+Message: Fix Tinybird 429 rate limit: Return empty array instead of throwing
+- querySignals now returns empty array on Tinybird errors (including 429 rate limit)
+- getSignalSummary now has proper try-catch and returns empty array on error
+- This allows PostgreSQL fallback to work when Tinybird is unavailable
+- Fixes dashboard 500 errors when Tinybird rate limit is exceeded
+
+---
+
+Commit: 1e9ff9c
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-04 02:30:43 +0400
+Message: Fix error rate and active issues: PostgreSQL fallback corrections
+- Fix error rate fallback: use 'status >= 400' instead of 'status = error' (status is INTEGER)
+- Add PostgreSQL fallback for signal/issue counts
+- Count high severity: hallucination, prompt_injection, status >= 500
+- Count medium severity: context_drop, faithfulness_issue, model_drift, etc.
+- Count low severity: quality_degradation, context_overflow
+- Ensures accurate issue counts when Tinybird has no data
+
+---
+
+Commit: ab2abd0
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-04 02:22:58 +0400
+Message: Fix time-series PostgreSQL fallback: fix status type and handle NULL timestamps
+- Fix status check: use 'status >= 400' instead of 'status = error' (status is INTEGER)
+- Use COALESCE(timestamp, analyzed_at) to handle NULL timestamp values
+- Ensures time-series chart data is returned from PostgreSQL
+
+---
+
+Commit: e4bc11e
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-04 02:16:37 +0400
+Message: Fix PostgreSQL fallback: check for empty data, not just errors
+- Time-series: Fall back if totalTraceCount is 0, filter empty buckets
+- Latency: Fall back if count is 0 from Tinybird
+- Ensures fallback triggers when Tinybird returns empty results
+
+---
+
+Commit: fb5bc54
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-04 02:14:15 +0400
+Message: Add PostgreSQL fallback for time-series metrics
+- Add getTimeSeriesFromPostgres method for chart data
+- Falls back when Tinybird returns empty time series
+- Returns proper timestamps for chart rendering
+- Fixes 'Invalid Date' issue in charts
+
+---
+
+Commit: 9367f9d
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-04 02:10:01 +0400
+Message: Add PostgreSQL fallback for dashboard metrics when Tinybird returns 0
+- Add fallback queries for trace count, latency, error rate, cost, and tokens
+- Query PostgreSQL analysis_results when Tinybird canonical_events returns no data
+- Ensures dashboard shows data even when Tinybird is empty or unavailable
+- Fixes issue where metrics showed 0 despite having traces in database
+
+---
+
+Commit: d1c7e28
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-04 02:03:51 +0400
+Message: Fix TinybirdRepository validation: Allow tenant_id anywhere in WHERE clause
+
+---
+
+Commit: 6ce8bf0
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-04 01:51:15 +0400
+Message: Add dashboard API enhancements: time-series, comparison, and breakdown endpoints
+- Add time-series metrics endpoint for chart visualization
+- Add metrics comparison endpoint for trend indicators
+- Add metrics breakdown endpoint for detailed analysis
+- Enhance overview endpoint with health indicators, top issues, and model breakdown
+- Default time range to last 7 days instead of all time
+- Add service methods: getTimeSeriesMetrics, getMetricsComparison, getMetricsBreakdown
+
+---
+
+Commit: 2b31059
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-04 01:42:32 +0400
+Message: docs: Add knowledge hub setup documentation
+
+---
+
+Commit: 3bd75ae
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-04 01:31:42 +0400
+Message: perf: optimize app performance and add secure caching
+- Remove schema initialization middleware (eliminates 5s delay on every request)
+- Reduce Sentry sampling from 100% to 10% (reduces overhead)
+- Add secure session caching with tenant isolation (5min TTL)
+- Add secure dashboard response caching with tenant validation (1min TTL)
+- Enhance SQL injection protection with UUID validation
+- Add automatic cache cleanup and invalidation on logout/password change
+
+Security improvements:
+- All caches validate tenant_id to prevent cross-tenant data leakage
+- Multi-layer validation (UUID format, SQL structure, cache validation)
+- Cache poisoning prevention using hashed keys
+- Defense in depth security approach
+
+Performance improvements:
+- Eliminated 5-second delay on every request
+- ~5x faster session validation with cache hits
+- ~6x faster dashboard queries with cache hits
+
+---
+
+Commit: e706414
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-04 01:20:00 +0400
+Message: feat(traces): add available models endpoint
+
+---
+
+Commit: 6c41795
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-04 01:19:02 +0400
+Message: docs: Create comprehensive knowledge hub documentation structure
+- Add organized documentation in docs/ directory
+- Create guides for getting started, SDK, API, troubleshooting
+- Add reference documentation for data models, events, rate limits
+- Structure ready for integration with frontend docs viewer
+
+---
+
+Commit: 54b54b0
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-04 01:08:35 +0400
+Message: docs: add reference and debugging guides
+
+---
+
+Commit: 73528cc
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-04 01:03:42 +0400
+Message: feat(traces): phase 1-2 filters, stats, exports, insights
+
+---
+
+Commit: a228eed
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-04 00:54:54 +0400
+Message: feat: Complete production readiness implementation for customer demos
+- Add users endpoint (GET /api/v1/users) for listing AI application users
+- Add request ID tracking middleware for traceability
+- Add audit logging service and database table
+- Add detailed health check endpoints
+- Add OpenAPI/Swagger documentation at /api-docs
+- Create SDK installation guide
+- Create customer onboarding guide
+- Create troubleshooting guide
+- Add demo data setup script
+- Add E2E test suite structure
+- Enhance error handling with structured responses
+- Enhance metrics endpoint with business metrics
+- Fix Redis import in health checks
+
+All critical tasks from production readiness plan completed.
+
+---
+
+Commit: 1dcbd30
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-03 04:42:30 +0400
+Message: Remove time filter - show all data by default
+- Remove default time range filtering
+- Show all data when no startTime/endTime provided
+- Update response format to indicate all-time queries
+- Services already support optional time filters
+
+---
+
+Commit: b6068e6
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-03 04:38:37 +0400
+Message: fix: include spans with status=error in errorSummary calculation
+- Count spans with status='error' even if errorInfo is not set
+- Ensures errorSummary is calculated when errors are detected
+- Fixes issue where errorSummary was undefined despite visible errors
+
+---
+
+Commit: dee29c8
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-03 04:29:22 +0400
+Message: Add timeRange parameter support and frontend integration guide
+- Support timeRange parameter (24h, 7d, 30d) in addition to days
+- Add detailed logging for time range requests
+- Create frontend integration guide with debugging steps
+- Token verified working, data exists - issue is likely frontend passing wrong time range
+
+---
+
+Commit: 6e774ae
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-03 04:23:48 +0400
+Message: Add diagnostic scripts and fix documentation
+- Add test-dashboard-direct.js to test Tinybird connection
+- Add test-dashboard-health.js for health endpoint testing
+- Create FIX_DASHBOARD_ZEROS.md with clear instructions
+- Confirmed root cause: TINYBIRD_ADMIN_TOKEN missing permissions in Vercel
+
+---
+
+Commit: 4dc6fdb
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-03 04:20:49 +0400
+Message: Add diagnostic logging and health check endpoint for dashboard
+- Add detailed logging to dashboard overview endpoint
+- Log metrics values being returned
+- Add /api/v1/dashboard/health endpoint for diagnostics
+- Better error logging with stack traces
+
+This will help diagnose why dashboard shows 0s - likely Tinybird token permissions or query failures.
+
+---
+
+Commit: 51c599f
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-03 04:16:05 +0400
+Message: Fix dashboard default time range and add diagnostic scripts
+- Change dashboard default from 1 day to 7 days to capture more data
+- Add logging to show query time range
+- Add scripts to test token permissions and find tenant/project IDs
+- Token provided has correct permissions (200 OK responses)
+- Data exists: 7471 events, 704 traces for tenant/project
+
+The issue was the default 24-hour window was too narrow.
+
+---
+
+Commit: b4f387f
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-03 04:12:53 +0400
+Message: Add better error logging for Tinybird permission issues
+- Add detailed error logging to dashboard metrics service
+- Log permission errors clearly when Tinybird queries fail
+- Create TINYBIRD_PERMISSIONS_FIX.md with instructions
+- Add test script to diagnose Tinybird query issues
+
+Root cause: TINYBIRD_ADMIN_TOKEN missing DATASOURCES:READ:canonical_events permission
+This causes all dashboard queries to return 403 Forbidden, which was silently caught and returned as 0
+
+---
+
+Commit: 14f68b9
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-03 04:01:56 +0400
+Message: Fix basic issue detection and add PostgreSQL fallback
+- Make SignalsService.processEvents more resilient to JSON parsing errors
+- Skip events with invalid JSON instead of failing entire batch
+- Add better logging to track signal generation and storage
+- Add PostgreSQL fallback to issues endpoint when signals not found in Tinybird
+- Query analysis_results table for traces with has_issues=true
+- Transform PostgreSQL issues data to signals format for consistency
+
+Fixes:
+- Issues showing 0 when errors/tool failures exist
+- Signals not being generated due to JSON parsing errors
+- Issues endpoint only querying Tinybird (now has PostgreSQL fallback)
+
+---
+
+Commit: a8dff47
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-03 03:58:34 +0400
+Message: Reduce log noise for optional Redis/analysis queue
+- Change Redis warnings to info logs (less alarming)
+- Only log queue unavailable message once per process (not per trace)
+- Improve messages to indicate Redis is optional
+- Change schema retry message from warn to log
+
+These warnings are expected when Redis is not configured and the system gracefully degrades. The new logging is less noisy while still informative.
+
+---
+
+Commit: 08d493c
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-03 03:55:15 +0400
+Message: feat: enhance error visibility in trace tree view
+- Add errorInfo interface and errorSummary to agent-prism adapter
+- Extract and structure error information from spans
+- Calculate error summary with counts, types, and span IDs
+- Include errorInfo and errorCount in transformed spans
+- Update API response to include errorSummary field
+
+---
+
+Commit: db012aa
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-03 03:52:32 +0400
+Message: Fix JSON parsing errors and issue detection
+- Improve JSON parsing error handling in traceQueryService with better logging
+- Fix issue detection to parse attributes_json before checking for errors/tool failures
+- Add JSON validation before storing attributes_json to prevent invalid JSON
+- Handle both attributes object and attributes_json string in issue detection
+
+Fixes:
+- JSON parsing errors when reading events from Tinybird
+- Issues showing 0 when errors/tool failures exist
+- Invalid JSON being stored in attributes_json
+
+---
+
+Commit: 143a79d
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-03 03:40:59 +0400
+Message: Fix critical Tinybird ingestion issue
+- Add explicit error handling for Tinybird forwarding failures
+- Improve logging to track Tinybird API responses and errors
+- Fix event formatter to include nullable fields (agent_name, version, route)
+- Make datasource name configurable via TINYBIRD_CANONICAL_EVENTS_DATASOURCE env var
+- Add diagnostic scripts for testing Tinybird ingestion
+- Add documentation for critical fix
+
+The API was returning 200 OK even when Tinybird ingestion failed.
+Now requests will fail properly if events can't be stored in Tinybird.
+
+---
+
+Commit: f38d58c
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-03 03:28:20 +0400
+Message: Fix: Inherit conversation_id, session_id, user_id from source events in signals
+- Signals now inherit conversation_id, session_id, and user_id from the original events that generated them
+- Prevents Tinybird quarantine errors for null values in required fields
+- Uses lookup map to find source events by trace_id:span_id
+- Falls back to empty strings only if source event doesn't have these values
+
+---
+
+Commit: ff89a4c
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-02 06:29:50 +0400
+Message: Fix Tinybird DateTime64 filter + harden signal parsing
+- Use parseDateTime64BestEffort(..., 3) in getErrorRateMetrics time filters
+- Make SignalsQueryService robust to NULL/non-string attributes_json and avoid prod log spam
+
+---
+
+Commit: 5d3dfd1
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-02 06:23:03 +0400
+Message: Fix Tinybird query robustness + add /api/v1/version
+- Parse numbers with toFloat64OrNull/toInt64OrNull to avoid query crashes on empty/non-numeric JSON
+- Guard signals parsing when attributes_json parses to null
+- Add /api/v1/version endpoint to verify deployed commit SHA (skips DB init)
+
+---
+
+Commit: 0052bce
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-02 06:15:55 +0400
+Message: Fix error indicator detection for trace spans
+- Added error event extraction in traceQueryService to capture error details
+- Enhanced status detection in agentPrismAdapter to check multiple error sources:
+  - Error events (event_type === 'error')
+  - Tool call errors and timeouts (result_status === 'error' or 'timeout')
+  - LLM call errors (finish_reason === 'error')
+  - HTTP status codes (status < 200 or >= 400)
+- Added error field to ObservaSpan interface
+- This fixes the issue where error indicators weren't showing for spans with errors
+
+---
+
+Commit: c8f979b
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-02 06:15:28 +0400
+Message: Fix Tinybird DateTime64 parsing for ISO timestamps
+Use parseDateTime64BestEffort(..., 3) instead of toDateTime(...) so ISO strings like 2026-01-01T02:14:01.140Z parse correctly.
+
+---
+
+Commit: acc1d17
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-02 06:13:13 +0400
+Message: Fix Tinybird SQL syntax errors
+- Replace JSON_EXTRACT_STRING with JSONExtractString (camelCase function name)
+- Fix timestamp comparisons to use toDateTime() for DateTime64(3) conversion
+- Fixes: 'Unknown function JSON_EXTRACT_STRING' and 'Cannot convert string to DateTime64(3)' errors
+
+---
+
+Commit: 1818bb4
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-02 06:11:04 +0400
+Message: Update all dashboard metrics to query Tinybird canonical_events instead of PostgreSQL analysis_results
+- getLatencyMetrics: Query from llm_call events with latency_ms in attributes_json
+- getErrorRateMetrics: Query from error events and trace_start/llm_call for totals
+- getCostMetrics: Query from llm_call events with cost in attributes_json
+- getTokenMetrics: Query from llm_call events with token counts in attributes_json
+
+All methods now use TinybirdRepository.rawQuery with ClickHouse SQL syntax (quantile, JSON_EXTRACT_STRING, etc.)
+
+---
+
+Commit: 09bf061
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-02 06:06:40 +0400
+Message: Fix duplicate toolLatency declaration - calculate after timeout determination
+
+---
+
+Commit: a4d0460
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-02 06:06:18 +0400
+Message: Fix tool timeout latency calculation - move after timeout determination
+
+---
+
+Commit: 1950e6f
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-02 06:06:05 +0400
+Message: Integrate issue generation (high latency, cost spikes, token spikes, tool timeouts) into main load simulation script
+
+---
+
+Commit: 3a9482a
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-02 06:03:00 +0400
+Message: Add comment clarifying that agent_name/version/route are removed by formatter (not in Tinybird schema)
+
+---
+
+Commit: 4399d49
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-02 06:00:36 +0400
+Message: Add debug logging to track conversation_id/session_id/user_id values
+
+---
+
+Commit: c366b5c
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-02 06:00:24 +0400
+Message: Preserve actual conversation_id/session_id/user_id values instead of always using empty strings - important for tracking!
+
+---
+
+Commit: 0171c18
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-02 05:58:42 +0400
+Message: Fix deletionService to format tombstone events before sending
+
+---
+
+Commit: 6f74033
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-02 05:58:35 +0400
+Message: CRITICAL: Fix all code paths sending null values for required Tinybird fields (conversation_id/session_id/user_id)
+
+---
+
+Commit: c50f42d
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-02 05:56:20 +0400
+Message: CRITICAL FIX: Convert conversation_id/session_id/user_id to empty strings (not null) before creating TinybirdCanonicalEvent
+
+---
+
+Commit: 8d290c4
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-02 05:52:42 +0400
+Message: Fix dashboard: query Tinybird canonical_events instead of PostgreSQL for trace count
+
+---
+
+Commit: 7089171
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-02 05:44:45 +0400
+Message: Add explicit timestamp casting to dashboard metrics queries
+- Added ::timestamp cast to date comparisons for proper PostgreSQL handling
+- This should fix issues with date filtering in dashboard metrics queries
+
+---
+
+Commit: 6827011
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-02 05:41:08 +0400
+Message: Fix dashboard metrics: Query PostgreSQL instead of Tinybird
+- Updated DashboardMetricsService to query PostgreSQL analysis_results table instead of Tinybird canonical_events
+- Fixed getTraceCount() to use PostgreSQL queries
+- Fixed getLatencyMetrics() with proper PostgreSQL percentile syntax
+- Fixed getTokenMetrics() to query PostgreSQL
+- Fixed getErrorRateMetrics() to calculate errors from status codes
+- Cost metrics return empty (not available in analysis_results)
+- This fixes the issue where dashboard was showing all zeros because it was querying Tinybird which has no data
+
+---
+
+Commit: d6d76bc
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-02 05:18:27 +0400
+Message: fix: Handle Tinybird response format in dashboard metrics queries
+- Fix rawQuery response format handling (array vs { data: [...] })
+- Update all metrics services to handle both formats
+- Fix signalsQueryService to handle response format correctly
+- This fixes dashboard showing 0 data when data exists in Tinybird
+
+---
+
+Commit: 62cb4b2
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-02 05:13:54 +0400
+Message: fix: Use correct /api/v1/events/ingest endpoint in generate-issues-test-data script
+
+---
+
+Commit: f6d9a8d
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-02 05:09:18 +0400
+Message: feat: Add script to generate test data with issues
+- Add generate-issues-test-data.js script for testing dashboard issues display
+- Generates traces with tool errors, timeouts, high latency, cost spikes, token spikes
+- Configurable error rates and issue types
+- Add documentation (GENERATE_ISSUES_README.md, QUICK_START_ISSUES_TEST.md)
+- Allows testing of all signal types in dashboard/issues page
+
+---
+
+Commit: 4d18bbf
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-02 04:56:03 +0400
+Message: feat: Add SOTA dashboard API endpoints
+- Add SignalsQueryService to query signals from Tinybird
+- Add DashboardMetricsService for latency, error rates, costs, tokens
+- Add /api/v1/dashboard/overview endpoint with comprehensive metrics
+- Add /api/v1/dashboard/alerts endpoint for active alerts
+- Add /api/v1/issues endpoints for issues timeline and summary
+- Add /api/v1/costs/overview endpoint for cost analytics
+- Enhance /api/v1/metrics with latency and error-rates endpoints
+- Add comprehensive API documentation (DASHBOARD_API_ENDPOINTS.md)
+- Add implementation summary (DASHBOARD_IMPLEMENTATION_SUMMARY.md)
+- All endpoints follow SOTA practices with consistent response format
+- Support multi-tenant isolation, pagination, filtering, and graceful degradation
+
+---
+
+Commit: ecc5c06
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 19:34:18 +0400
+Message: docs: Add UI visual elements verification document
+- Verify timeline bar colors match span types
+- Verify duration formatting displays correctly
+- Verify cost and tokens display for LLM calls
+- Verify status indicators display correctly
+- Document all visual enhancements matching expected UI
+
+---
+
+Commit: a626187
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 19:22:55 +0400
+Message: fix: Convert attributes to array format for DetailsViewAttributesTab
+- Change attributes from Record<string, any> to AgentPrismTraceSpanAttribute[]
+- Add convertAttributesToArray helper function to transform object to array
+- Handle string, number (int/double), boolean, and complex types
+- Fixes 't.attributes.map is not a function' error
+
+---
+
+Commit: a64be87
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 19:16:53 +0400
+Message: fix: Calculate spansCount recursively for all nested spans
+- Add countAllSpansRecursively helper function
+- Count all spans including nested children in spansCount
+- Add comprehensive QA report documenting all fixes and testing recommendations
+
+---
+
+Commit: a7794a6
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 19:15:41 +0400
+Message: feat: Add input, output, and raw fields to TraceSpan
+- Add input/output fields for In/Out tab (extracted from llm_call/tool_call)
+- Add raw field for RAW tab (JSON stringified span data)
+- Improve span type detection with name pattern matching for agent_invocation and chain_operation
+- Detect agent_invocation from names like AgentExecutor, RunnableAssign, OpenAIToolsAgent
+- Detect chain_operation from names like RunnableSequence, Chain
+- Better type mapping for LangChain/LangGraph spans
+
+---
+
+Commit: ed2498f
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 19:10:36 +0400
+Message: fix: Add status, tokensCount, and cost fields to TraceSpan
+- Add status field for status badge (defaults to 'success')
+- Add tokensCount from llm_call for TokensBadge
+- Add cost from llm_call for PriceBadge
+- Extract status from tool_call result_status and error_message
+
+---
+
+Commit: 826d2bb
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 19:09:38 +0400
+Message: fix: Add title field to TraceSpan for agent-prism components
+- Components use data.title not data.name
+- Add title field alongside name for compatibility
+- Ensure type field is properly typed (not 'as any')
+
+---
+
+Commit: 14e7236
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 19:08:28 +0400
+Message: fix: Add type field to TraceSpan for SpanBadge component
+- Map span types to valid TraceSpanCategory values
+- Set type field correctly to prevent 'Cannot read properties of undefined (reading icon)' error
+- Map tool_call to tool_execution, output to event
+- Default to 'unknown' category for unmapped types
+
+---
+
+Commit: 9becbb7
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 18:58:04 +0400
+Message: feat: Add agent-prism integration for trace visualization
+- Add AgentPrismAdapterService to transform trace data to agent-prism format
+- Add new API endpoint: GET /api/v1/traces/:traceId?format=agent-prism
+- Add comprehensive documentation (analysis, adapter examples, implementation guides)
+- Support OpenTelemetry semantic conventions in trace data
+- Convert signals to badges for agent-prism display
+- Backward compatible with existing endpoints
+
+---
+
+Commit: c79c422
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 18:13:10 +0400
+Message: fix: Add query and response fields to trace summary
+Critical fix to ensure trace summaries include user queries and responses,
+enabling the frontend to properly display this essential information.
+
+Changes:
+- Extract query from first LLM call input (user's question)
+- Extract response from output events or last LLM call output
+- Aggregate total_cost from all LLM call events
+- Add finish_reason to summary from last LLM call
+- Update TraceSummary interface with new optional fields
+
+Fixes:
+- Frontend can now display user question in trace summary
+- Frontend can now display final response in trace summary
+- Cost information now available in summary
+- Finish reason now included in summary
+
+Technical:
+- Modified TraceQueryService.aggregateEventsToTrace()
+- Modified TraceQueryService.buildTreeFromCanonicalEvents()
+- Updated TraceSummary TypeScript interface
+- Added comprehensive test script for verification
+- All changes are backward compatible (fields are optional)
+
+Testing:
+- Created automated test script (scripts/test-trace-summary.js)
+- Added comprehensive QA documentation
+- TypeScript compilation passes
+- No breaking changes
+
+Files modified:
+- src/services/traceQueryService.ts
+- scripts/load-simulation-events.js (comprehensive enhancements)
+- scripts/test-trace-summary.js (new test script)
+
+Documentation:
+- QA_COMPREHENSIVE_ANALYSIS.md
+- QA_FIXES_APPLIED.md
+- QA_TESTING_GUIDE.md
+- QA_DEPLOYMENT_CHECKLIST.md
+- QA_SUMMARY.md
+
+---
+
+Commit: fa9c9a2
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 17:44:29 +0400
+Message: Fix sessions page: create sessions and conversations when events are ingested
+- Added ConversationService import to events route
+- Added calculateCost function for cost calculations
+- Updated storeTraceSummaries to create/update sessions and conversations
+- Ensures new conversations appear on sessions page when using /events/ingest endpoint
+
+---
+
+Commit: c312ab7
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 17:41:13 +0400
+Message: Add comprehensive browser QA test results - all critical functionality working
+
+---
+
+Commit: 91ee3a8
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 17:35:58 +0400
+Message: Add QA fixes summary document
+
+---
+
+Commit: 77a7fd3
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 17:18:16 +0400
+Message: Fix duplicate spans: deduplicate events and prevent adding same span to children array multiple times
+
+---
+
+Commit: 508d778
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 17:17:42 +0400
+Message: Fix duplicate spans: filter events by trace_id and return only root spans in main spans array
+
+---
+
+Commit: ce5c555
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 17:14:39 +0400
+Message: Ensure all spans have populated details object for frontend compatibility
+
+---
+
+Commit: 6b5efac
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 17:14:29 +0400
+Message: CRITICAL FIX: Include ALL spans in top-level spans array - frontends only search top-level array
+
+---
+
+Commit: d81116f
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 17:14:20 +0400
+Message: CRITICAL FIX: Include ALL spans in top-level spans array for frontend accessibility - frontends often only search top-level array
+
+---
+
+Commit: 5effb9c
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 17:12:26 +0400
+Message: Add trace metadata and ensure all spans are accessible in multiple formats for frontend compatibility
+
+---
+
+Commit: f583f10
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 17:12:16 +0400
+Message: Add comprehensive span lookup indexing by multiple identifiers for frontend compatibility
+
+---
+
+Commit: 59c8d3e
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 17:12:05 +0400
+Message: Improve span accessibility: add lookup maps, consistent IDs, and original span_id references for frontend matching
+
+---
+
+Commit: 455d515
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 17:09:18 +0400
+Message: Add allSpans flat array for frontend span lookup
+
+---
+
+Commit: 4b40f07
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 17:03:08 +0400
+Message: Fix critical trace page issues: tree view, span data isolation, and timeline
+- Fix tree structure building: create root Trace span first before children
+- Fix span data isolation: root Trace span only shows trace-level metadata
+- Fix retrieval/tool_call spans: ensure proper data attachment when clicked
+- Fix timeline calculation: use trace start time as reference for all spans
+- Fix root trace span duration: calculate from child spans properly
+
+---
+
+Commit: 8081d63
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 16:57:22 +0400
+Message: Add trace ID logging to simulation script
+- Track and output trace IDs for easy testing
+- Helps verify trace structure after sending events
+
+---
+
+Commit: e04692f
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 16:52:36 +0400
+Message: Flatten all span data to top level (Langfuse-style)
+- All LLM call fields (model, input, output, tokens, cost, etc.) at span root
+- All tool call fields (tool_name, args, result, status, etc.) at span root
+- All retrieval fields (top_k, context, similarity_scores, etc.) at span root
+- All output fields at span root
+- Enables frontend to access data directly like span.model, span.input
+- Matches Langfuse approach where all details are directly on the span object
+- Keeps nested structures for backward compatibility
+
+---
+
+Commit: 8a77e0b
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 16:47:26 +0400
+Message: Ensure first event has type-specific data for frontend access
+- Copy span-level data to first event for frontends that read from events[0]
+- Keep both attributes structure and top-level fields
+- Ensures data is accessible regardless of how frontend accesses it
+
+---
+
+Commit: 24945a0
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 16:47:17 +0400
+Message: Add explicit flags and ensure event data is accessible
+- Add hasDetails and selectable flags for frontend detection
+- Add hasInput, hasOutput, hasContext flags for data presence checks
+- Ensure first event in events array has type-specific data
+- Keep attributes structure for compatibility
+- Helps frontend detect when spans have details to display
+
+---
+
+Commit: 9435bc7
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 16:44:42 +0400
+Message: Expose span data in multiple formats for frontend compatibility
+- Add top-level fields (model, input, output, tokens, etc.) for direct access
+- Keep type-specific objects (llm_call, tool_call, retrieval) for structured access
+- Add details field for unified access
+- Enhance events array with full attribute data
+- Ensures frontend can find data regardless of how it accesses spans
+- Fixes issue where clicking spans shows nothing
+
+---
+
+Commit: 29e3578
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 16:42:34 +0400
+Message: Create separate spans for each event type in root span
+- Root span events (retrieval, llm_call, output) now get their own spans
+- Each event type becomes a separate clickable node in the timeline
+- Root 'Trace' span contains all event-type spans as children
+- Enables frontend to handle clicks on individual event types
+- Fixes issue where clicking on LLM calls/retrieval did nothing
+
+---
+
+Commit: 70eab81
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 16:41:43 +0400
+Message: Add id fields and type/details for span click handling
+- Add 'id' field to spans (for frontend compatibility)
+- Add unique 'id' field to each event
+- Add 'type' and 'details' fields at span level for easy access
+- Include span_id in events for reference
+- Enables frontend to handle span/event clicks properly
+
+---
+
+Commit: 6e0b500
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 16:37:03 +0400
+Message: Add retrieval_context to simulation events
+- Include actual retrieved context in retrieval events
+- Makes investigation more useful with real context data
+
+---
+
+Commit: 6784d71
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 16:36:48 +0400
+Message: Add detailed event information to spans for investigation
+- Extract and expose full LLM call details (input, output, tokens, model, latency, etc.)
+- Extract and expose full tool call details (args, result, status, latency, etc.)
+- Extract and expose full retrieval details (context, top_k, similarity scores, etc.)
+- Extract output and trace lifecycle details
+- Add event_timestamps array for timeline visualization
+- All details now available for drill-down investigation in dashboard
+
+---
+
+Commit: ba303c7
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 16:33:36 +0400
+Message: Fix Tinybird response parsing - handle TSV format
+- Tinybird returns TSV (tab-separated values) by default, not JSON
+- Added parseTSVResponse method to convert TSV to JSON objects
+- Handles null values (\N) correctly
+- Confirmed querying canonical_events datasource (not traces)
+- Improved content-type detection for JSON vs TSV
+
+---
+
+Commit: e8ec02c
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 16:30:45 +0400
+Message: Improve Tinybird response handling and error logging
+- Read response as text first to catch non-JSON responses
+- Add explicit format=json parameter
+- Better error messages with actual response content
+- Log query execution for debugging
+
+---
+
+Commit: 2bd4a5c
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 16:28:25 +0400
+Message: Fix Tinybird query - remove non-existent columns (agent_name, version, route)
+- These columns don't exist in the canonical_events datasource schema
+- Query now only selects columns that actually exist
+- Prevents 'Unknown expression identifier' errors
+
+---
+
+Commit: e254fc7
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 16:24:43 +0400
+Message: Fix Tinybird SQL parameter syntax - use direct interpolation instead of {param:Type}
+- Tinybird was interpreting {tenant_id:String} as a secret reference
+- Changed to direct value interpolation with UUID validation for security
+- Prevents 'Cannot access secret tenant_id' error
+
+---
+
+Commit: e682084
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 16:21:20 +0400
+Message: Improve Tinybird query error handling and logging
+
+---
+
+Commit: 416aa33
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 16:19:06 +0400
+Message: Fix Tinybird query parameter handling
+- Pass trace_id and other params correctly to Tinybird SQL API
+- Add detailed logging to diagnose query issues
+- Handle both array and object.data response formats
+
+---
+
+Commit: e60d026
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 16:15:35 +0400
+Message: Build hierarchical trace tree from canonical events
+- Query Tinybird for canonical events when getting trace details
+- Build proper hierarchical span tree with parent-child relationships
+- Include all event types: tool_call, retrieval, llm_call, output, trace_start, trace_end
+- Show detailed timeline with all spans and events
+- Fallback to analysis_results for backward compatibility
+
+---
+
+Commit: c1cf04d
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 16:09:58 +0400
+Message: Store trace summaries in analysis_results for canonical events
+- Extract llm_call events from canonical events batch
+- Store trace summaries in analysis_results table for dashboard compatibility
+- Dashboard can now see traces sent via events endpoint
+- Maintains backward compatibility with existing trace queries
+
+---
+
+Commit: 0f3d417
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 16:07:37 +0400
+Message: Format dashboard URL code with consistent quotes
+
+---
+
+Commit: f506d84
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 16:07:09 +0400
+Message: Fix dashboard URL in events simulation script
+
+---
+
+Commit: 2fbc639
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 16:07:04 +0400
+Message: Fix dashboard URL to use observa-app instead of observa-api
+
+---
+
+Commit: 0e189a7
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 16:04:45 +0400
+Message: Add comprehensive load simulation with canonical events
+- Add load-simulation.js: Basic trace simulation script
+- Add load-simulation-events.js: Advanced canonical events simulation with tool calls
+- Add LOAD_SIMULATION_README.md: Comprehensive documentation
+- Add get-api-key.js: Helper script for API key management
+- Update tenants.ts: Add API key creation endpoint
+- All scripts support heavy load testing with realistic data
+
+---
+
+Commit: 000fdd2
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 16:04:03 +0400
+Message: Fix user_id to use proper UUID format in events simulation
+
+---
+
+Commit: 8fa3b22
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 15:59:56 +0400
+Message: Add API key creation endpoint for events ingestion
+- Add POST /api/v1/tenants/:tenantId/api-keys endpoint
+- Allows creating API keys (sk_/pk_) using JWT authentication
+- Update load-simulation-events.js to automatically create and use API keys
+- Enables proper canonical events ingestion with tool calls and timeline structure
+
+---
+
+Commit: 63568f4
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 06:36:56 +0400
+Message: Add sessions API endpoints with full functionality
+- Add sessions route with GET endpoints (list, get by ID, get traces, get analytics)
+- Extend ConversationService with session methods (getSession, getSessionMessages, getSessionAnalytics, listSessions)
+- Register sessions route in main index.ts
+- Follow same patterns as conversations endpoints with authentication and tenant filtering
+
+---
+
+Commit: ef8bd62
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 06:31:04 +0400
+Message: Fix: Preserve trace data when updating existing traces
+- Updated TraceService.storeTraceData() to preserve existing trace data fields when updating existing rows
+- Updated AnalysisService.storeAnalysisResults() to preserve trace data fields in ON CONFLICT UPDATE clauses
+- Prevents subsequent messages from overwriting trace data with empty/null values
+- Uses COALESCE to preserve existing values when new values are NULL or empty
+- Fixes critical issue where messages after the first were showing as empty traces
+
+---
+
+Commit: 63988d4
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 06:20:41 +0400
+Message: Fix test script to use UUID format for trace/session IDs
+
+---
+
+Commit: d20b884
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 06:20:17 +0400
+Message: Add test script for waterfall/timeline view testing
+
+---
+
+Commit: 5439585
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 06:12:37 +0400
+Message: Add waterfall/timeline trace detail view with tree structure
+- Add TraceQueryService.getTraceDetailTree() method to build tree structure from trace data
+- Update /api/v1/traces/:traceId endpoint to support ?format=tree query parameter
+- Returns structured data: summary, spans array, signals array
+- Ready for migration to Tinybird canonical events
+- Backward compatible with existing analysis_results data
+
+---
+
+Commit: 153d504
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2026-01-01 05:51:18 +0400
+Message: feat: implement trace-first architecture with canonical events, security enhancements, and refactored API
+- Add canonical event envelope system (types/events.ts)
+- Implement TraceQueryService for centralized trace querying
+- Add security middleware (API keys, rate limiting, quota management, payload limits)
+- Implement secrets scrubbing service
+- Add GDPR deletion strategy (trace_index table)
+- Add datasets schema for golden datasets
+- Refactor traces API to use TraceQueryService
+- Add comprehensive testing guide and test script
+- Fix TypeScript errors in middleware
+- Add new services: apiKeyService, quotaService, rateLimitService, secretsScrubbingService, signalsService, tinybirdRepository
+
+---
+
+Commit: ff0fc2f
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-30 06:06:07 +0400
+Message: Add more detailed trace ingestion logging with conversationId and messageIndex
+
+---
+
+Commit: a1cc25d
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-30 06:05:27 +0400
+Message: Add detailed logging to conversation messages endpoint
+- Log all traces in DB for conversation with traceId, messageIndex, query
+- Helps diagnose if all messages are stored or only one
+- Shows what's actually in database vs what's returned
+
+---
+
+Commit: 44d5d9d
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-30 06:03:43 +0400
+Message: Add logging to conversation messages endpoint to debug missing messages
+
+---
+
+Commit: 1665289
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-30 06:02:50 +0400
+Message: Add conversation trace count logging to debug missing messages
+
+---
+
+Commit: 7d9325e
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-30 06:02:33 +0400
+Message: Add detailed logging for trace storage and retrieval debugging
+- Log sample traces with conversationId and messageIndex
+- Log trace queries with full details
+- Helps diagnose why only first message appears
+
+---
+
+Commit: 587f0d4
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-30 05:54:34 +0400
+Message: Add critical issue analysis document
+- Explains why traces aren't being sent
+- Serverless async operation cancellation issue
+- Step-by-step debugging guide
+- Solutions and next steps
+
+---
+
+Commit: 9c6d3b0
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-30 05:54:15 +0400
+Message: Fix rate limiting trust proxy warning
+- Configure rate limiter to use X-Forwarded-For header for IP detection
+- Disable trust proxy validation warning
+- Properly handle Vercel proxy headers
+
+---
+
+Commit: fd8f4e5
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-30 05:47:28 +0400
+Message: Add comprehensive trace ingestion debugging guide
+
+---
+
+Commit: 350801a
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-30 05:46:54 +0400
+Message: Add comprehensive logging for trace ingestion debugging
+- Log request headers, JWT validation, trace data keys
+- Log validation errors with full details
+- Log storage and Tinybird forwarding success/failure
+- Add error stack traces for debugging
+- Helps diagnose why traces aren't appearing in dashboard
+
+---
+
+Commit: daf4909
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-30 05:43:29 +0400
+Message: Fix traces not showing in dashboard
+- Include more trace fields in GET /api/v1/traces (query, response, model, timestamp, etc.)
+- Fix ordering to use COALESCE(timestamp, analyzed_at) DESC to show newest traces first
+- Add logging to debug trace fetching
+- Traces now visible immediately after ingestion, even before analysis completes
+
+---
+
+Commit: cdea44a
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-30 05:39:45 +0400
+Message: CRITICAL: Fix analysis results missing conversation tracking and evaluation data
+- Add conversation tracking fields to AnalysisService.storeAnalysisResults()
+- Preserve conversation_id, session_id, user_id, message_index when storing analysis results
+- Use COALESCE to preserve existing conversation fields during UPDATE
+- Add comprehensive logging for analysis flow debugging
+- Fixes: hallucination, context drop, faithfulness evaluations not showing in conversations
+
+---
+
+Commit: bc4ccc4
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-30 05:35:13 +0400
+Message: Fix migration error: check all columns before adding
+- Check for ALL columns including span_id and parent_span_id
+- Handle 'already exists' errors gracefully (race conditions)
+- Make migration non-fatal so app continues even if migration fails
+- Fixes: column 'span_id' already exists error
+
+---
+
+Commit: 3197799
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-30 05:33:39 +0400
+Message: Fix conversation tracking and Tinybird forwarding
+- Add conversation tracking fields to TinybirdEvent interface
+- Include conversation_id, session_id, user_id, message_index in Tinybird forwarding
+- Improve logging for trace storage and Tinybird forwarding
+- Make column check safer (assume columns exist if check fails)
+- Fixes: 0 messages in conversations, nothing added to Tinybird
+
+---
+
+Commit: e3bdcb3
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-30 05:29:34 +0400
+Message: Improve schema initialization resilience and error handling
+- Increase timeouts for Neon cold starts (15s connection, 45s schema)
+- Add retry logic if previous initialization failed
+- Add shorter timeout in middleware check (5s) to prevent hanging
+- Better error messages for timeout scenarios
+- Migrations now run in background without blocking app startup
+
+---
+
+Commit: b05bc2d
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-30 05:24:37 +0400
+Message: Fix 'Database not ready' error with improved schema initialization
+- Remove conversation column indexes from schema init (created in migration instead)
+- Make migrations non-blocking with better error handling
+- Add timeouts to prevent schema initialization from hanging
+- Improve error messages and resilience
+- Ensure app can function even if migrations fail
+
+---
+
+Commit: 97741c9
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-30 05:21:32 +0400
+Message: Fix conversation_id column missing error and make trace storage resilient
+- Add conversation tracking columns directly to analysis_results schema
+- Make migration more robust with better error handling
+- Add fallback INSERT query for databases without conversation columns
+- Add conversation indexes during schema initialization
+- Fixes analytics query error and ensures traces are saved even if migration hasn't run
+
+---
+
+Commit: ec4e83e
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-30 04:38:53 +0400
+Message: feat: Add /account endpoint for settings page with API key, tenant, and project info
+
+---
+
+Commit: 91e34a1
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-30 04:28:41 +0400
+Message: feat: Add conversation/session tracking, model preloading, and parallel processing
+- Add conversation tracking fields (conversationId, sessionId, userId, messageIndex)
+- Create conversations and user_sessions database tables
+- Add ConversationService for managing conversations
+- Create conversation API routes (list, detail, messages, analytics)
+- Update trace ingestion to handle conversation tracking
+- Add timeout and retry logic to analysisService
+- Update database schema and migrations
+
+---
+
+Commit: d2a545d
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-30 03:16:25 +0400
+Message: feat: Implement SOTA HTAP architecture - store trace data immediately in PostgreSQL
+- Store ALL trace fields immediately on ingestion (not just after analysis)
+- Forward to Tinybird async for analytical workloads
+- Add all missing trace fields: spanId, parentSpanId, TTFB, streaming duration, status, finishReason, responseId, systemFingerprint, metadata, headers
+- Update database schema and migration to include all fields
+- Follow HTAP pattern: PostgreSQL for operational queries, Tinybird for analytics
+
+---
+
+Commit: 47f4865
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-30 03:07:05 +0400
+Message: feat: Add automatic migration for trace data columns
+- Create migration script to add trace data columns to analysis_results
+- Run migration automatically during schema initialization
+- Handles existing columns gracefully
+
+---
+
+Commit: 9c93cbb
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-30 03:06:48 +0400
+Message: feat: Store and return original trace data in analysis results
+- Add columns to analysis_results table for original trace data (query, context, response, model, tokens, latency, etc.)
+- Update analysis service to store original trace data when analyzing
+- Update API to return original trace data along with analysis results
+- Enables displaying full trace information in dashboard
+
+---
+
+Commit: 279f503
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-30 02:21:54 +0400
+Message: fix: Increase Neon database timeout and add retry logic
+- Increase connectionTimeoutMillis to 30s for Neon (was 10s)
+- Add retry logic with exponential backoff (3 attempts)
+- Better handling of Neon cold start timeouts
+- Fixes 'Database not ready' errors on login
+
+---
+
+Commit: 98d8839
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-30 02:19:29 +0400
+Message: fix: Handle duplicate tenant slugs by appending numbers
+- Add ensureUniqueSlug method to check and append numbers if slug exists
+- Prevents 'duplicate key value violates unique constraint' error
+- Allows multiple signups with same company name
+
+---
+
+Commit: 605c1db
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-30 02:10:50 +0400
+Message: fix: Increase connection timeout for Neon databases
+- Increase connectionTimeoutMillis to 10s for Neon (was 2s)
+- Add SSL configuration for Neon databases
+- Improve timeout error messages
+- Fixes 'Connection terminated due to connection timeout' error
+
+---
+
+Commit: acafb63
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-30 02:07:16 +0400
+Message: fix: Improve database connection error reporting
+- Make testConnection throw detailed errors instead of returning false
+- Add specific error messages for common database errors (auth, connection, timeout)
+- Add logging to show if DATABASE_URL is set
+- Better error context for debugging connection issues
+
+---
+
+Commit: b4e5958
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-30 02:05:10 +0400
+Message: fix: Improve database initialization error handling and logging
+- Add detailed error messages with error codes
+- Add troubleshooting hints for common database errors
+- Reset initialization state in manual init endpoint
+- Better error details in 503 responses
+- Helps debug 'Database not ready' errors
+
+---
+
+Commit: 67c255e
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-30 02:03:00 +0400
+Message: fix: Ensure database schema initialization in serverless environment
+- Add promise-based schema initialization to prevent race conditions
+- Add /api/v1/admin/init-schema endpoint for manual initialization
+- Add middleware to ensure schema is ready before database requests
+- Return 503 with helpful message if schema not initialized
+- Fixes 'relation tenants does not exist' error in Vercel
+
+---
+
+Commit: e338b38
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-30 01:35:56 +0400
+Message: fix: Improve error handling for missing environment variables
+- Add better error messages for missing env vars in Vercel
+- Make database initialization non-blocking
+- Add /diagnostics endpoint to check env var status
+- Improve error logging for database connection issues
+
+---
+
+Commit: 5387cc6
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-30 01:11:53 +0400
+Message: docs: Add comprehensive environment variables setup guide
+
+---
+
+Commit: f7d687f
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-30 00:13:36 +0400
+Message: feat: Add database migration, ML analysis, authentication, and monitoring
+- Migrate from in-memory storage to PostgreSQL with full schema
+- Add Sentry error monitoring integration
+- Implement ML analysis service integration (Python FastAPI)
+- Add authentication system with signup/login/sessions
+- Create analytics and traces API endpoints
+- Add metrics endpoint for production monitoring
+- Update tenant service to use database
+- Add analysis results storage and retrieval
+
+---
+
+Commit: 7a2331c
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-29 03:42:24 +0400
+Message: Fix CORS configuration to allow server-to-server requests
+- Allow requests with no origin (server-to-server requests)
+- In production, if ALLOWED_ORIGINS is not set, allow all origins
+  (endpoints are authenticated via JWT anyway)
+- This fixes trace ingestion requests from customer-chat serverless functions
+
+---
+
+Commit: 7fc0d09
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-29 03:41:30 +0400
+Message: Add detailed logging to trace ingestion endpoint
+- Log when requests are received
+- Log JWT validation results
+- Log Tinybird forwarding status
+- Help debug why traces aren't reaching Tinybird
+
+---
+
+Commit: 6804616
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-29 03:36:18 +0400
+Message: Fix trust proxy setting for Vercel deployment
+- Add app.set('trust proxy', true) to fix rate limiter warning
+- Required for express-rate-limit to work correctly behind Vercel proxy
+
+---
+
+Commit: 79c6f4c
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-29 02:30:17 +0400
+Message: Update root route documentation link to actual repository URL
+
+---
+
+Commit: 45f4522
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-29 02:29:19 +0400
+Message: Fix Vercel deployment: update serverless config and add root route handler
+- Replace legacy 'routes' with 'rewrites' in vercel.json to fix configuration error
+- Remove incorrect createServer wrapper in api/index.ts (Vercel expects direct app export)
+- Improve env validation error handling for serverless environments (don't exit process)
+- Add root route handler to provide API information instead of 'Cannot GET /' error
+
+---
+
+Commit: eabb339
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-29 02:26:04 +0400
+Message: removed incorrect createServer
+
+---
+
+Commit: 027230a
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-29 02:21:17 +0400
+Message: routes changed to rewrites
+
+---
+
+Commit: 3fd9bf0
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-29 02:12:27 +0400
+Message: deployment prepartation to vercel
+
+---
+
+Commit: ba75a2a
+Author: Nick Devashvili <nikadevashvili@gmail.com>
+Date: 2025-12-28 03:52:10 +0400
+Message: Initial commit: Observa API with onboarding
+
+---

@@ -720,7 +720,6 @@ graph TD
 
 **E2E Tests:**
 - Basic flow testing
-- Onboarding flow
 - Authentication flow
 - Event ingestion flow
 - Data retrieval flow
@@ -966,5 +965,6 @@ Observa is built on a modern, enterprise-grade architecture designed for scale, 
 **Last Updated**: January 2025
 
 **For Questions**: Contact support@observa.ai or visit our [documentation hub](../README.md)
+
 
 

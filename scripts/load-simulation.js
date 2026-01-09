@@ -40,7 +40,7 @@ if (!JWT_TOKEN) {
   console.error('❌ Error: JWT_TOKEN is required');
   console.error('Usage: node scripts/load-simulation.js <JWT_TOKEN>');
   console.error('   or: JWT_TOKEN=your_token node scripts/load-simulation.js');
-  console.error('\n💡 Get a token from: POST /api/v1/onboarding/signup');
+  console.error('\n💡 Get a token from: POST /api/v1/auth/signup');
   process.exit(1);
 }
 
