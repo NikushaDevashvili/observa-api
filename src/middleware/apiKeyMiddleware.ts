@@ -94,22 +94,6 @@ export function apiKeyMiddleware(requiredScope: RequiredScope = "ingest") {
     }
 
     // If not an API key, try to validate as JWT token (from signup/account)
-    // JWT tokens typically start with "eyJ" (base64 encoded JSON header)
-    if (!token.startsWith("eyJ")) {
-      // Token doesn't match expected formats (sk_/pk_ or JWT)
-      res.status(401).json({
-        error: {
-          code: "UNAUTHORIZED",
-          message: "Invalid token format",
-          details: {
-            hint: "Token must be either an API key (sk_... or pk_...) or a JWT token (eyJ...)",
-            tokenPrefix: token.substring(0, 10) + "...",
-          },
-        },
-      });
-      return;
-    }
-
     const jwtPayload = TokenService.validateToken(token);
     if (jwtPayload && jwtPayload.tenantId && jwtPayload.projectId) {
       // JWT token is valid - set tenant/project context
@@ -120,44 +104,21 @@ export function apiKeyMiddleware(requiredScope: RequiredScope = "ingest") {
       return;
     }
 
-    // JWT validation failed - try to decode without validation to get more info
-    const decoded = TokenService.decodeToken(token);
-    let errorDetails: any = {
-      hint: "JWT token validation failed. Token may be expired, invalid, or malformed.",
-      tokenType: "JWT",
-    };
-
-    if (decoded) {
-      // Token is decodable but validation failed - likely expired or wrong secret
-      errorDetails.decodedInfo = {
-        hasTenantId: !!decoded.tenantId,
-        hasProjectId: !!decoded.projectId,
-        hasExpiry: !!decoded.exp,
-        expiryTimestamp: decoded.exp ? new Date(decoded.exp * 1000).toISOString() : null,
-        isExpired: decoded.exp ? decoded.exp * 1000 < Date.now() : null,
-      };
-    } else {
-      // Token is not even decodable - malformed
-      errorDetails.decodedInfo = {
-        error: "Token cannot be decoded - may be malformed",
-      };
-    }
-
-    console.error("[apiKeyMiddleware] JWT validation failed:", {
+    // JWT validation failed - do NOT decode without validation
+    // Log minimal info for debugging (no sensitive data)
+    console.error("[apiKeyMiddleware] JWT validation failed", {
       tokenLength: token.length,
-      tokenPrefix: token.substring(0, 20),
-      decoded: decoded ? {
-        hasTenantId: !!decoded.tenantId,
-        hasProjectId: !!decoded.projectId,
-        exp: decoded.exp,
-      } : null,
+      tokenStartsWithEyJ: token.startsWith("eyJ"),
     });
 
+    // Return generic error - don't leak information about token structure
     res.status(401).json({
       error: {
         code: "UNAUTHORIZED",
-        message: "Invalid or expired JWT token",
-        details: errorDetails,
+        message: "Invalid or expired authentication token",
+        details: {
+          hint: "Provide a valid Bearer token (API key or JWT) in the Authorization header",
+        },
       },
     });
   };
