@@ -28,6 +28,7 @@ import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import tenantsRouter from "./routes/tenants.js";
+import apiKeysRouter from "./routes/apiKeys.js";
 import tracesRouter from "./routes/traces.js";
 import metricsRouter from "./routes/metrics.js";
 import authRouter from "./routes/auth.js";
@@ -364,6 +365,7 @@ app.get("/diagnostics", (req, res) => {
 // API Routes
 app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/tenants", tenantsRouter);
+app.use("/api/v1/api-keys", apiKeysRouter);
 app.use("/api/v1/traces", tracesRouter);
 app.use("/api/v1/events", eventsRouter);
 app.use("/api/v1/metrics", metricsRouter);

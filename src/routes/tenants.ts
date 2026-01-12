@@ -58,6 +58,84 @@ router.delete("/:tenantId/tokens", async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/v1/tenants/:tenantId/api-keys
+ * List all API keys for a tenant/project
+ * 
+ * Authenticated via JWT token in Authorization header
+ * 
+ * Query Parameters:
+ *   projectId?: string; // Optional: filter by project
+ * 
+ * Returns list of API keys with metadata (but not the actual key values for security)
+ */
+router.get("/:tenantId/api-keys", async (req: Request, res: Response) => {
+  try {
+    // Validate JWT token
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({
+        error: "Missing or invalid Authorization header",
+      });
+    }
+
+    const token = authHeader.substring(7);
+    const payload = TokenService.validateToken(token);
+    if (!payload) {
+      return res.status(401).json({
+        error: "Invalid or expired JWT token",
+      });
+    }
+
+    // Validate tenantId matches JWT
+    const validationResult = tenantIdSchema.safeParse(req.params);
+    if (!validationResult.success) {
+      return res.status(400).json({
+        error: "Invalid tenantId parameter",
+        details: validationResult.error.issues,
+      });
+    }
+
+    const { tenantId } = validationResult.data;
+    if (tenantId !== payload.tenantId) {
+      return res.status(403).json({
+        error: "Tenant ID does not match JWT token",
+      });
+    }
+
+    // Get optional projectId from query params
+    const projectId = req.query.projectId as string | undefined;
+
+    // List API keys
+    const apiKeys = await ApiKeyService.listApiKeys(tenantId, projectId || null);
+
+    // Format response (don't include actual key values, only metadata)
+    return res.status(200).json({
+      success: true,
+      apiKeys: apiKeys.map((keyRecord) => ({
+        id: keyRecord.id,
+        tenantId: keyRecord.tenant_id,
+        projectId: keyRecord.project_id,
+        name: keyRecord.name,
+        keyPrefix: keyRecord.key_prefix,
+        scopes: keyRecord.scopes,
+        allowedOrigins: keyRecord.allowed_origins,
+        revoked: !!keyRecord.revoked_at,
+        createdAt: keyRecord.created_at,
+        lastUsedAt: keyRecord.last_used_at,
+      })),
+      count: apiKeys.length,
+    });
+  } catch (error) {
+    console.error("Error listing API keys:", error);
+    const errorMessage =
+      error instanceof Error ? error.message : "Internal server error";
+    return res.status(500).json({
+      error: errorMessage,
+    });
+  }
+});
+
+/**
  * POST /api/v1/tenants/:tenantId/api-keys
  * Create a new API key for a tenant/project
  * 
@@ -157,6 +235,7 @@ router.post("/:tenantId/api-keys", async (req: Request, res: Response) => {
         createdAt: new Date(),
       },
       message: "API key created successfully. Store it securely - it won't be shown again.",
+      important: "When using this API key with the SDK, you may need to provide tenantId and projectId from keyRecord if using legacy key format (sk_ or pk_).",
     });
   } catch (error) {
     console.error("Error creating API key:", error);

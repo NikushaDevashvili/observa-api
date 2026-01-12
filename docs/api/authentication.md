@@ -32,16 +32,38 @@ Response includes `apiKey` and `sessionToken` - save these securely.
 **Via Dashboard:**
 1. Log in to dashboard
 2. Go to Settings → API Keys
-3. Copy your API key
+3. Create a new API key or copy an existing one
+4. **Important**: When copying an API key from the dashboard (format: `sk_...` or `pk_...`), you'll also need your `tenantId` and `projectId` if using with the SDK (these are included in the API key creation response)
 
 ### Using API Keys
 
+**For API requests** (HTTP/REST):
 ```bash
 curl -X POST https://observa-api.vercel.app/api/v1/events/ingest \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '[{...events...}]'
 ```
+
+**For SDK initialization**:
+
+If using a **JWT-formatted API key** (from signup endpoint):
+```typescript
+const observa = new ObservaSDK({
+  apiKey: process.env.OBSERVA_API_KEY!, // JWT format
+});
+```
+
+If using a **legacy API key** from dashboard (`sk_...` or `pk_...` format):
+```typescript
+const observa = new ObservaSDK({
+  apiKey: process.env.OBSERVA_API_KEY!, // sk_... or pk_...
+  tenantId: process.env.OBSERVA_TENANT_ID!, // Required - get from settings page
+  projectId: process.env.OBSERVA_PROJECT_ID, // Optional - get from settings page
+});
+```
+
+**💡 Tip**: When creating an API key via `/api/v1/tenants/:tenantId/api-keys`, the response includes both `apiKey` and `keyRecord` with `tenantId` and `projectId` for SDK usage.
 
 ### API Key Types
 

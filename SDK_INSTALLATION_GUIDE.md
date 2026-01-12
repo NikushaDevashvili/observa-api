@@ -24,11 +24,16 @@ pnpm add observa-sdk
 
 ### 2. Get Your API Key
 
-1. Sign up at [Observa Dashboard](https://your-dashboard-url.com) or use the auth signup endpoint
-2. After signup, you'll receive an API key (JWT token)
-3. Save it securely (environment variable recommended)
+You can get your API key in two ways:
 
-**Via Auth Signup Endpoint:**
+**Option A: Via Dashboard Settings**
+
+1. Sign up and log in to [Observa Dashboard](https://your-dashboard-url.com)
+2. Go to Settings → API Keys
+3. Create a new API key or copy an existing one
+4. **Important**: When copying an API key from the dashboard (format: `sk_...` or `pk_...`), you'll also need to note your `tenantId` and `projectId` from the settings page, or use Option B below
+
+**Option B: Via Auth Signup Endpoint (JWT format)**
 
 ```bash
 curl -X POST https://your-api.vercel.app/api/v1/auth/signup \
@@ -41,21 +46,41 @@ curl -X POST https://your-api.vercel.app/api/v1/auth/signup \
   }'
 ```
 
-Response includes `apiKey` - save this for SDK initialization.
+Response includes `apiKey` (JWT format) - save this for SDK initialization.
 
 ### 3. Initialize the SDK
+
+**If you have a JWT-formatted API key** (from signup endpoint):
 
 ```typescript
 import ObservaSDK from "observa-sdk";
 
 const observa = new ObservaSDK({
-  apiKey: process.env.OBSERVA_API_KEY!, // Your API key from signup
+  apiKey: process.env.OBSERVA_API_KEY!, // JWT-formatted key (auto-detects tenant/project)
   apiUrl: "https://your-api.vercel.app", // Optional, defaults to production
   environment: "prod", // 'dev' or 'prod'
   agentName: "my-ai-app", // Optional: name of your application
   version: "1.0.0", // Optional: version of your application
 });
 ```
+
+**If you have a legacy API key** (from dashboard: `sk_...` or `pk_...` format):
+
+```typescript
+import ObservaSDK from "observa-sdk";
+
+const observa = new ObservaSDK({
+  apiKey: process.env.OBSERVA_API_KEY!, // sk_... or pk_... format
+  tenantId: process.env.OBSERVA_TENANT_ID!, // Required for legacy keys
+  projectId: process.env.OBSERVA_PROJECT_ID, // Optional, can be null for tenant-level keys
+  apiUrl: "https://your-api.vercel.app",
+  environment: "prod",
+  agentName: "my-ai-app",
+  version: "1.0.0",
+});
+```
+
+**💡 Tip**: The SDK can automatically resolve `tenantId` and `projectId` from legacy API keys. If you don't provide them, the SDK will call the `/api/v1/api-keys/resolve` endpoint automatically (requires an internet connection during initialization).
 
 ### 4. Send Your First Trace
 
@@ -105,7 +130,15 @@ try {
 Create a `.env` file:
 
 ```env
+# If using JWT-formatted API key (from signup):
 OBSERVA_API_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+# If using legacy API key (from dashboard - sk_ or pk_ format):
+OBSERVA_API_KEY=sk_...
+OBSERVA_TENANT_ID=your-tenant-id-here
+OBSERVA_PROJECT_ID=your-project-id-here  # Optional, can be null for tenant-level keys
+
+# Common settings:
 OBSERVA_API_URL=https://your-api.vercel.app
 OBSERVA_ENVIRONMENT=prod
 ```
@@ -321,7 +354,49 @@ app.use(observaMiddleware);
 
 ## Common Issues and Troubleshooting
 
-### Issue 1: "Invalid API Key"
+### Issue 1: "tenantId and projectId are required when using legacy API key format"
+
+**Symptoms**: SDK throws error: `Observa SDK: tenantId and projectId are required when using legacy API key format`
+
+**Cause**: You're using an API key from the dashboard (`sk_...` or `pk_...` format) which doesn't encode tenant/project info like JWT keys do.
+
+**Solutions**:
+
+1. **Provide tenantId and projectId explicitly**:
+
+   ```typescript
+   const observa = new ObservaSDK({
+     apiKey: process.env.OBSERVA_API_KEY!, // sk_... or pk_...
+     tenantId: process.env.OBSERVA_TENANT_ID!, // Get from settings page
+     projectId: process.env.OBSERVA_PROJECT_ID, // Get from settings page (optional)
+   });
+   ```
+
+2. **Use a JWT-formatted API key** instead (from signup endpoint):
+
+   ```typescript
+   const observa = new ObservaSDK({
+     apiKey: process.env.OBSERVA_API_KEY!, // JWT format (from signup)
+   });
+   ```
+
+3. **Find your tenantId and projectId**:
+   - Go to Settings → API Keys in the dashboard
+   - When creating or viewing an API key, the response includes `tenantId` and `projectId`
+   - Copy these values to your environment variables
+
+**Debug**:
+
+```typescript
+console.log(
+  "API Key format:",
+  process.env.OBSERVA_API_KEY?.startsWith("sk_") ? "legacy" : "JWT"
+);
+console.log("Tenant ID:", process.env.OBSERVA_TENANT_ID);
+console.log("Project ID:", process.env.OBSERVA_PROJECT_ID);
+```
+
+### Issue 2: "Invalid API Key"
 
 **Symptoms**: SDK returns 401 Unauthorized
 
@@ -339,7 +414,7 @@ console.log("API Key length:", process.env.OBSERVA_API_KEY?.length);
 console.log("API URL:", observa.apiUrl);
 ```
 
-### Issue 2: "Events Not Appearing in Dashboard"
+### Issue 3: "Events Not Appearing in Dashboard"
 
 **Symptoms**: SDK sends events but dashboard shows nothing
 
@@ -362,7 +437,7 @@ observa.on("sent", (eventCount) => {
 });
 ```
 
-### Issue 3: "Rate Limit Exceeded"
+### Issue 4: "Rate Limit Exceeded"
 
 **Symptoms**: SDK returns 429 Too Many Requests
 
@@ -373,7 +448,7 @@ observa.on("sent", (eventCount) => {
 3. Implement exponential backoff for retries
 4. Contact support to increase limits
 
-### Issue 4: "Network Timeout"
+### Issue 5: "Network Timeout"
 
 **Symptoms**: SDK requests timeout
 
@@ -384,7 +459,7 @@ observa.on("sent", (eventCount) => {
 3. Verify API URL is accessible
 4. Check firewall/proxy settings
 
-### Issue 5: "TypeScript Errors"
+### Issue 6: "TypeScript Errors"
 
 **Symptoms**: Type errors when using SDK
 
@@ -476,6 +551,3 @@ observa.startTrace({
 - **npm**: https://www.npmjs.com/package/observa-sdk
 - **Latest Version**: Check npm for current version
 - **License**: (Check package.json in SDK repo)
-
-
-

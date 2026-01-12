@@ -12,7 +12,17 @@ npm install observa-sdk
 
 ### 2. Get Your API Key
 
-After signup, you'll receive an API key. Save it securely:
+You can get your API key in two ways:
+
+**Option A: Via Dashboard Settings**
+1. Log in to the Observa Dashboard
+2. Go to Settings → API Keys
+3. Create a new API key or copy an existing one
+4. **Important**: When using a legacy API key (`sk_...` or `pk_...` format), you'll also need to provide `tenantId` and `projectId` (see Option B or the initialization section below)
+
+**Option B: Via Auth Signup Endpoint**
+
+After signup, you'll receive a JWT-formatted API key. Save it securely:
 
 ```env
 OBSERVA_API_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
@@ -20,15 +30,31 @@ OBSERVA_API_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 ### 3. Initialize the SDK
 
+**If you have a JWT-formatted API key** (from signup):
 ```typescript
 import ObservaSDK from "observa-sdk";
 
 const observa = new ObservaSDK({
-  apiKey: process.env.OBSERVA_API_KEY!,
+  apiKey: process.env.OBSERVA_API_KEY!, // JWT format (auto-detects tenant/project)
   apiUrl: "https://observa-api.vercel.app",
   environment: "prod",
 });
 ```
+
+**If you have a legacy API key** (from dashboard: `sk_...` or `pk_...` format):
+```typescript
+import ObservaSDK from "observa-sdk";
+
+const observa = new ObservaSDK({
+  apiKey: process.env.OBSERVA_API_KEY!, // sk_... or pk_... format
+  tenantId: process.env.OBSERVA_TENANT_ID!, // Required - get from settings page
+  projectId: process.env.OBSERVA_PROJECT_ID, // Optional - get from settings page
+  apiUrl: "https://observa-api.vercel.app",
+  environment: "prod",
+});
+```
+
+**💡 Tip**: When creating an API key from the dashboard, the response includes `tenantId` and `projectId` in the `keyRecord`. Copy these values to your environment variables.
 
 ### 4. Send Your First Trace
 
@@ -63,7 +89,15 @@ await observa.endTrace();
 **Recommended: Environment Variables**
 
 ```env
-OBSERVA_API_KEY=your-api-key-here
+# If using JWT-formatted API key (from signup):
+OBSERVA_API_KEY=your-jwt-api-key-here
+
+# If using legacy API key (from dashboard - sk_ or pk_ format):
+OBSERVA_API_KEY=sk_...
+OBSERVA_TENANT_ID=your-tenant-id-here
+OBSERVA_PROJECT_ID=your-project-id-here  # Optional
+
+# Common settings:
 OBSERVA_API_URL=https://observa-api.vercel.app
 OBSERVA_ENVIRONMENT=prod
 ```
@@ -167,6 +201,14 @@ app.use(observaMiddleware);
 ### "Cannot find module 'observa-sdk'"
 
 **Solution**: Verify installation with `npm list observa-sdk`
+
+### "tenantId and projectId are required when using legacy API key format"
+
+**Solution**: You're using an API key from the dashboard (`sk_...` or `pk_...` format). You need to:
+1. Provide `tenantId` and `projectId` explicitly in SDK config, OR
+2. Use a JWT-formatted API key from the signup endpoint instead
+
+Find your `tenantId` and `projectId` in the Settings → API Keys page when creating/viewing an API key.
 
 ### "Invalid API Key"
 

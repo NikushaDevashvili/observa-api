@@ -19,6 +19,8 @@ export interface ApiKeyRecord {
   };
   allowed_origins: string[];
   revoked_at: Date | null;
+  created_at?: Date;
+  last_used_at?: Date | null;
 }
 
 /**
@@ -147,6 +149,49 @@ export class ApiKeyService {
   ): boolean {
     const scopes = keyRecord.scopes || { ingest: true, query: false };
     return scopes[requiredScope] === true;
+  }
+
+  /**
+   * List API keys for a tenant
+   * Returns all keys (active and revoked) with metadata (but not the actual key values)
+   */
+  static async listApiKeys(tenantId: string, projectId?: string | null): Promise<ApiKeyRecord[]> {
+    let queryText: string;
+    let params: any[];
+
+    if (projectId) {
+      // List keys for a specific project
+      queryText = `SELECT id, tenant_id, project_id, name, key_prefix, scopes, allowed_origins, revoked_at, created_at, last_used_at
+                   FROM api_keys
+                   WHERE tenant_id = $1 AND project_id = $2
+                   ORDER BY created_at DESC`;
+      params = [tenantId, projectId];
+    } else {
+      // List all keys for a tenant (including tenant-level keys where project_id IS NULL)
+      queryText = `SELECT id, tenant_id, project_id, name, key_prefix, scopes, allowed_origins, revoked_at, created_at, last_used_at
+                   FROM api_keys
+                   WHERE tenant_id = $1
+                   ORDER BY created_at DESC`;
+      params = [tenantId];
+    }
+
+    const result = await query<any>(
+      queryText,
+      params
+    );
+
+    return result.map((row: any) => ({
+      id: row.id,
+      tenant_id: row.tenant_id,
+      project_id: row.project_id,
+      name: row.name,
+      key_prefix: row.key_prefix,
+      scopes: typeof row.scopes === 'string' ? JSON.parse(row.scopes) : row.scopes,
+      allowed_origins: row.allowed_origins || [],
+      revoked_at: row.revoked_at,
+      created_at: row.created_at,
+      last_used_at: row.last_used_at,
+    }));
   }
 
   /**

@@ -710,9 +710,45 @@ Revoke all tokens for a tenant (JWT and Tinybird tokens).
 }
 ```
 
+### GET /api/v1/tenants/:tenantId/api-keys
+
+List all API keys for a tenant/project.
+
+**Authentication**: Session Token
+
+**Query Parameters**:
+- `projectId` (optional): Filter by project ID
+
+**Response**:
+```json
+{
+  "success": true,
+  "apiKeys": [
+    {
+      "id": "uuid",
+      "tenantId": "uuid",
+      "projectId": "uuid" | null,
+      "name": "My API Key",
+      "keyPrefix": "sk_" | "pk_",
+      "scopes": {
+        "ingest": true,
+        "query": false
+      },
+      "allowedOrigins": [],
+      "revoked": false,
+      "createdAt": "2024-01-01T00:00:00Z",
+      "lastUsedAt": "2024-01-02T00:00:00Z" | null
+    }
+  ],
+  "count": 1
+}
+```
+
+**Note**: This endpoint returns API key metadata (not the actual key values for security). The actual key value is only shown once when creating a new key via POST.
+
 ### POST /api/v1/tenants/:tenantId/api-keys
 
-Create a new API key for a tenant.
+Create a new API key for a tenant/project.
 
 **Authentication**: Session Token
 
@@ -720,7 +756,13 @@ Create a new API key for a tenant.
 ```json
 {
   "name": "My API Key",
-  "scopes": ["ingest", "query"]
+  "keyPrefix": "sk_" | "pk_",
+  "projectId": "uuid",
+  "scopes": {
+    "ingest": true,
+    "query": false
+  },
+  "allowedOrigins": []
 }
 ```
 
@@ -729,11 +771,28 @@ Create a new API key for a tenant.
 {
   "success": true,
   "apiKey": "sk_...",
-  "name": "My API Key",
-  "scopes": ["ingest", "query"],
-  "createdAt": "2024-01-01T00:00:00Z"
+  "keyRecord": {
+    "id": "uuid",
+    "tenantId": "uuid",
+    "projectId": "uuid" | null,
+    "name": "My API Key",
+    "keyPrefix": "sk_",
+    "scopes": {
+      "ingest": true,
+      "query": false
+    },
+    "allowedOrigins": [],
+    "createdAt": "2024-01-01T00:00:00Z"
+  },
+  "message": "API key created successfully. Store it securely - it won't be shown again.",
+  "important": "When using this API key with the SDK, you may need to provide tenantId and projectId from keyRecord if using legacy key format (sk_ or pk_)."
 }
 ```
+
+**Important**: 
+- The actual API key value (`apiKey` field) is only shown once in this response - store it securely!
+- When using legacy API keys (`sk_...` or `pk_...` format) with the SDK, you need to provide `tenantId` and `projectId` from the `keyRecord` in the response.
+- Use `GET /api/v1/tenants/:tenantId/api-keys` to list existing keys (without the actual key values).
 
 ---
 
