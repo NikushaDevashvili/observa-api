@@ -78,9 +78,10 @@ export const canonicalEventSchema = z.object({
   parent_span_id: z.string().uuid().nullable(),
   timestamp: z.string(), // ISO 8601
   event_type: eventTypeSchema,
-  conversation_id: z.string().uuid().nullable().optional(),
-  session_id: z.string().uuid().nullable().optional(),
-  user_id: z.string().uuid().nullable().optional(),
+  // Allow non-UUID identifiers for SDK flexibility (e.g., "conv-123", "user_456")
+  conversation_id: z.string().min(1).max(255).nullable().optional(),
+  session_id: z.string().min(1).max(255).nullable().optional(),
+  user_id: z.string().min(1).max(255).nullable().optional(),
   agent_name: z.string().nullable().optional(),
   version: z.string().nullable().optional(),
   route: z.string().nullable().optional(),

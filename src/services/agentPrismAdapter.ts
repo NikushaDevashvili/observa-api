@@ -239,6 +239,7 @@ export interface SpanErrorInfo {
   stackTrace?: string;
   context?: Record<string, any>;
   timestamp?: string;
+  errorCode?: string; // Error code from SDK (e.g., 'invalid_api_key', 'rate_limit_exceeded')
 
   // SOTA: Comprehensive error context
   operation?: {
@@ -1250,6 +1251,17 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
       const errorType = errorData.error_type || "error";
       const errorContext = errorData.context || {};
 
+      // CRITICAL FIX: Extract error_category and error_code directly from errorData
+      // Use SDK-provided values if available, otherwise classify
+      const errorCategoryFromSDK =
+        errorData.error_category || errorContext.error_category;
+      const errorCodeFromSDK = errorData.error_code || errorContext.error_code;
+
+      // Use SDK-provided category if available, otherwise classify
+      const errorCategory =
+        errorCategoryFromSDK ||
+        classifyErrorCategory(errorType, errorMessage, errorContext);
+
       // Build comprehensive error info
       errorInfo = {
         type: errorType,
@@ -1303,7 +1315,7 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
         // SOTA: Network/infrastructure context
         network: {
           error_category:
-            errorContext.error_category ||
+            errorCategoryFromSDK ||
             errorContext.network_error_type ||
             (errorType.includes("timeout")
               ? "connection_timeout"
@@ -1340,19 +1352,23 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
           span
         ),
 
-        // SOTA: Error classification
+        // SOTA: Error classification - USE SDK-PROVIDED VALUES
         classification: {
-          category: classifyErrorCategory(
-            errorType,
-            errorMessage,
-            errorContext
-          ),
+          category: errorCategory,
           severity: classifySeverity(errorType, errorMessage),
           impact: determineImpact(span, errorType),
           known_issue: errorContext.known_issue || false,
         },
+        // Store error code separately in context for frontend access
+        errorCode: errorCodeFromSDK || undefined,
       };
     }
+  }
+
+  // CRITICAL FIX: Also check for error events on LLM call spans
+  // If an error event exists but span.error is not set, still mark as error
+  if (!status && hasErrorEvent && span.llm_call) {
+    status = "error";
   } else if (
     span.tool_call?.result_status === "error" ||
     span.tool_call?.result_status === "timeout"
@@ -1840,8 +1856,20 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
   // Reconvert attributes array since we added error fields
   const finalAttributesArray = convertAttributesToArray(attributes);
 
-  // Enhance title for feedback spans with icons
+  // CRITICAL FIX: Enhance title for LLM calls with model name
+  // If span name is "LLM Call: unknown" or similar, extract model from llm_call
   let enhancedTitle = span.name;
+  if (
+    span.llm_call &&
+    (span.name.includes("unknown") ||
+      !span.name.includes(span.llm_call.model || ""))
+  ) {
+    const modelName =
+      span.llm_call.model || span.llm_call.response_model || "unknown";
+    enhancedTitle = `LLM Call: ${modelName}`;
+  }
+
+  // Enhance title for feedback spans with icons
   if (span.feedback || span.feedback_metadata || span.feedback_type) {
     const feedback = span.feedback || {
       type: span.feedback_metadata?.type || span.feedback_type,
@@ -1881,8 +1909,8 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
   const traceSpan: AgentPrismTraceSpan = {
     id: span.span_id || span.id,
     parentId: span.parent_span_id,
-    name: span.name, // Keep name for compatibility
-    title: enhancedTitle, // Components use this field - enhanced with icons for feedback
+    name: enhancedTitle, // Use enhanced title (includes model name for LLM calls)
+    title: enhancedTitle, // Components use this field - enhanced with icons for feedback and model names
     startTime, // Number (Unix ms) - components accept this format
     endTime, // Number (Unix ms) - components accept this format
     duration: span.duration_ms,

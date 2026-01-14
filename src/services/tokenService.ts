@@ -34,6 +34,25 @@ export class TokenService {
       const decoded = jwt.verify(token, env.JWT_SECRET) as JWTPayload;
       return decoded;
     } catch (error) {
+      // Log error type for debugging (without sensitive data)
+      if (error instanceof Error) {
+        const errorName = error.name;
+        if (errorName === "TokenExpiredError") {
+          console.error("[TokenService] JWT token expired", {
+            expiredAt: (error as any).expiredAt,
+          });
+        } else if (errorName === "JsonWebTokenError") {
+          // This includes signature mismatch
+          console.error("[TokenService] JWT validation failed", {
+            reason: error.message,
+            errorType: "signature_mismatch_or_invalid_format",
+          });
+        } else {
+          console.error("[TokenService] JWT validation error", {
+            errorType: errorName,
+          });
+        }
+      }
       // Token invalid, expired, or malformed
       return null;
     }

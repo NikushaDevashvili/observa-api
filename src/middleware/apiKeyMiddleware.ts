@@ -104,12 +104,29 @@ export function apiKeyMiddleware(requiredScope: RequiredScope = "ingest") {
       return;
     }
 
-    // JWT validation failed - do NOT decode without validation
-    // Log minimal info for debugging (no sensitive data)
-    console.error("[apiKeyMiddleware] JWT validation failed", {
-      tokenLength: token.length,
-      tokenStartsWithEyJ: token.startsWith("eyJ"),
-    });
+    // JWT validation failed - decode without verification to check if it's expired
+    // This helps diagnose the issue without exposing sensitive data
+    const decodedPayload = TokenService.decodeToken(token);
+    if (decodedPayload) {
+      // Token format is valid but signature doesn't match or token expired
+      const now = Math.floor(Date.now() / 1000);
+      const isExpired = decodedPayload.exp && now > decodedPayload.exp;
+      console.error("[apiKeyMiddleware] JWT validation failed", {
+        tokenLength: token.length,
+        tokenStartsWithEyJ: token.startsWith("eyJ"),
+        isExpired,
+        expiresAt: decodedPayload.exp ? new Date(decodedPayload.exp * 1000).toISOString() : null,
+        tenantId: decodedPayload.tenantId, // Safe to log - helps identify the tenant
+        projectId: decodedPayload.projectId, // Safe to log - helps identify the project
+        errorType: isExpired ? "expired" : "signature_mismatch",
+      });
+    } else {
+      // Token format is invalid
+      console.error("[apiKeyMiddleware] JWT validation failed - invalid format", {
+        tokenLength: token.length,
+        tokenStartsWithEyJ: token.startsWith("eyJ"),
+      });
+    }
 
     // Return generic error - don't leak information about token structure
     res.status(401).json({
@@ -117,7 +134,7 @@ export function apiKeyMiddleware(requiredScope: RequiredScope = "ingest") {
         code: "UNAUTHORIZED",
         message: "Invalid or expired authentication token",
         details: {
-          hint: "Provide a valid Bearer token (API key or JWT) in the Authorization header",
+          hint: "Provide a valid Bearer token (API key or JWT) in the Authorization header. If using a JWT, ensure it was generated with the same JWT_SECRET as the backend.",
         },
       },
     });
