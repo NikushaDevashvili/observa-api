@@ -255,7 +255,137 @@ router.post(
         };
       });
 
-      validatedEvents = scrubbedEvents;
+      // #region agent log
+      try {
+        const eventTypes: Record<string, number> = {};
+        let llmCount = 0;
+        let toolCount = 0;
+        let feedbackCount = 0;
+        let llmWithCost = 0;
+        for (const evt of scrubbedEvents) {
+          eventTypes[evt.event_type] = (eventTypes[evt.event_type] || 0) + 1;
+          if (evt.event_type === "llm_call") {
+            llmCount += 1;
+            const cost = (evt as any)?.attributes?.llm_call?.cost;
+            if (typeof cost === "number" && Number.isFinite(cost)) {
+              llmWithCost += 1;
+            }
+          } else if (evt.event_type === "tool_call") {
+            toolCount += 1;
+          } else if (evt.event_type === "feedback") {
+            feedbackCount += 1;
+          }
+        }
+        fetch(
+          "http://127.0.0.1:7243/ingest/58308b77-6db1-45c3-a89e-548ba2d1edd2",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              location: "events.ts:ingest",
+              message: "ingest event summary",
+              data: {
+                eventCount: scrubbedEvents.length,
+                eventTypes,
+                llmCount,
+                toolCount,
+                feedbackCount,
+                llmWithCost,
+              },
+              timestamp: Date.now(),
+              sessionId: "debug-session",
+              runId: "run1",
+              hypothesisId: "D",
+            }),
+          }
+        ).catch(() => {});
+      } catch {
+        // ignore debug logging errors
+      }
+      // #endregion
+
+      // Infer cost for llm_call events when missing (backend-side pricing)
+      const enrichedEvents = scrubbedEvents.map((event) => {
+        if (event.event_type !== "llm_call") return event;
+        const llm = (event.attributes as any)?.llm_call;
+        if (!llm) return event;
+
+        const inputTokens =
+          typeof llm.input_tokens === "number" ? llm.input_tokens : null;
+        const outputTokens =
+          typeof llm.output_tokens === "number" ? llm.output_tokens : null;
+        const totalTokens =
+          typeof llm.total_tokens === "number"
+            ? llm.total_tokens
+            : inputTokens !== null || outputTokens !== null
+            ? (inputTokens || 0) + (outputTokens || 0)
+            : null;
+
+        const inputCost =
+          typeof llm.input_cost === "number" ? llm.input_cost : null;
+        const outputCost =
+          typeof llm.output_cost === "number" ? llm.output_cost : null;
+        const costFromBreakdown =
+          inputCost !== null || outputCost !== null
+            ? (inputCost || 0) + (outputCost || 0)
+            : null;
+
+        const hasCost = llm.cost !== null && llm.cost !== undefined;
+        const model = typeof llm.model === "string" ? llm.model : null;
+        const estimatedCost =
+          !hasCost && costFromBreakdown !== null
+            ? costFromBreakdown
+            : !hasCost && totalTokens !== null && model
+            ? calculateCost(totalTokens, model)
+            : llm.cost;
+
+        return {
+          ...event,
+          attributes: {
+            ...event.attributes,
+            llm_call: {
+              ...llm,
+              total_tokens: totalTokens ?? llm.total_tokens ?? null,
+              cost: estimatedCost ?? llm.cost ?? null,
+            },
+          },
+        };
+      });
+
+      // #region agent log
+      try {
+        let llmWithCost = 0;
+        let llmCount = 0;
+        for (const evt of enrichedEvents) {
+          if (evt.event_type !== "llm_call") continue;
+          llmCount += 1;
+          const cost = (evt as any)?.attributes?.llm_call?.cost;
+          if (typeof cost === "number" && Number.isFinite(cost)) {
+            llmWithCost += 1;
+          }
+        }
+        fetch(
+          "http://127.0.0.1:7243/ingest/58308b77-6db1-45c3-a89e-548ba2d1edd2",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              location: "events.ts:ingest",
+              message: "post-cost-enrichment summary",
+              data: { llmCount, llmWithCost },
+              timestamp: Date.now(),
+              sessionId: "debug-session",
+              runId: "run1",
+              hypothesisId: "E",
+            }),
+          }
+        ).catch(() => {});
+      } catch {
+        // ignore debug logging errors
+      }
+      // #endregion
+
+      validatedEvents = enrichedEvents;
 
       // Validate UUIDs for tenant/project/trace IDs
       for (let i = 0; i < validatedEvents.length; i++) {
