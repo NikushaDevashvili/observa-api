@@ -879,12 +879,82 @@ export class TraceQueryService {
 
       // If we have canonical events, build tree from them
       if (canonicalEvents.length > 0) {
-        return await this.buildTreeFromCanonicalEvents(
+        // #region agent log
+        try {
+          const eventTypes: Record<string, number> = {};
+          let feedbackCount = 0;
+          for (const evt of canonicalEvents) {
+            eventTypes[evt.event_type] =
+              (eventTypes[evt.event_type] || 0) + 1;
+            if (evt.event_type === "feedback") feedbackCount += 1;
+          }
+          fetch(
+            "http://127.0.0.1:7243/ingest/58308b77-6db1-45c3-a89e-548ba2d1edd2",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                location: "traceQueryService.ts:getTraceDetailTree",
+                message: "canonical events summary",
+                data: {
+                  traceId,
+                  eventTypes,
+                  feedbackCount,
+                },
+                timestamp: Date.now(),
+                sessionId: "debug-session",
+                runId: "run1",
+                hypothesisId: "M",
+              }),
+            }
+          ).catch(() => {});
+        } catch {
+          // ignore debug logging errors
+        }
+        // #endregion
+
+        const tree = await this.buildTreeFromCanonicalEvents(
           canonicalEvents,
           traceId,
           tenantId,
           projectId || null
         );
+        // #region agent log
+        try {
+          const allSpans = tree?.allSpans || tree?.spans || [];
+          const spanTypes: Record<string, number> = {};
+          let feedbackSpans = 0;
+          for (const span of allSpans) {
+            const type = span.event_type || span.type || "unknown";
+            spanTypes[type] = (spanTypes[type] || 0) + 1;
+            if (type === "feedback") feedbackSpans += 1;
+          }
+          fetch(
+            "http://127.0.0.1:7243/ingest/58308b77-6db1-45c3-a89e-548ba2d1edd2",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                location: "traceQueryService.ts:getTraceDetailTree",
+                message: "trace tree span summary",
+                data: {
+                  traceId,
+                  spanTypes,
+                  feedbackSpans,
+                },
+                timestamp: Date.now(),
+                sessionId: "debug-session",
+                runId: "run1",
+                hypothesisId: "N",
+              }),
+            }
+          ).catch(() => {});
+        } catch {
+          // ignore debug logging errors
+        }
+        // #endregion
+
+        return tree;
       }
 
       // Fallback: Build from analysis_results (backward compatibility)
