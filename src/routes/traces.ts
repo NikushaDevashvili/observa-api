@@ -63,12 +63,63 @@ function parseStringList(value: unknown): string[] | undefined {
     .filter(Boolean);
 }
 
-function performanceBadgeFromLatency(latencyMs: unknown): "fast" | "medium" | "slow" | null {
+function performanceBadgeFromLatency(
+  latencyMs: unknown
+): "fast" | "medium" | "slow" | null {
   const ms = typeof latencyMs === "number" ? latencyMs : null;
   if (ms === null) return null;
   if (ms < 500) return "fast";
   if (ms < 2000) return "medium";
   return "slow";
+}
+
+function scrubLlmMessages(target: any): void {
+  if (!target || typeof target !== "object") return;
+  if ("input_messages" in target) delete target.input_messages;
+  if ("output_messages" in target) delete target.output_messages;
+  if ("system_instructions" in target) delete target.system_instructions;
+}
+
+function scrubTraceMessages(trace: any): void {
+  if (!trace || typeof trace !== "object") return;
+
+  const seen = new Set<any>();
+  const scrubSpan = (span: any) => {
+    if (!span || typeof span !== "object" || seen.has(span)) return;
+    seen.add(span);
+
+    scrubLlmMessages(span.llm_call);
+    scrubLlmMessages(span.details);
+
+    if (Array.isArray(span.events)) {
+      for (const event of span.events) {
+        if (event?.attributes?.llm_call) {
+          scrubLlmMessages(event.attributes.llm_call);
+        }
+      }
+    }
+
+    if (Array.isArray(span.children)) {
+      for (const child of span.children) {
+        scrubSpan(child);
+      }
+    }
+  };
+
+  const allSpans = Array.isArray(trace.allSpans) ? trace.allSpans : null;
+  const spans = Array.isArray(trace.spans) ? trace.spans : null;
+
+  if (allSpans) {
+    for (const span of allSpans) scrubSpan(span);
+  } else if (spans) {
+    for (const span of spans) scrubSpan(span);
+  }
+
+  if (trace.spansById && typeof trace.spansById === "object") {
+    for (const span of Object.values(trace.spansById)) {
+      scrubSpan(span);
+    }
+  }
 }
 
 /**
@@ -396,7 +447,8 @@ router.get("/", async (req: Request, res: Response) => {
     const userIds =
       parseStringList(req.query.userIds ?? req.query.userId) || undefined;
     const environments =
-      parseStringList(req.query.environments ?? req.query.environment) || undefined;
+      parseStringList(req.query.environments ?? req.query.environment) ||
+      undefined;
     const conversationId = req.query.conversationId as string | undefined;
     const minCost = parseNumber(req.query.minCost);
     const maxCost = parseNumber(req.query.maxCost);
@@ -593,7 +645,8 @@ router.get("/export", async (req: Request, res: Response) => {
     const userIds =
       parseStringList(req.query.userIds ?? req.query.userId) || undefined;
     const environments =
-      parseStringList(req.query.environments ?? req.query.environment) || undefined;
+      parseStringList(req.query.environments ?? req.query.environment) ||
+      undefined;
     const conversationId = req.query.conversationId as string | undefined;
     const minCost = parseNumber(req.query.minCost);
     const maxCost = parseNumber(req.query.maxCost);
@@ -675,9 +728,15 @@ router.get("/export", async (req: Request, res: Response) => {
         t.message_index,
       ]);
 
-      const csv = [headers.join(","), ...rows.map((r) => r.map(escape).join(","))].join("\n");
+      const csv = [
+        headers.join(","),
+        ...rows.map((r) => r.map(escape).join(",")),
+      ].join("\n");
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
-      res.setHeader("Content-Disposition", `attachment; filename="traces-export.csv"`);
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="traces-export.csv"`
+      );
       return res.status(200).send(csv);
     }
 
@@ -711,6 +770,7 @@ router.get("/:traceId/export", async (req: Request, res: Response) => {
   try {
     const { traceId } = req.params;
     const format = String(req.query.format || "json").toLowerCase();
+    const includeMessages = parseBool(req.query.includeMessages) ?? false;
 
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -738,6 +798,10 @@ router.get("/:traceId/export", async (req: Request, res: Response) => {
       return res.status(404).json({
         error: "Trace not found",
       });
+    }
+
+    if (!includeMessages) {
+      scrubTraceMessages(traceTree);
     }
 
     let conversation: any = null;
@@ -769,21 +833,35 @@ router.get("/:traceId/export", async (req: Request, res: Response) => {
         `- **End**: ${s.end_time || "n/a"}`,
         `- **Total latency (ms)**: ${s.total_latency_ms ?? "n/a"}`,
         `- **Total tokens**: ${s.total_tokens ?? "n/a"}`,
-        `- **Total cost (USD)**: ${s.total_cost ?? traceTree?.costBreakdown?.totalCostUsd ?? "n/a"}`,
+        `- **Total cost (USD)**: ${
+          s.total_cost ?? traceTree?.costBreakdown?.totalCostUsd ?? "n/a"
+        }`,
         ``,
         `## Signals`,
         ...(Array.isArray(traceTree.signals) && traceTree.signals.length > 0
           ? traceTree.signals.map((sig: any) =>
-              `- **${sig.signal_type}** (${sig.severity}) ${sig.score ?? sig.confidence ?? ""}`.trim()
+              `- **${sig.signal_type}** (${sig.severity}) ${
+                sig.score ?? sig.confidence ?? ""
+              }`.trim()
             )
           : [`- None`]),
         ``,
         `## Performance`,
-        `- **Bottleneck span**: ${traceTree?.performanceAnalysis?.bottleneckSpanId || "n/a"}`,
-        `- **Bottleneck duration (ms)**: ${traceTree?.performanceAnalysis?.bottleneckDurationMs ?? "n/a"}`,
+        `- **Bottleneck span**: ${
+          traceTree?.performanceAnalysis?.bottleneckSpanId || "n/a"
+        }`,
+        `- **Bottleneck duration (ms)**: ${
+          traceTree?.performanceAnalysis?.bottleneckDurationMs ?? "n/a"
+        }`,
         ...(Array.isArray(traceTree?.performanceAnalysis?.suggestions) &&
         traceTree.performanceAnalysis.suggestions.length > 0
-          ? [``, `### Suggestions`, ...traceTree.performanceAnalysis.suggestions.map((x: string) => `- ${x}`)]
+          ? [
+              ``,
+              `### Suggestions`,
+              ...traceTree.performanceAnalysis.suggestions.map(
+                (x: string) => `- ${x}`
+              ),
+            ]
           : []),
         ``,
         `## Cost Breakdown`,
@@ -799,11 +877,21 @@ router.get("/:traceId/export", async (req: Request, res: Response) => {
           : [`- n/a`]),
         ``,
         `## Token Efficiency`,
-        `- **Tokens/char**: ${traceTree?.tokenEfficiency?.tokensPerCharacter ?? "n/a"}`,
-        `- **Benchmark**: ${traceTree?.tokenEfficiency?.benchmarkComparison ?? "n/a"}`,
+        `- **Tokens/char**: ${
+          traceTree?.tokenEfficiency?.tokensPerCharacter ?? "n/a"
+        }`,
+        `- **Benchmark**: ${
+          traceTree?.tokenEfficiency?.benchmarkComparison ?? "n/a"
+        }`,
         ``,
         conversation
-          ? `## Conversation\n- **Conversation ID**: ${conversation.id}\n- **Message**: ${conversation.messageIndex ?? "n/a"} of ${conversation.totalMessages}\n- **Prev**: ${conversation.previousTraceId ?? "n/a"}\n- **Next**: ${conversation.nextTraceId ?? "n/a"}\n`
+          ? `## Conversation\n- **Conversation ID**: ${
+              conversation.id
+            }\n- **Message**: ${conversation.messageIndex ?? "n/a"} of ${
+              conversation.totalMessages
+            }\n- **Prev**: ${
+              conversation.previousTraceId ?? "n/a"
+            }\n- **Next**: ${conversation.nextTraceId ?? "n/a"}\n`
           : `## Conversation\n- None\n`,
       ].join("\n");
 
@@ -834,7 +922,8 @@ router.get("/:traceId/export", async (req: Request, res: Response) => {
 router.get("/:traceId", async (req: Request, res: Response) => {
   try {
     const { traceId } = req.params;
-    const format = req.query.format as string | undefined; // Support ?format=tree for new format
+    const format = String(req.query.format || "tree").toLowerCase(); // default to tree
+    const includeMessages = parseBool(req.query.includeMessages) ?? false;
 
     // Get user from session
     const authHeader = req.headers.authorization;
@@ -869,6 +958,9 @@ router.get("/:traceId", async (req: Request, res: Response) => {
 
       // Transform to agent-prism format
       const agentPrismData = AgentPrismAdapterService.adapt(traceTree);
+      if (!includeMessages) {
+        scrubTraceMessages(agentPrismData);
+      }
 
       let conversation: any = null;
       const conversationId = traceTree?.summary?.conversation_id;
@@ -892,7 +984,7 @@ router.get("/:traceId", async (req: Request, res: Response) => {
       });
     }
 
-    // If format=tree requested, return new tree structure
+    // If format=tree requested (or default), return new tree structure
     if (format === "tree") {
       const traceTree = await TraceQueryService.getTraceDetailTree(
         traceId,
@@ -904,6 +996,10 @@ router.get("/:traceId", async (req: Request, res: Response) => {
         return res.status(404).json({
           error: "Trace not found",
         });
+      }
+
+      if (!includeMessages) {
+        scrubTraceMessages(traceTree);
       }
 
       let conversation: any = null;
@@ -929,6 +1025,7 @@ router.get("/:traceId", async (req: Request, res: Response) => {
     }
 
     // Legacy format (backward compatibility)
+    // Use ?format=legacy explicitly when older clients rely on flat fields
     const analysisResult = await TraceQueryService.getTraceDetail(
       traceId,
       user.tenantId,
@@ -968,20 +1065,50 @@ router.get("/:traceId", async (req: Request, res: Response) => {
       const relevance = analysisResult.relevance_score;
       const helpfulness = analysisResult.helpfulness_score;
       const mk = (label: string, score: any) => {
-        if (typeof score !== "number") return { score: null, explanation: `${label} score not available.` };
-        if (score < 0.5) return { score, explanation: `${label} is low; users may perceive this response as weak.` };
-        if (score < 0.7) return { score, explanation: `${label} is moderate; there is room to improve.` };
+        if (typeof score !== "number")
+          return { score: null, explanation: `${label} score not available.` };
+        if (score < 0.5)
+          return {
+            score,
+            explanation: `${label} is low; users may perceive this response as weak.`,
+          };
+        if (score < 0.7)
+          return {
+            score,
+            explanation: `${label} is moderate; there is room to improve.`,
+          };
         return { score, explanation: `${label} is strong.` };
       };
       const improvements: string[] = [];
-      if (analysisResult.has_context_drop) improvements.push("Improve retrieval quality and ensure relevant context is included.");
-      if (analysisResult.has_faithfulness_issue) improvements.push("Add citations/grounding and tighten instructions to avoid unsupported claims.");
-      if (analysisResult.has_prompt_injection) improvements.push("Add prompt-injection guardrails and input sanitization.");
-      if (analysisResult.has_context_overflow) improvements.push("Reduce prompt size with summarization or better chunk selection.");
-      if (analysisResult.has_latency_anomaly) improvements.push("Optimize slow spans and add caching where possible.");
-      if (analysisResult.has_cost_anomaly) improvements.push("Consider cheaper models, shorter prompts, and token budgeting.");
+      if (analysisResult.has_context_drop)
+        improvements.push(
+          "Improve retrieval quality and ensure relevant context is included."
+        );
+      if (analysisResult.has_faithfulness_issue)
+        improvements.push(
+          "Add citations/grounding and tighten instructions to avoid unsupported claims."
+        );
+      if (analysisResult.has_prompt_injection)
+        improvements.push(
+          "Add prompt-injection guardrails and input sanitization."
+        );
+      if (analysisResult.has_context_overflow)
+        improvements.push(
+          "Reduce prompt size with summarization or better chunk selection."
+        );
+      if (analysisResult.has_latency_anomaly)
+        improvements.push(
+          "Optimize slow spans and add caching where possible."
+        );
+      if (analysisResult.has_cost_anomaly)
+        improvements.push(
+          "Consider cheaper models, shorter prompts, and token budgeting."
+        );
       return {
-        overallScore: typeof analysisResult.quality_score === "number" ? analysisResult.quality_score : null,
+        overallScore:
+          typeof analysisResult.quality_score === "number"
+            ? analysisResult.quality_score
+            : null,
         breakdown: {
           coherence: mk("Coherence", coherence),
           relevance: mk("Relevance", relevance),
