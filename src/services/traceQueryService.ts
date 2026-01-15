@@ -158,7 +158,9 @@ export class TraceQueryService {
 
   private static buildPerformanceAnalysis(summary: any, allSpans: any[]): any {
     const totalLatencyMs =
-      typeof summary?.total_latency_ms === "number" ? summary.total_latency_ms : null;
+      typeof summary?.total_latency_ms === "number"
+        ? summary.total_latency_ms
+        : null;
     let slowest = null as any;
     for (const s of allSpans) {
       const d = typeof s?.duration_ms === "number" ? s.duration_ms : null;
@@ -175,14 +177,18 @@ export class TraceQueryService {
 
     const suggestions: string[] = [];
     if (slowest) {
-      const name = slowest.name || slowest.displayName || slowest.type || "span";
+      const name =
+        slowest.name || slowest.displayName || slowest.type || "span";
       if (bottleneckPercentage !== null && bottleneckPercentage >= 50) {
         suggestions.push(
           `Most time is spent in "${name}" (~${bottleneckPercentage.toFixed(
             1
           )}% of total). Consider caching, batching, or reducing work in this step.`
         );
-      } else if (bottleneckDurationMs !== null && bottleneckDurationMs >= 1000) {
+      } else if (
+        bottleneckDurationMs !== null &&
+        bottleneckDurationMs >= 1000
+      ) {
         suggestions.push(
           `"${name}" took ${bottleneckDurationMs}ms. Consider adding timeouts, retries with backoff, and caching where applicable.`
         );
@@ -215,25 +221,34 @@ export class TraceQueryService {
   }
 
   private static buildCostBreakdown(summary: any, allSpans: any[]): any {
-    let total = typeof summary?.total_cost === "number" ? summary.total_cost : 0;
+    let total =
+      typeof summary?.total_cost === "number" ? summary.total_cost : 0;
     const byType: Record<string, number> = {};
     const bySpan: Array<{ spanId: string; name: string; costUsd: number }> = [];
 
     for (const s of allSpans) {
       // Try multiple locations since span formats differ across paths.
+      // Include non-LLM cost sources like embeddings and vector DB operations.
       const cost =
         s?.cost_usd ??
+        s?.cost ??
         s?.llm_call?.cost ??
+        s?.embedding?.cost ??
+        s?.vector_db_operation?.cost ??
+        s?.cache_operation?.saved_cost ??
         s?.details?.cost ??
         s?.attributes?.cost ??
         null;
       const costNum = typeof cost === "number" ? cost : null;
-      if (costNum === null || !Number.isFinite(costNum) || costNum <= 0) continue;
+      if (costNum === null || !Number.isFinite(costNum) || costNum <= 0)
+        continue;
 
       // Ensure total includes per-span if summary total isn't populated.
       if (!summary?.total_cost) total += costNum;
 
-      const typeKey = String(s?.type || s?.event_type || "unknown").toLowerCase();
+      const typeKey = String(
+        s?.type || s?.event_type || "unknown"
+      ).toLowerCase();
       byType[typeKey] = (byType[typeKey] || 0) + costNum;
       bySpan.push({
         spanId: s?.id || s?.span_id || "unknown",
@@ -270,7 +285,8 @@ export class TraceQueryService {
       if (typeof ot === "number") completionTokens += ot;
     }
 
-    const inputChars = typeof summary?.query === "string" ? summary.query.length : 0;
+    const inputChars =
+      typeof summary?.query === "string" ? summary.query.length : 0;
     const outputChars =
       typeof summary?.response === "string" ? summary.response.length : 0;
     const totalChars = inputChars + outputChars;
@@ -281,10 +297,13 @@ export class TraceQueryService {
     const inputEfficiency =
       promptTokens > 0 && inputChars > 0 ? promptTokens / inputChars : null;
     const outputEfficiency =
-      completionTokens > 0 && outputChars > 0 ? completionTokens / outputChars : null;
+      completionTokens > 0 && outputChars > 0
+        ? completionTokens / outputChars
+        : null;
 
     // Simple benchmark heuristic
-    let benchmarkComparison: "above_average" | "average" | "below_average" = "average";
+    let benchmarkComparison: "above_average" | "average" | "below_average" =
+      "average";
     if (tokensPerCharacter !== null) {
       if (tokensPerCharacter > 1.2) benchmarkComparison = "below_average";
       else if (tokensPerCharacter < 0.6) benchmarkComparison = "above_average";
@@ -300,27 +319,60 @@ export class TraceQueryService {
 
   private static buildQualityExplanation(analysis: any): any | null {
     if (!analysis) return null;
-    const qualityScore = analysis.qualityScore ?? analysis.quality_score ?? null;
-    const coherence = analysis.coherenceScore ?? analysis.coherence_score ?? null;
-    const relevance = analysis.relevanceScore ?? analysis.relevance_score ?? null;
-    const helpfulness = analysis.helpfulnessScore ?? analysis.helpfulness_score ?? null;
+    const qualityScore =
+      analysis.qualityScore ?? analysis.quality_score ?? null;
+    const coherence =
+      analysis.coherenceScore ?? analysis.coherence_score ?? null;
+    const relevance =
+      analysis.relevanceScore ?? analysis.relevance_score ?? null;
+    const helpfulness =
+      analysis.helpfulnessScore ?? analysis.helpfulness_score ?? null;
 
-    const scoreExplain = (label: string, score: any): { score: number | null; explanation: string } => {
+    const scoreExplain = (
+      label: string,
+      score: any
+    ): { score: number | null; explanation: string } => {
       if (typeof score !== "number") {
         return { score: null, explanation: `${label} score not available.` };
       }
-      if (score < 0.5) return { score, explanation: `${label} is low; users may perceive this response as weak.` };
-      if (score < 0.7) return { score, explanation: `${label} is moderate; there is room to improve.` };
+      if (score < 0.5)
+        return {
+          score,
+          explanation: `${label} is low; users may perceive this response as weak.`,
+        };
+      if (score < 0.7)
+        return {
+          score,
+          explanation: `${label} is moderate; there is room to improve.`,
+        };
       return { score, explanation: `${label} is strong.` };
     };
 
     const improvements: string[] = [];
-    if (analysis.hasContextDrop) improvements.push("Improve retrieval quality and ensure relevant context is included.");
-    if (analysis.hasFaithfulnessIssue) improvements.push("Add citations/grounding and tighten instructions to avoid unsupported claims.");
-    if (analysis.hasPromptInjection) improvements.push("Add prompt-injection guardrails and input sanitization.");
-    if (analysis.hasContextOverflow) improvements.push("Reduce prompt size with summarization or better chunk selection.");
-    if (analysis.hasLatencyAnomaly) improvements.push("Optimize slow spans (retrieval/tool/LLM) and add caching where possible.");
-    if (analysis.hasCostAnomaly) improvements.push("Consider cheaper models, shorter prompts, and token budgeting.");
+    if (analysis.hasContextDrop)
+      improvements.push(
+        "Improve retrieval quality and ensure relevant context is included."
+      );
+    if (analysis.hasFaithfulnessIssue)
+      improvements.push(
+        "Add citations/grounding and tighten instructions to avoid unsupported claims."
+      );
+    if (analysis.hasPromptInjection)
+      improvements.push(
+        "Add prompt-injection guardrails and input sanitization."
+      );
+    if (analysis.hasContextOverflow)
+      improvements.push(
+        "Reduce prompt size with summarization or better chunk selection."
+      );
+    if (analysis.hasLatencyAnomaly)
+      improvements.push(
+        "Optimize slow spans (retrieval/tool/LLM) and add caching where possible."
+      );
+    if (analysis.hasCostAnomaly)
+      improvements.push(
+        "Consider cheaper models, shorter prompts, and token budgeting."
+      );
 
     return {
       overallScore: typeof qualityScore === "number" ? qualityScore : null,
@@ -470,12 +522,17 @@ export class TraceQueryService {
   static async getTracesV2(
     tenantId: string,
     opts: TraceListQueryOptions
-  ): Promise<{ traces: TraceSummary[]; total: number; stats?: TraceListStats }> {
+  ): Promise<{
+    traces: TraceSummary[];
+    total: number;
+    stats?: TraceListStats;
+  }> {
     try {
       const limit = typeof opts.limit === "number" ? opts.limit : 50;
       const offset = typeof opts.offset === "number" ? opts.offset : 0;
       const sortBy: TraceListSortBy = opts.sortBy || "timestamp";
-      const sortOrder = (opts.sortOrder || "desc").toLowerCase() === "asc" ? "ASC" : "DESC";
+      const sortOrder =
+        (opts.sortOrder || "desc").toLowerCase() === "asc" ? "ASC" : "DESC";
 
       const { whereClause, params, nextIndex } = this.buildTraceListWhereClause(
         tenantId,
@@ -884,8 +941,7 @@ export class TraceQueryService {
           const eventTypes: Record<string, number> = {};
           let feedbackCount = 0;
           for (const evt of canonicalEvents) {
-            eventTypes[evt.event_type] =
-              (eventTypes[evt.event_type] || 0) + 1;
+            eventTypes[evt.event_type] = (eventTypes[evt.event_type] || 0) + 1;
             if (evt.event_type === "feedback") feedbackCount += 1;
           }
           fetch(
@@ -1233,7 +1289,7 @@ export class TraceQueryService {
             jsonStr = jsonStr.replace(/\\'/g, "'");
             // Also fix double-escaped backslashes if needed
             jsonStr = jsonStr.replace(/\\\\'/g, "\\'");
-            
+
             attributes = JSON.parse(jsonStr);
           }
         } else if (event.attributes) {
@@ -1241,9 +1297,10 @@ export class TraceQueryService {
         }
       } catch (e) {
         const errorMsg = e instanceof Error ? e.message : String(e);
-        const jsonPreview = typeof event.attributes_json === "string" 
-          ? event.attributes_json.substring(0, 200) 
-          : "not a string";
+        const jsonPreview =
+          typeof event.attributes_json === "string"
+            ? event.attributes_json.substring(0, 200)
+            : "not a string";
         console.error(
           `[TraceQueryService] Failed to parse attributes_json for event ${event.event_type} (trace: ${event.trace_id}, span: ${event.span_id}):`,
           errorMsg
@@ -1321,6 +1378,18 @@ export class TraceQueryService {
     // First pass: create all spans and attach events
     // For root span events (parent_span_id === null), create separate spans for each event type
     // This allows the frontend to display and click on each event type separately
+    const rootEventTypes = new Set([
+      "retrieval",
+      "llm_call",
+      "tool_call",
+      "output",
+      "feedback",
+      "embedding",
+      "vector_db_operation",
+      "cache_operation",
+      "agent_create",
+      "error",
+    ]);
     for (const event of parsedEvents) {
       let spanId = event.span_id;
       let parentSpanId = event.parent_span_id;
@@ -1329,11 +1398,7 @@ export class TraceQueryService {
       // This makes each event type (retrieval, llm_call, output, feedback, etc.) a separate clickable node
       if (
         event.parent_span_id === null &&
-        (event.event_type === "retrieval" ||
-          event.event_type === "llm_call" ||
-          event.event_type === "tool_call" ||
-          event.event_type === "output" ||
-          event.event_type === "feedback")
+        rootEventTypes.has(event.event_type)
       ) {
         // Create a unique span ID for this event type
         spanId = `${event.span_id}-${event.event_type}`;
@@ -1355,8 +1420,24 @@ export class TraceQueryService {
           spanName = "Output";
         } else if (event.event_type === "feedback") {
           const feedbackType = event.attributes?.feedback?.type || "unknown";
-          const feedbackTypeLabel = feedbackType.charAt(0).toUpperCase() + feedbackType.slice(1);
+          const feedbackTypeLabel =
+            feedbackType.charAt(0).toUpperCase() + feedbackType.slice(1);
           spanName = `Feedback: ${feedbackTypeLabel}`;
+        } else if (event.event_type === "embedding") {
+          const model = event.attributes?.embedding?.model || "unknown";
+          spanName = `Embedding: ${model}`;
+        } else if (event.event_type === "vector_db_operation") {
+          const op = event.attributes?.vector_db_operation?.operation_type;
+          spanName = `Vector DB: ${op || "operation"}`;
+        } else if (event.event_type === "cache_operation") {
+          const status = event.attributes?.cache_operation?.hit_status;
+          spanName = `Cache: ${status || "operation"}`;
+        } else if (event.event_type === "agent_create") {
+          const agentName =
+            event.attributes?.agent_create?.agent_name || "agent";
+          spanName = `Agent Create: ${agentName}`;
+        } else if (event.event_type === "error") {
+          spanName = "Error";
         } else if (event.parent_span_id === null) {
           spanName = "Trace";
         }
@@ -1393,10 +1474,31 @@ export class TraceQueryService {
             has_comment: !!feedback.comment,
             comment: feedback.comment || null,
             // Icon suggestions for frontend
-            icon: feedback.type === "like" ? "👍" : feedback.type === "dislike" ? "👎" : feedback.type === "rating" ? "⭐" : "✏️",
+            icon:
+              feedback.type === "like"
+                ? "👍"
+                : feedback.type === "dislike"
+                ? "👎"
+                : feedback.type === "rating"
+                ? "⭐"
+                : "✏️",
             // Color suggestions for frontend
-            color_class: feedback.type === "like" ? "text-green-600" : feedback.type === "dislike" ? "text-red-600" : feedback.type === "rating" ? "text-yellow-600" : "text-blue-600",
-            bg_color_class: feedback.type === "like" ? "bg-green-50 border-green-200" : feedback.type === "dislike" ? "bg-red-50 border-red-200" : feedback.type === "rating" ? "bg-yellow-50 border-yellow-200" : "bg-blue-50 border-blue-200",
+            color_class:
+              feedback.type === "like"
+                ? "text-green-600"
+                : feedback.type === "dislike"
+                ? "text-red-600"
+                : feedback.type === "rating"
+                ? "text-yellow-600"
+                : "text-blue-600",
+            bg_color_class:
+              feedback.type === "like"
+                ? "bg-green-50 border-green-200"
+                : feedback.type === "dislike"
+                ? "bg-red-50 border-red-200"
+                : feedback.type === "rating"
+                ? "bg-yellow-50 border-yellow-200"
+                : "bg-blue-50 border-blue-200",
           };
         }
 
@@ -1448,9 +1550,7 @@ export class TraceQueryService {
       const traceEndEvent = spanEvents.find(
         (e: any) => e.event_type === "trace_end"
       );
-      const errorEvent = spanEvents.find(
-        (e: any) => e.event_type === "error"
-      );
+      const errorEvent = spanEvents.find((e: any) => e.event_type === "error");
       const feedbackEvent = spanEvents.find(
         (e: any) => e.event_type === "feedback"
       );
@@ -1461,9 +1561,10 @@ export class TraceQueryService {
         span.feedback = {
           type: feedbackAttrs.type || null,
           outcome: feedbackAttrs.outcome || null,
-          rating: feedbackAttrs.rating !== undefined && feedbackAttrs.rating !== null 
-            ? parseFloat(String(feedbackAttrs.rating)) 
-            : null,
+          rating:
+            feedbackAttrs.rating !== undefined && feedbackAttrs.rating !== null
+              ? parseFloat(String(feedbackAttrs.rating))
+              : null,
           comment: feedbackAttrs.comment || null,
         };
       }
@@ -1551,7 +1652,8 @@ export class TraceQueryService {
           vector_metric: retrievalAttrs.vector_metric || null,
           rerank_score: retrievalAttrs.rerank_score || null,
           fusion_method: retrievalAttrs.fusion_method || null,
-          deduplication_removed_count: retrievalAttrs.deduplication_removed_count || null,
+          deduplication_removed_count:
+            retrievalAttrs.deduplication_removed_count || null,
           quality_score: retrievalAttrs.quality_score || null,
         };
         // Ensure retrieval data is available even if event is not found directly
@@ -1563,9 +1665,11 @@ export class TraceQueryService {
             retrievalEvent.attributes.retrieval.retrieval_context;
         }
       }
-      
+
       // TIER 1: Extract embedding details
-      const embeddingEvent = spanEvents.find((e) => e.event_type === "embedding");
+      const embeddingEvent = spanEvents.find(
+        (e) => e.event_type === "embedding"
+      );
       if (embeddingEvent?.attributes?.embedding) {
         const embeddingAttrs = embeddingEvent.attributes.embedding;
         span.embedding = {
@@ -1584,9 +1688,11 @@ export class TraceQueryService {
           provider_name: embeddingAttrs.provider_name || null,
         };
       }
-      
+
       // TIER 3: Extract vector DB operation details
-      const vectorDbEvent = spanEvents.find((e) => e.event_type === "vector_db_operation");
+      const vectorDbEvent = spanEvents.find(
+        (e) => e.event_type === "vector_db_operation"
+      );
       if (vectorDbEvent?.attributes?.vector_db_operation) {
         const vdbAttrs = vectorDbEvent.attributes.vector_db_operation;
         span.vector_db_operation = {
@@ -1603,9 +1709,11 @@ export class TraceQueryService {
           provider_name: vdbAttrs.provider_name || null,
         };
       }
-      
+
       // TIER 3: Extract cache operation details
-      const cacheEvent = spanEvents.find((e) => e.event_type === "cache_operation");
+      const cacheEvent = spanEvents.find(
+        (e) => e.event_type === "cache_operation"
+      );
       if (cacheEvent?.attributes?.cache_operation) {
         const cacheAttrs = cacheEvent.attributes.cache_operation;
         span.cache_operation = {
@@ -1619,9 +1727,11 @@ export class TraceQueryService {
           eviction_info: cacheAttrs.eviction_info || null,
         };
       }
-      
+
       // TIER 3: Extract agent creation details
-      const agentCreateEvent = spanEvents.find((e) => e.event_type === "agent_create");
+      const agentCreateEvent = spanEvents.find(
+        (e) => e.event_type === "agent_create"
+      );
       if (agentCreateEvent?.attributes?.agent_create) {
         const agentAttrs = agentCreateEvent.attributes.agent_create;
         span.agent_create = {
@@ -1755,39 +1865,49 @@ export class TraceQueryService {
         span.tool_status = span.tool_call.result_status;
         span.latency_ms = span.tool_call.latency_ms;
         span.error_message = span.tool_call.error_message;
-        
+
         // CRITICAL: Populate input/output fields comprehensively for frontend
         // Input: All arguments with tool name
         if (span.tool_call.args !== null && span.tool_call.args !== undefined) {
           const toolInput: any = {
             tool_name: span.tool_call.tool_name,
-            ...(typeof span.tool_call.args === "object" && span.tool_call.args !== null
+            ...(typeof span.tool_call.args === "object" &&
+            span.tool_call.args !== null
               ? span.tool_call.args
               : { args: span.tool_call.args }),
           };
           span.input = JSON.stringify(toolInput, null, 2);
         } else {
-          span.input = JSON.stringify({ tool_name: span.tool_call.tool_name }, null, 2);
+          span.input = JSON.stringify(
+            { tool_name: span.tool_call.tool_name },
+            null,
+            2
+          );
         }
-        
+
         // Output: Complete result with all metadata
         const toolOutput: any = {};
-        
+
         // For search tools, ensure all results are preserved
-        if (span.tool_call.tool_name === "web_search" || 
-            span.tool_call.tool_name?.includes("search") ||
-            span.tool_call.tool_name?.includes("Search")) {
+        if (
+          span.tool_call.tool_name === "web_search" ||
+          span.tool_call.tool_name?.includes("search") ||
+          span.tool_call.tool_name?.includes("Search")
+        ) {
           if (span.tool_call.result) {
-            if (typeof span.tool_call.result === "object" && span.tool_call.result !== null) {
+            if (
+              typeof span.tool_call.result === "object" &&
+              span.tool_call.result !== null
+            ) {
               // Preserve all fields from result
               Object.assign(toolOutput, span.tool_call.result);
-              
+
               // Ensure results array is complete (not truncated)
               if (Array.isArray(span.tool_call.result.results)) {
                 toolOutput.results = span.tool_call.result.results;
                 toolOutput.total_results = span.tool_call.result.results.length;
               }
-              
+
               // Preserve all result fields (items_found, data, urls, snippets, etc.)
               if (span.tool_call.result.items_found !== undefined) {
                 toolOutput.items_found = span.tool_call.result.items_found;
@@ -1813,7 +1933,10 @@ export class TraceQueryService {
           }
         } else {
           // For all other tools, preserve complete result structure
-          if (span.tool_call.result !== null && span.tool_call.result !== undefined) {
+          if (
+            span.tool_call.result !== null &&
+            span.tool_call.result !== undefined
+          ) {
             if (typeof span.tool_call.result === "object") {
               Object.assign(toolOutput, span.tool_call.result);
             } else {
@@ -1821,7 +1944,7 @@ export class TraceQueryService {
             }
           }
         }
-        
+
         // Always include execution metadata
         toolOutput.execution = {
           status: span.tool_call.result_status,
@@ -1831,25 +1954,28 @@ export class TraceQueryService {
             error_message: span.tool_call.error_message,
           }),
         };
-        
+
         // Include error details if present
-        if (span.tool_call.result_status === "error" || span.tool_call.result_status === "timeout") {
+        if (
+          span.tool_call.result_status === "error" ||
+          span.tool_call.result_status === "timeout"
+        ) {
           toolOutput.error = {
             status: span.tool_call.result_status,
             message: span.tool_call.error_message || "No result returned",
           };
         }
-        
+
         if (Object.keys(toolOutput).length > 0) {
           span.output = JSON.stringify(toolOutput, null, 2);
         } else {
           // Fallback: Show at least execution metadata
           span.output = JSON.stringify(toolOutput.execution, null, 2);
         }
-        
+
         span.hasInput = !!span.input;
         span.hasOutput = !!span.output;
-        
+
         // Keep nested structure for compatibility
         span.details = span.tool_call;
         span.hasArgs = !!span.tool_call.args;
@@ -1866,20 +1992,23 @@ export class TraceQueryService {
         span.retrieval_context_ids = span.retrieval.retrieval_context_ids;
         span.similarity_scores = span.retrieval.similarity_scores;
         span.latency_ms = span.retrieval.latency_ms;
-        
+
         // CRITICAL FIX: Populate input/output fields for frontend display
         // Input: Query/metadata (k, top_k)
         const retrievalInput: any = {};
         if (span.retrieval.k !== null && span.retrieval.k !== undefined) {
           retrievalInput.k = span.retrieval.k;
         }
-        if (span.retrieval.top_k !== null && span.retrieval.top_k !== undefined) {
+        if (
+          span.retrieval.top_k !== null &&
+          span.retrieval.top_k !== undefined
+        ) {
           retrievalInput.top_k = span.retrieval.top_k;
         }
         if (Object.keys(retrievalInput).length > 0) {
           span.input = JSON.stringify(retrievalInput, null, 2);
         }
-        
+
         // Output: Retrieval context or formatted summary
         if (span.retrieval.retrieval_context) {
           span.output =
@@ -1893,21 +2022,33 @@ export class TraceQueryService {
             span.retrieval.retrieval_context_ids &&
             span.retrieval.retrieval_context_ids.length > 0
           ) {
-            retrievalOutput.retrieved_documents = span.retrieval.retrieval_context_ids;
-            retrievalOutput.document_count = span.retrieval.retrieval_context_ids.length;
+            retrievalOutput.retrieved_documents =
+              span.retrieval.retrieval_context_ids;
+            retrievalOutput.document_count =
+              span.retrieval.retrieval_context_ids.length;
           }
           if (
             span.retrieval.similarity_scores &&
             span.retrieval.similarity_scores.length > 0
           ) {
-            retrievalOutput.similarity_scores = span.retrieval.similarity_scores;
+            retrievalOutput.similarity_scores =
+              span.retrieval.similarity_scores;
             retrievalOutput.avg_similarity =
-              span.retrieval.similarity_scores.reduce((a: number, b: number) => a + b, 0) /
-              span.retrieval.similarity_scores.length;
-            retrievalOutput.max_similarity = Math.max(...span.retrieval.similarity_scores);
-            retrievalOutput.min_similarity = Math.min(...span.retrieval.similarity_scores);
+              span.retrieval.similarity_scores.reduce(
+                (a: number, b: number) => a + b,
+                0
+              ) / span.retrieval.similarity_scores.length;
+            retrievalOutput.max_similarity = Math.max(
+              ...span.retrieval.similarity_scores
+            );
+            retrievalOutput.min_similarity = Math.min(
+              ...span.retrieval.similarity_scores
+            );
           }
-          if (span.retrieval.latency_ms !== null && span.retrieval.latency_ms !== undefined) {
+          if (
+            span.retrieval.latency_ms !== null &&
+            span.retrieval.latency_ms !== undefined
+          ) {
             retrievalOutput.latency_ms = span.retrieval.latency_ms;
           }
           if (Object.keys(retrievalOutput).length > 0) {
@@ -1925,10 +2066,10 @@ export class TraceQueryService {
             );
           }
         }
-        
+
         span.hasInput = !!span.input;
         span.hasOutput = !!span.output;
-        
+
         // Keep nested structure for compatibility
         span.details = span.retrieval;
         span.hasContext = !!span.retrieval.retrieval_context;
@@ -1944,7 +2085,7 @@ export class TraceQueryService {
         span.output_tokens = span.embedding.output_tokens;
         span.latency_ms = span.embedding.latency_ms;
         span.cost = span.embedding.cost;
-        
+
         // Input: Embedding input text or metadata
         const embeddingInput: any = {
           model: span.embedding.model,
@@ -1958,7 +2099,7 @@ export class TraceQueryService {
           embeddingInput.encoding_formats = span.embedding.encoding_formats;
         }
         span.input = JSON.stringify(embeddingInput, null, 2);
-        
+
         // Output: Embedding results
         const embeddingOutput: any = {
           dimension_count: span.embedding.dimension_count,
@@ -1972,19 +2113,118 @@ export class TraceQueryService {
         if (span.embedding.embeddings) {
           // Show summary if embeddings are available
           embeddingOutput.embeddings_count = span.embedding.embeddings.length;
-          embeddingOutput.embeddings_preview = span.embedding.embeddings.slice(0, 3).map((emb: number[]) => 
-            `[${emb.slice(0, 5).join(", ")}, ...] (${emb.length} dims)`
-          );
+          embeddingOutput.embeddings_preview = span.embedding.embeddings
+            .slice(0, 3)
+            .map(
+              (emb: number[]) =>
+                `[${emb.slice(0, 5).join(", ")}, ...] (${emb.length} dims)`
+            );
         } else if (span.embedding.embeddings_hash) {
           embeddingOutput.embeddings_hash = span.embedding.embeddings_hash;
         }
         span.output = JSON.stringify(embeddingOutput, null, 2);
-        
+
         span.hasInput = !!span.input;
         span.hasOutput = !!span.output;
-        
+
         // Keep nested structure for compatibility
         span.details = span.embedding;
+        span.hasDetails = true;
+        span.selectable = true;
+      } else if (span.vector_db_operation) {
+        span.type = "vector_db_operation";
+        // Flatten ALL vector DB data to top level
+        span.operation_type = span.vector_db_operation.operation_type;
+        span.index_name = span.vector_db_operation.index_name;
+        span.vector_dimensions = span.vector_db_operation.vector_dimensions;
+        span.vector_metric = span.vector_db_operation.vector_metric;
+        span.results_count = span.vector_db_operation.results_count;
+        span.latency_ms = span.vector_db_operation.latency_ms;
+        span.cost = span.vector_db_operation.cost ?? null;
+
+        const vectorInput: any = {
+          operation_type: span.vector_db_operation.operation_type,
+          index_name: span.vector_db_operation.index_name,
+          vector_dimensions: span.vector_db_operation.vector_dimensions,
+          vector_metric: span.vector_db_operation.vector_metric,
+          provider_name: span.vector_db_operation.provider_name,
+          api_version: span.vector_db_operation.api_version,
+        };
+        span.input = JSON.stringify(vectorInput, null, 2);
+
+        const vectorOutput: any = {
+          results_count: span.vector_db_operation.results_count,
+          scores: span.vector_db_operation.scores,
+          latency_ms: span.vector_db_operation.latency_ms,
+        };
+        if (
+          span.vector_db_operation.cost !== null &&
+          span.vector_db_operation.cost !== undefined
+        ) {
+          vectorOutput.cost = span.vector_db_operation.cost;
+        }
+        span.output = JSON.stringify(vectorOutput, null, 2);
+
+        span.hasInput = !!span.input;
+        span.hasOutput = !!span.output;
+        span.details = span.vector_db_operation;
+        span.hasDetails = true;
+        span.selectable = true;
+      } else if (span.cache_operation) {
+        span.type = "cache_operation";
+        // Flatten ALL cache data to top level
+        span.cache_backend = span.cache_operation.cache_backend;
+        span.cache_key = span.cache_operation.cache_key;
+        span.cache_namespace = span.cache_operation.cache_namespace;
+        span.hit_status = span.cache_operation.hit_status;
+        span.latency_ms = span.cache_operation.latency_ms;
+        span.saved_cost = span.cache_operation.saved_cost ?? null;
+
+        const cacheInput: any = {
+          cache_backend: span.cache_operation.cache_backend,
+          cache_key: span.cache_operation.cache_key,
+          cache_namespace: span.cache_operation.cache_namespace,
+          ttl: span.cache_operation.ttl,
+        };
+        span.input = JSON.stringify(cacheInput, null, 2);
+
+        const cacheOutput: any = {
+          hit_status: span.cache_operation.hit_status,
+          latency_ms: span.cache_operation.latency_ms,
+          saved_cost: span.cache_operation.saved_cost ?? null,
+          eviction_info: span.cache_operation.eviction_info ?? null,
+        };
+        span.output = JSON.stringify(cacheOutput, null, 2);
+
+        span.hasInput = !!span.input;
+        span.hasOutput = !!span.output;
+        span.details = span.cache_operation;
+        span.hasDetails = true;
+        span.selectable = true;
+      } else if (span.agent_create) {
+        span.type = "agent_create";
+        // Flatten ALL agent creation data to top level
+        span.agent_name = span.agent_create.agent_name;
+        span.tools_bound = span.agent_create.tools_bound;
+        span.model_config = span.agent_create.model_config;
+
+        const agentInput: any = {
+          agent_name: span.agent_create.agent_name,
+          agent_config: span.agent_create.agent_config,
+          tools_bound: span.agent_create.tools_bound,
+          model_config: span.agent_create.model_config,
+        };
+        span.input = JSON.stringify(agentInput, null, 2);
+
+        const agentOutput: any = {
+          operation_name: span.agent_create.operation_name ?? null,
+          tools_bound: span.agent_create.tools_bound ?? null,
+        };
+        span.output = JSON.stringify(agentOutput, null, 2);
+
+        span.hasInput = !!span.input;
+        span.hasOutput = !!span.output;
+        span.details = span.agent_create;
         span.hasDetails = true;
         span.selectable = true;
       } else if (span.output) {
@@ -1995,6 +2235,28 @@ export class TraceQueryService {
         // Keep nested structure for compatibility
         span.details = span.output;
         span.hasOutput = !!span.output.final_output;
+      } else if (span.error) {
+        span.type = "error";
+        // Flatten ALL error data to top level
+        span.error_type = span.error.error_type;
+        span.error_message = span.error.error_message;
+        span.error_category = span.error.error_category ?? null;
+        span.error_code = span.error.error_code ?? null;
+
+        const errorOutput: any = {
+          error_type: span.error.error_type,
+          error_message: span.error.error_message,
+          error_category: span.error.error_category ?? null,
+          error_code: span.error.error_code ?? null,
+          stack_trace: span.error.stack_trace ?? null,
+          context: span.error.context ?? null,
+        };
+        span.output = JSON.stringify(errorOutput, null, 2);
+        span.hasOutput = !!span.output;
+
+        span.details = span.error;
+        span.hasDetails = true;
+        span.selectable = true;
       } else if (span.feedback) {
         span.type = "feedback";
         // Flatten ALL feedback data to top level
@@ -2034,9 +2296,30 @@ export class TraceQueryService {
           e.event_type === "tool_call" ? e.attributes?.tool_call : undefined,
         retrieval:
           e.event_type === "retrieval" ? e.attributes?.retrieval : undefined,
+        embedding:
+          e.event_type === "embedding" ? e.attributes?.embedding : undefined,
+        vector_db_operation:
+          e.event_type === "vector_db_operation"
+            ? e.attributes?.vector_db_operation
+            : undefined,
+        cache_operation:
+          e.event_type === "cache_operation"
+            ? e.attributes?.cache_operation
+            : undefined,
+        agent_create:
+          e.event_type === "agent_create"
+            ? e.attributes?.agent_create
+            : undefined,
         output: e.event_type === "output" ? e.attributes?.output : undefined,
         feedback:
           e.event_type === "feedback" ? e.attributes?.feedback : undefined,
+        error: e.event_type === "error" ? e.attributes?.error : undefined,
+        trace_start:
+          e.event_type === "trace_start"
+            ? e.attributes?.trace_start
+            : undefined,
+        trace_end:
+          e.event_type === "trace_end" ? e.attributes?.trace_end : undefined,
         // Keep original attributes structure for compatibility
         attributes: e.attributes,
       }));
@@ -2059,6 +2342,33 @@ export class TraceQueryService {
         }
         if (span.output && firstEvent.event_type === "output") {
           firstEvent.output = span.output;
+        }
+        if (span.embedding && firstEvent.event_type === "embedding") {
+          firstEvent.embedding = span.embedding;
+        }
+        if (
+          span.vector_db_operation &&
+          firstEvent.event_type === "vector_db_operation"
+        ) {
+          firstEvent.vector_db_operation = span.vector_db_operation;
+        }
+        if (
+          span.cache_operation &&
+          firstEvent.event_type === "cache_operation"
+        ) {
+          firstEvent.cache_operation = span.cache_operation;
+        }
+        if (span.agent_create && firstEvent.event_type === "agent_create") {
+          firstEvent.agent_create = span.agent_create;
+        }
+        if (span.error && firstEvent.event_type === "error") {
+          firstEvent.error = span.error;
+        }
+        if (span.trace_start && firstEvent.event_type === "trace_start") {
+          firstEvent.trace_start = span.trace_start;
+        }
+        if (span.trace_end && firstEvent.event_type === "trace_end") {
+          firstEvent.trace_end = span.trace_end;
         }
       }
     }
@@ -2126,18 +2436,20 @@ export class TraceQueryService {
       } else {
         // Try to find parent span - check multiple possible parent IDs
         let parentSpan = spansMap.get(span.parent_span_id);
-        
+
         // If parent not found by direct ID, try by original_span_id
         if (!parentSpan && span.original_span_id) {
           parentSpan = spansMap.get(span.original_span_id);
         }
-        
+
         // If still not found, try finding parent by checking if parent_span_id matches any span's id or span_id
         if (!parentSpan) {
           for (const [id, potentialParent] of spansMap.entries()) {
-            if (potentialParent.id === span.parent_span_id || 
-                potentialParent.span_id === span.parent_span_id ||
-                id === span.parent_span_id) {
+            if (
+              potentialParent.id === span.parent_span_id ||
+              potentialParent.span_id === span.parent_span_id ||
+              id === span.parent_span_id
+            ) {
               parentSpan = potentialParent;
               break;
             }
@@ -2181,17 +2493,46 @@ export class TraceQueryService {
       (e: any) => e.event_type === "output"
     );
 
-    // Calculate total cost from all LLM calls
-    const allLLMEvents = parsedEvents.filter(
-      (e: any) => e.event_type === "llm_call"
-    );
-    let totalCost = 0;
-    allLLMEvents.forEach((event: any) => {
-      const attrs = event.attributes?.llm_call || {};
-      if (attrs.cost) {
-        totalCost += attrs.cost;
+    // Calculate total cost from all cost-bearing events (LLM, embeddings, vector DB, cache savings)
+    let totalCost: number | null =
+      typeof traceEndAttrs?.total_cost === "number"
+        ? traceEndAttrs.total_cost
+        : null;
+    if (totalCost === null) {
+      let runningTotal = 0;
+      const costEvents = parsedEvents.filter((e: any) =>
+        [
+          "llm_call",
+          "embedding",
+          "vector_db_operation",
+          "cache_operation",
+        ].includes(e.event_type)
+      );
+      for (const event of costEvents) {
+        if (event.event_type === "llm_call") {
+          const cost = event.attributes?.llm_call?.cost;
+          if (typeof cost === "number" && Number.isFinite(cost)) {
+            runningTotal += cost;
+          }
+        } else if (event.event_type === "embedding") {
+          const cost = event.attributes?.embedding?.cost;
+          if (typeof cost === "number" && Number.isFinite(cost)) {
+            runningTotal += cost;
+          }
+        } else if (event.event_type === "vector_db_operation") {
+          const cost = event.attributes?.vector_db_operation?.cost;
+          if (typeof cost === "number" && Number.isFinite(cost)) {
+            runningTotal += cost;
+          }
+        } else if (event.event_type === "cache_operation") {
+          const cost = event.attributes?.cache_operation?.saved_cost;
+          if (typeof cost === "number" && Number.isFinite(cost)) {
+            runningTotal += cost;
+          }
+        }
       }
-    });
+      totalCost = runningTotal > 0 ? runningTotal : null;
+    }
 
     const summary = {
       trace_id: traceId,
@@ -2214,7 +2555,7 @@ export class TraceQueryService {
             new Date(traceStart.timestamp).getTime()
           : 0),
       total_tokens: traceEndAttrs?.total_tokens || llmAttrs?.total_tokens || 0,
-      total_cost: totalCost > 0 ? totalCost : null,
+      total_cost: totalCost,
       model: llmAttrs?.model || null,
       query: llmAttrs?.input || null, // User query from first LLM call input
       response:
@@ -2305,7 +2646,7 @@ export class TraceQueryService {
       if (span.parent_span_id && span.id && span.original_span_id) {
         // This is a child span - ensure ID consistency
         // The ID should match the pattern: parentId-eventType
-        if (!span.id.includes('-') && span.event_type) {
+        if (!span.id.includes("-") && span.event_type) {
           // If ID doesn't follow pattern, reconstruct it
           span.id = `${span.original_span_id}-${span.event_type}`;
           span.span_id = span.id;
@@ -2366,7 +2707,7 @@ export class TraceQueryService {
       // Some frontends may look for these fields to verify span identity
       span._id = span.id; // Alternative ID field some frontends use
       span._spanId = span.span_id; // Alternative span_id field
-      
+
       // Add parent reference for easier navigation
       if (span.parent_span_id) {
         span._parentId = span.parent_span_id;
@@ -2419,12 +2760,12 @@ export class TraceQueryService {
       // CRITICAL FIX: Index by synthetic child span ID pattern
       // Child spans created from root events have IDs like "traceId-event_type"
       // Ensure this pattern is always indexed
-      if (span.id.includes('-') && span.parent_span_id) {
+      if (span.id.includes("-") && span.parent_span_id) {
         // This is likely a synthetic child span (e.g., "trace-123-retrieval")
         // The ID is already indexed above, but ensure parent-based lookups work
-        const parts = span.id.split('-');
+        const parts = span.id.split("-");
         if (parts.length >= 2) {
-          const parentPart = parts.slice(0, -1).join('-');
+          const parentPart = parts.slice(0, -1).join("-");
           const eventTypePart = parts[parts.length - 1];
           // Index by the pattern frontends might use
           spansById[`${parentPart}-${eventTypePart}`] = span;
@@ -2434,9 +2775,14 @@ export class TraceQueryService {
       // Additional indexing for child spans: index by position in tree
       // Some frontends might use array indices or position-based IDs
       if (span.parent_span_id) {
-        const parentSpan = allSpans.find(s => s.id === span.parent_span_id || s.span_id === span.parent_span_id);
+        const parentSpan = allSpans.find(
+          (s) =>
+            s.id === span.parent_span_id || s.span_id === span.parent_span_id
+        );
         if (parentSpan && parentSpan.children) {
-          const childIndex = parentSpan.children.findIndex((c: any) => c.id === span.id || c.span_id === span.span_id);
+          const childIndex = parentSpan.children.findIndex(
+            (c: any) => c.id === span.id || c.span_id === span.span_id
+          );
           if (childIndex >= 0) {
             // Index by parent-child position pattern
             spansById[`${span.parent_span_id}-child-${childIndex}`] = span;
@@ -2447,7 +2793,10 @@ export class TraceQueryService {
 
     // Phase 1/2: Enrich with deeper insights for trace detail UX
     const costBreakdown = this.buildCostBreakdown(summary, allSpans);
-    const performanceAnalysis = this.buildPerformanceAnalysis(summary, allSpans);
+    const performanceAnalysis = this.buildPerformanceAnalysis(
+      summary,
+      allSpans
+    );
     const tokenEfficiency = this.buildTokenEfficiency(summary, allSpans);
     const qualityExplanation = this.buildQualityExplanation(analysisData);
 
