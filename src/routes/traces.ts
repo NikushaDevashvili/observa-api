@@ -78,6 +78,11 @@ function scrubLlmMessages(target: any): void {
   if ("input_messages" in target) delete target.input_messages;
   if ("output_messages" in target) delete target.output_messages;
   if ("system_instructions" in target) delete target.system_instructions;
+  if ("gen_ai.input.messages" in target) delete target["gen_ai.input.messages"];
+  if ("gen_ai.output.messages" in target)
+    delete target["gen_ai.output.messages"];
+  if ("gen_ai.system_instructions" in target)
+    delete target["gen_ai.system_instructions"];
 }
 
 function scrubTraceMessages(trace: any): void {
@@ -95,6 +100,21 @@ function scrubTraceMessages(trace: any): void {
       for (const event of span.events) {
         if (event?.attributes?.llm_call) {
           scrubLlmMessages(event.attributes.llm_call);
+        }
+        if (event?.attributes) {
+          scrubLlmMessages(event.attributes);
+        }
+        if (typeof event?.attributes_json === "string") {
+          try {
+            const parsed = JSON.parse(event.attributes_json);
+            scrubLlmMessages(parsed);
+            if (parsed?.llm_call) {
+              scrubLlmMessages(parsed.llm_call);
+            }
+            event.attributes_json = JSON.stringify(parsed);
+          } catch {
+            // If parsing fails, leave attributes_json untouched
+          }
         }
       }
     }
