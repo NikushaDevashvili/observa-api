@@ -1870,6 +1870,8 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
   }
 
   // Enhance title for feedback spans with icons
+  // CRITICAL FIX: Only replace title if this is a pure feedback span
+  // If span has other data (like LLM call), append feedback info instead
   if (span.feedback || span.feedback_metadata || span.feedback_type) {
     const feedback = span.feedback || {
       type: span.feedback_metadata?.type || span.feedback_type,
@@ -1894,13 +1896,33 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
       icon = "✏️ ";
     }
 
-    // Build enhanced title with icon
-    enhancedTitle = `${icon}${feedbackTypeLabel} Feedback`;
-    if (feedback.comment) {
-      enhancedTitle += " 💬";
-    }
-    if (feedback.rating !== null && feedback.rating !== undefined) {
-      enhancedTitle += ` (${feedback.rating}/5)`;
+    // Check if this is a pure feedback span or has other data (like LLM call, tool call, etc.)
+    const isPureFeedbackSpan =
+      (span.type === "feedback" || span.event_type === "feedback") &&
+      !span.llm_call &&
+      !span.tool_call &&
+      !span.retrieval &&
+      !span.embedding;
+
+    if (isPureFeedbackSpan) {
+      // Pure feedback span: replace title
+      enhancedTitle = `${icon}${feedbackTypeLabel} Feedback`;
+      if (feedback.comment) {
+        enhancedTitle += " 💬";
+      }
+      if (feedback.rating !== null && feedback.rating !== undefined) {
+        enhancedTitle += ` (${feedback.rating}/5)`;
+      }
+    } else {
+      // Span has other data (LLM call, tool call, etc.): append feedback info
+      let feedbackSuffix = ` ${icon}`;
+      if (feedback.comment) {
+        feedbackSuffix += " 💬";
+      }
+      if (feedback.rating !== null && feedback.rating !== undefined) {
+        feedbackSuffix += ` ${feedback.rating}/5`;
+      }
+      enhancedTitle = `${enhancedTitle}${feedbackSuffix}`;
     }
   }
 
