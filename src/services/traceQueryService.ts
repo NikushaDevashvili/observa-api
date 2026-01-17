@@ -2183,6 +2183,7 @@ export class TraceQueryService {
       }
 
       // Find the parent span - use EXACT matching only (no startsWith - too dangerous!)
+      // CRITICAL: Match the exact span the user clicked on, not based on timestamp
       // Priority order for matching:
       // 1. Exact match on span ID (most common for normal spans)
       // 2. Exact match on original_span_id (most reliable for synthetic child spans)
@@ -2190,12 +2191,49 @@ export class TraceQueryService {
       let parentSpan = spansMap.get(event.parent_span_id);
 
       if (!parentSpan) {
-        // Try finding by exact match on original_span_id (most reliable for synthetic spans)
-        // because synthetic child spans keep the original span_id in original_span_id field
+        // Try finding by exact match on original_span_id
+        // CRITICAL: In a single trace, each LLM call should have a UNIQUE original_span_id
+        // So there should only be ONE match per original_span_id
+        const matchingSpans: Array<{ span: any; isLLMCall: boolean }> = [];
+
         for (const [spanId, span] of spansMap.entries()) {
           if (span.original_span_id === event.parent_span_id) {
-            parentSpan = span;
-            break;
+            const isLLMCall = !!(
+              span.llm_call ||
+              span.type === "llm_call" ||
+              span.event_type === "llm_call"
+            );
+            matchingSpans.push({ span, isLLMCall });
+          }
+        }
+
+        if (matchingSpans.length === 0) {
+          // No match found - will try other methods below
+        } else if (matchingSpans.length === 1) {
+          // Perfect! Only one match - use it (this is the normal case)
+          parentSpan = matchingSpans[0].span;
+        } else {
+          // Multiple matches (shouldn't happen, but handle it gracefully)
+          // For feedback events, prefer LLM call spans
+          if (event.event_type === "feedback") {
+            const llmCallSpans = matchingSpans.filter((m) => m.isLLMCall);
+            if (llmCallSpans.length === 1) {
+              parentSpan = llmCallSpans[0].span;
+            } else if (llmCallSpans.length > 1) {
+              // Multiple LLM call spans with same original_span_id - this is a data issue
+              // Log warning and use the first one
+              console.warn(
+                `[TraceQueryService] Multiple LLM call spans found with same original_span_id: ${event.parent_span_id}. ` +
+                  `This should not happen in a single trace. Using first match. Trace: ${traceId}`
+              );
+              parentSpan = llmCallSpans[0].span;
+            } else {
+              // No LLM call spans, use first match
+              parentSpan = matchingSpans[0].span;
+            }
+          } else {
+            // For non-feedback events, use first match
+            parentSpan = matchingSpans[0].span;
           }
         }
       }
