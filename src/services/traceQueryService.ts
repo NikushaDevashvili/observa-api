@@ -2177,19 +2177,23 @@ export class TraceQueryService {
         continue; // Skip events without parents
       }
 
-      // Find the parent span - try multiple lookup strategies
+      // CRITICAL: Verify event belongs to this trace before matching
+      if (event.trace_id !== traceId) {
+        continue; // Skip events from different traces
+      }
+
+      // Find the parent span - use EXACT matching only (no startsWith - too dangerous!)
+      // Priority order for matching:
+      // 1. Exact match on span ID (most common for normal spans)
+      // 2. Exact match on original_span_id (most reliable for synthetic child spans)
+      // 3. Exact match on span_id field
       let parentSpan = spansMap.get(event.parent_span_id);
 
       if (!parentSpan) {
-        // Try finding by matching span_id or original_span_id
+        // Try finding by exact match on original_span_id (most reliable for synthetic spans)
+        // because synthetic child spans keep the original span_id in original_span_id field
         for (const [spanId, span] of spansMap.entries()) {
-          if (
-            span.span_id === event.parent_span_id ||
-            span.id === event.parent_span_id ||
-            span.original_span_id === event.parent_span_id ||
-            // Also check if parent_span_id matches synthetic child span IDs
-            (span.id && span.id.startsWith(event.parent_span_id))
-          ) {
+          if (span.original_span_id === event.parent_span_id) {
             parentSpan = span;
             break;
           }
@@ -2197,12 +2201,74 @@ export class TraceQueryService {
       }
 
       if (!parentSpan) {
-        // Parent span not found - this might be okay if it's a different trace
+        // Try finding by exact match on span_id field
+        for (const [spanId, span] of spansMap.entries()) {
+          if (span.span_id === event.parent_span_id) {
+            parentSpan = span;
+            break;
+          }
+        }
+      }
+
+      if (!parentSpan) {
+        // Last resort: try exact match on id field (but this should have been caught above)
+        for (const [spanId, span] of spansMap.entries()) {
+          if (span.id === event.parent_span_id) {
+            parentSpan = span;
+            break;
+          }
+        }
+      }
+
+      if (!parentSpan) {
+        // Parent span not found - log warning for debugging
+        console.warn(
+          `[TraceQueryService] Parent span not found for feedback event. ` +
+            `Event trace_id: ${event.trace_id}, event span_id: ${event.span_id}, ` +
+            `parent_span_id: ${event.parent_span_id}, traceId: ${traceId}. ` +
+            `Available spans: ${Array.from(spansMap.keys())
+              .slice(0, 5)
+              .join(", ")}...`
+        );
+        continue;
+      }
+
+      // CRITICAL: Verify parent span belongs to the same trace
+      // This is a safety check to prevent cross-trace matching
+      // Note: spans might not have trace_id directly, but events in the span should
+      const parentSpanEvents = parentSpan.events || [];
+      const parentEventTraceId = parentSpanEvents[0]?.trace_id;
+      if (parentEventTraceId && parentEventTraceId !== traceId) {
+        console.warn(
+          `[TraceQueryService] Parent span trace_id mismatch! ` +
+            `Event trace_id: ${traceId}, Parent span trace_id: ${parentEventTraceId}`
+        );
         continue;
       }
 
       // Attach feedback events to parent span
       if (event.event_type === "feedback" && event.attributes?.feedback) {
+        // CRITICAL: Only attach feedback if parent span doesn't already have feedback
+        // OR if this feedback is more recent (based on timestamp)
+        const existingFeedback = parentSpan.feedback;
+        if (existingFeedback) {
+          // Check if new feedback is more recent
+          const existingFeedbackEvent = parentSpan.events?.find(
+            (e: any) => e.event_type === "feedback"
+          );
+          if (existingFeedbackEvent) {
+            const existingTimestamp = new Date(
+              existingFeedbackEvent.timestamp
+            ).getTime();
+            const newTimestamp = new Date(event.timestamp).getTime();
+
+            // Only update if new feedback is more recent
+            if (newTimestamp <= existingTimestamp) {
+              continue; // Skip older feedback
+            }
+          }
+        }
+
         const feedbackAttrs = event.attributes.feedback;
         parentSpan.feedback = {
           type: feedbackAttrs.type || null,
