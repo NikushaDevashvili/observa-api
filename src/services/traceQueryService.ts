@@ -2286,6 +2286,31 @@ export class TraceQueryService {
 
       // Attach feedback events to parent span
       if (event.event_type === "feedback" && event.attributes?.feedback) {
+        // CRITICAL: Only attach feedback to an LLM call span.
+        // If the parent span is missing or not an LLM call, attach to trace root instead.
+        const parentIsLlmCall = !!(
+          parentSpan &&
+          (parentSpan.llm_call ||
+            parentSpan.type === "llm_call" ||
+            parentSpan.event_type === "llm_call")
+        );
+        if (
+          !parentIsLlmCall &&
+          originalRootSpanId &&
+          spansMap.has(originalRootSpanId)
+        ) {
+          parentSpan = spansMap.get(originalRootSpanId);
+          if (parentSpan) {
+            parentSpan.feedback_unlinked = true;
+            parentSpan.unlinked_feedback_count =
+              (parentSpan.unlinked_feedback_count || 0) + 1;
+          }
+        }
+
+        if (!parentSpan) {
+          continue;
+        }
+
         // CRITICAL: Only attach feedback if parent span doesn't already have feedback
         // OR if this feedback is more recent (based on timestamp)
         const existingFeedback = parentSpan.feedback;
