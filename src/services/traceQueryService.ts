@@ -1101,14 +1101,122 @@ export class TraceQueryService {
           // Validate JSON string before parsing
           let jsonStr = event.attributes_json.trim();
           if (jsonStr && jsonStr.length > 0) {
-            // Fix common JSON escaping issues
-            // Replace incorrect single quote escaping (\') with just the quote (')
-            // This handles cases where single quotes are incorrectly escaped
-            jsonStr = jsonStr.replace(/\\'/g, "'");
-            // Also fix double-escaped backslashes if needed
-            jsonStr = jsonStr.replace(/\\\\'/g, "\\'");
-
-            attributes = JSON.parse(jsonStr);
+            // Try multiple parsing strategies to handle malformed JSON
+            let parsed = false;
+            
+            // Strategy 1: Try direct parsing
+            try {
+              attributes = JSON.parse(jsonStr);
+              parsed = true;
+              // Success - attributes parsed, skip to logging
+            } catch (parseError1) {
+              // Strategy 1 failed, try Strategy 2
+              // Strategy 2: Try fixing common escaping issues
+              try {
+                // Fix incorrect single quote escaping
+                let fixedJson = jsonStr.replace(/\\'/g, "'");
+                // Fix double-escaped backslashes
+                fixedJson = fixedJson.replace(/\\\\'/g, "\\'");
+                // Fix double-escaped quotes (common when JSON is stored in a JSON string)
+                fixedJson = fixedJson.replace(/\\"/g, '"');
+                fixedJson = fixedJson.replace(/\\\\"/g, '\\"');
+                
+                attributes = JSON.parse(fixedJson);
+                parsed = true;
+                if (isLlmCall) {
+                  console.log(
+                    `[TraceQueryService] ⚠️  Fixed JSON escaping issues and parsed successfully`
+                  );
+                }
+              } catch (parseError2) {
+                // Strategy 3: Try unescaping if double-encoded
+                try {
+                  // Check if it's a double-encoded JSON string
+                  let unescaped = jsonStr;
+                  // Try removing one level of escaping
+                  if (jsonStr.startsWith('"') && jsonStr.endsWith('"')) {
+                    // Might be a JSON string inside a JSON string
+                    try {
+                      const firstParse = JSON.parse(jsonStr); // This should give us the inner string
+                      if (typeof firstParse === "string") {
+                        attributes = JSON.parse(firstParse);
+                        parsed = true;
+                        if (isLlmCall) {
+                          console.log(
+                            `[TraceQueryService] ⚠️  Detected double-encoded JSON and parsed successfully`
+                          );
+                        }
+                      }
+                    } catch {}
+                  }
+                  
+                  if (!parsed) {
+                    throw parseError2; // Re-throw if still failed
+                  }
+                } catch (parseError3) {
+                  // Strategy 4: Try to salvage what we can by extracting llm_call if visible
+                  if (isLlmCall) {
+                    // Try to extract llm_call data even if JSON is partially broken
+                    const llmCallMatch = jsonStr.match(/"llm_call"\s*:\s*\{/);
+                    if (llmCallMatch) {
+                      // Try to extract a substring around llm_call
+                      const startPos = llmCallMatch.index || 0;
+                      // Look for a reasonable end point (try to find closing brace)
+                      let braceCount = 0;
+                      let foundStart = false;
+                      let endPos = startPos;
+                      
+                      for (let i = startPos; i < jsonStr.length && i < startPos + 10000; i++) {
+                        if (jsonStr[i] === '{') {
+                          braceCount++;
+                          foundStart = true;
+                        } else if (jsonStr[i] === '}') {
+                          braceCount--;
+                          if (foundStart && braceCount === 0) {
+                            endPos = i + 1;
+                            break;
+                          }
+                        }
+                      }
+                      
+                      // Try to parse just the llm_call section
+                      try {
+                        const llmCallJson = jsonStr.substring(startPos - 1, endPos + 1); // Include surrounding braces
+                        const partial = JSON.parse(llmCallJson);
+                        if (partial.llm_call) {
+                          attributes = { llm_call: partial.llm_call };
+                          parsed = true;
+                          if (isLlmCall) {
+                            console.log(
+                              `[TraceQueryService] ⚠️  Salvaged llm_call from malformed JSON`
+                            );
+                          }
+                        }
+                      } catch {}
+                    }
+                  }
+                  
+                  if (!parsed) {
+                    // Log detailed error for debugging
+                    const errorMsg = parseError3 instanceof Error ? parseError3.message : String(parseError3);
+                    const errorPosition = errorMsg.match(/position (\d+)/)?.[1];
+                    if (errorPosition) {
+                      const pos = parseInt(errorPosition);
+                      const start = Math.max(0, pos - 100);
+                      const end = Math.min(jsonStr.length, pos + 100);
+                      const context = jsonStr.substring(start, end);
+                      console.error(
+                        `[TraceQueryService] Failed to parse attributes_json (error at position ${pos}): ${errorMsg}`
+                      );
+                      console.error(
+                        `[TraceQueryService] Context around error: ...${context}...`
+                      );
+                    }
+                    throw parseError3;
+                  }
+                }
+              }
+            }
             
             // Log parsed result for llm_call events
             if (isLlmCall) {
