@@ -1176,6 +1176,128 @@ export class TraceQueryService {
       return result;
     };
 
+    const unescapeJsonStringFragment = (fragment: string): string => {
+      let result = "";
+      for (let i = 0; i < fragment.length; i++) {
+        const ch = fragment[i];
+        if (ch !== "\\") {
+          result += ch;
+          continue;
+        }
+
+        const next = fragment[i + 1];
+        if (next === undefined) {
+          result += "\\";
+          continue;
+        }
+
+        if (next === '"' || next === "\\" || next === "/") {
+          result += next;
+          i++;
+          continue;
+        }
+        if (next === "b") {
+          result += "\b";
+          i++;
+          continue;
+        }
+        if (next === "f") {
+          result += "\f";
+          i++;
+          continue;
+        }
+        if (next === "n") {
+          result += "\n";
+          i++;
+          continue;
+        }
+        if (next === "r") {
+          result += "\r";
+          i++;
+          continue;
+        }
+        if (next === "t") {
+          result += "\t";
+          i++;
+          continue;
+        }
+        if (next === "u") {
+          const hex = fragment.slice(i + 2, i + 6);
+          if (/^[0-9a-fA-F]{4}$/.test(hex)) {
+            result += String.fromCharCode(parseInt(hex, 16));
+            i += 5;
+            continue;
+          }
+        }
+
+        // Invalid escape, keep the backslash and next char
+        result += "\\" + next;
+        i++;
+      }
+
+      return result;
+    };
+
+    const repairFunctionCallArguments = (input: string): string => {
+      const keyIndex = input.indexOf('"arguments"');
+      if (keyIndex === -1) return input;
+
+      const colonIndex = input.indexOf(":", keyIndex);
+      if (colonIndex === -1) return input;
+
+      let i = colonIndex + 1;
+      while (i < input.length && /\s/.test(input[i])) i++;
+      if (input[i] !== '"') return input;
+
+      const startQuote = i;
+      i++;
+
+      let escaped = false;
+      let fragment = "";
+      for (; i < input.length; i++) {
+        const ch = input[i];
+
+        if (escaped) {
+          fragment += "\\" + ch;
+          escaped = false;
+          continue;
+        }
+
+        if (ch === "\\") {
+          escaped = true;
+          continue;
+        }
+
+        if (ch === '"') {
+          let j = i + 1;
+          while (j < input.length && /\s/.test(input[j])) j++;
+          const nextNonWhitespace = j < input.length ? input[j] : "";
+          const isStringTerminator =
+            nextNonWhitespace === "," ||
+            nextNonWhitespace === "}" ||
+            nextNonWhitespace === "]" ||
+            nextNonWhitespace === "";
+
+          if (isStringTerminator) {
+            const unescaped = unescapeJsonStringFragment(fragment);
+            const repaired = JSON.stringify(unescaped);
+            return (
+              input.slice(0, startQuote) +
+              repaired +
+              input.slice(i + 1)
+            );
+          }
+
+          fragment += '\\"';
+          continue;
+        }
+
+        fragment += ch;
+      }
+
+      return input;
+    };
+
     // Parse events and extract attributes
     const parsedEvents = uniqueEvents.map((event: any) => {
       let attributes = {};
@@ -1227,107 +1349,119 @@ export class TraceQueryService {
                   );
                 }
               } catch (parseError2) {
-                // Strategy 3: Try fixing common escaping issues
+                // Strategy 3: Repair malformed function_call.arguments strings
                 try {
-                  // Fix incorrect single quote escaping
-                  let fixedJson = jsonStr.replace(/\\'/g, "'");
-                  // Fix double-escaped backslashes
-                  fixedJson = fixedJson.replace(/\\\\'/g, "\\'");
-                  // Fix double-escaped quotes (common when JSON is stored in a JSON string)
-                  fixedJson = fixedJson.replace(/\\"/g, '"');
-                  fixedJson = fixedJson.replace(/\\\\"/g, '\\"');
-                  
-                  attributes = JSON.parse(fixedJson);
+                  const repairedArgsJson = repairFunctionCallArguments(jsonStr);
+                  attributes = JSON.parse(repairedArgsJson);
                   parsed = true;
                   if (isLlmCall) {
                     console.log(
-                      `[TraceQueryService] ⚠️  Fixed JSON escaping issues and parsed successfully`
+                      `[TraceQueryService] ⚠️  Repaired function_call.arguments and parsed successfully`
                     );
                   }
                 } catch (parseError3) {
-                  // Strategy 4: Try unescaping if double-encoded
+                  // Strategy 4: Try fixing common escaping issues
                   try {
-                    // Check if it's a double-encoded JSON string
-                    // Try removing one level of escaping
-                    if (jsonStr.startsWith('"') && jsonStr.endsWith('"')) {
-                      // Might be a JSON string inside a JSON string
-                      try {
-                        const firstParse = JSON.parse(jsonStr); // This should give us the inner string
-                        if (typeof firstParse === "string") {
-                          attributes = JSON.parse(firstParse);
-                          parsed = true;
-                          if (isLlmCall) {
-                            console.log(
-                              `[TraceQueryService] ⚠️  Detected double-encoded JSON and parsed successfully`
-                            );
-                          }
-                        }
-                      } catch {}
-                    }
+                    // Fix incorrect single quote escaping
+                    let fixedJson = jsonStr.replace(/\\'/g, "'");
+                    // Fix double-escaped backslashes
+                    fixedJson = fixedJson.replace(/\\\\'/g, "\\'");
+                    // Fix double-escaped quotes (common when JSON is stored in a JSON string)
+                    fixedJson = fixedJson.replace(/\\"/g, '"');
+                    fixedJson = fixedJson.replace(/\\\\"/g, '\\"');
                     
-                    if (!parsed) {
-                      throw parseError3; // Re-throw if still failed
+                    attributes = JSON.parse(fixedJson);
+                    parsed = true;
+                    if (isLlmCall) {
+                      console.log(
+                        `[TraceQueryService] ⚠️  Fixed JSON escaping issues and parsed successfully`
+                      );
                     }
                   } catch (parseError4) {
-                    // Strategy 5: Try to salvage what we can by extracting llm_call if visible
-                  if (isLlmCall) {
-                    // Try to extract llm_call data even if JSON is partially broken
-                    const llmCallMatch = jsonStr.match(/"llm_call"\s*:\s*\{/);
-                    if (llmCallMatch) {
-                      // Try to extract a substring around llm_call
-                      const startPos = llmCallMatch.index || 0;
-                      // Look for a reasonable end point (try to find closing brace)
-                      let braceCount = 0;
-                      let foundStart = false;
-                      let endPos = startPos;
-                      
-                      for (let i = startPos; i < jsonStr.length && i < startPos + 10000; i++) {
-                        if (jsonStr[i] === '{') {
-                          braceCount++;
-                          foundStart = true;
-                        } else if (jsonStr[i] === '}') {
-                          braceCount--;
-                          if (foundStart && braceCount === 0) {
-                            endPos = i + 1;
-                            break;
+                    // Strategy 5: Try unescaping if double-encoded
+                    try {
+                      // Check if it's a double-encoded JSON string
+                      // Try removing one level of escaping
+                      if (jsonStr.startsWith('"') && jsonStr.endsWith('"')) {
+                        // Might be a JSON string inside a JSON string
+                        try {
+                          const firstParse = JSON.parse(jsonStr); // This should give us the inner string
+                          if (typeof firstParse === "string") {
+                            attributes = JSON.parse(firstParse);
+                            parsed = true;
+                            if (isLlmCall) {
+                              console.log(
+                                `[TraceQueryService] ⚠️  Detected double-encoded JSON and parsed successfully`
+                              );
+                            }
                           }
+                        } catch {}
+                      }
+                      
+                      if (!parsed) {
+                        throw parseError4; // Re-throw if still failed
+                      }
+                    } catch (parseError5) {
+                      // Strategy 6: Try to salvage what we can by extracting llm_call if visible
+                      if (isLlmCall) {
+                        // Try to extract llm_call data even if JSON is partially broken
+                        const llmCallMatch = jsonStr.match(/"llm_call"\s*:\s*\{/);
+                        if (llmCallMatch) {
+                          // Try to extract a substring around llm_call
+                          const startPos = llmCallMatch.index || 0;
+                          // Look for a reasonable end point (try to find closing brace)
+                          let braceCount = 0;
+                          let foundStart = false;
+                          let endPos = startPos;
+                          
+                          for (let i = startPos; i < jsonStr.length && i < startPos + 10000; i++) {
+                            if (jsonStr[i] === '{') {
+                              braceCount++;
+                              foundStart = true;
+                            } else if (jsonStr[i] === '}') {
+                              braceCount--;
+                              if (foundStart && braceCount === 0) {
+                                endPos = i + 1;
+                                break;
+                              }
+                            }
+                          }
+                          
+                          // Try to parse just the llm_call section
+                          try {
+                            const llmCallJson = jsonStr.substring(startPos - 1, endPos + 1); // Include surrounding braces
+                            const partial = JSON.parse(llmCallJson);
+                            if (partial.llm_call) {
+                              attributes = { llm_call: partial.llm_call };
+                              parsed = true;
+                              if (isLlmCall) {
+                                console.log(
+                                  `[TraceQueryService] ⚠️  Salvaged llm_call from malformed JSON`
+                                );
+                              }
+                            }
+                          } catch {}
                         }
                       }
                       
-                      // Try to parse just the llm_call section
-                      try {
-                        const llmCallJson = jsonStr.substring(startPos - 1, endPos + 1); // Include surrounding braces
-                        const partial = JSON.parse(llmCallJson);
-                        if (partial.llm_call) {
-                          attributes = { llm_call: partial.llm_call };
-                          parsed = true;
-                          if (isLlmCall) {
-                            console.log(
-                              `[TraceQueryService] ⚠️  Salvaged llm_call from malformed JSON`
-                            );
-                          }
+                      if (!parsed) {
+                        // Log detailed error for debugging
+                        const errorMsg = parseError5 instanceof Error ? parseError5.message : String(parseError5);
+                        const errorPosition = errorMsg.match(/position (\d+)/)?.[1];
+                        if (errorPosition) {
+                          const pos = parseInt(errorPosition);
+                          const start = Math.max(0, pos - 100);
+                          const end = Math.min(jsonStr.length, pos + 100);
+                          const context = jsonStr.substring(start, end);
+                          console.error(
+                            `[TraceQueryService] Failed to parse attributes_json (error at position ${pos}): ${errorMsg}`
+                          );
+                          console.error(
+                            `[TraceQueryService] Context around error: ...${context}...`
+                          );
                         }
-                      } catch {}
-                    }
-                  }
-                  
-                    if (!parsed) {
-                      // Log detailed error for debugging
-                      const errorMsg = parseError4 instanceof Error ? parseError4.message : String(parseError4);
-                      const errorPosition = errorMsg.match(/position (\d+)/)?.[1];
-                      if (errorPosition) {
-                        const pos = parseInt(errorPosition);
-                        const start = Math.max(0, pos - 100);
-                        const end = Math.min(jsonStr.length, pos + 100);
-                        const context = jsonStr.substring(start, end);
-                        console.error(
-                          `[TraceQueryService] Failed to parse attributes_json (error at position ${pos}): ${errorMsg}`
-                        );
-                        console.error(
-                          `[TraceQueryService] Context around error: ...${context}...`
-                        );
+                        throw parseError5;
                       }
-                      throw parseError4;
                     }
                   }
                 }
