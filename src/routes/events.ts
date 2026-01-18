@@ -31,6 +31,39 @@ import { TraceEvent } from "../types.js";
 
 const router = Router();
 
+function tryParseJsonString(value: string): any {
+  const trimmed = value.trim();
+  if (
+    (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+    (trimmed.startsWith("[") && trimmed.endsWith("]"))
+  ) {
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return value;
+    }
+  }
+  return value;
+}
+
+function sanitizeAttributes(value: any): any {
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeAttributes(item));
+  }
+  if (value && typeof value === "object") {
+    const sanitized: Record<string, any> = {};
+    for (const [key, val] of Object.entries(value)) {
+      if (key === "arguments" && typeof val === "string") {
+        sanitized[key] = tryParseJsonString(val);
+      } else {
+        sanitized[key] = sanitizeAttributes(val);
+      }
+    }
+    return sanitized;
+  }
+  return value;
+}
+
 // Parse NDJSON bodies as text, JSON bodies as JSON
 router.use((req, res, next) => {
   const contentType = req.headers["content-type"] || "";
@@ -484,7 +517,7 @@ router.post(
               try {
                 // CRITICAL: Ensure attributes is always an object (not undefined/null)
                 // This prevents attributes_json from being lost during conversion
-                const attributes = event.attributes || {};
+                const attributes = sanitizeAttributes(event.attributes || {});
                 const cleaned = cleanNullValues(attributes);
 
                 // Ensure cleaned is an object (not undefined)
