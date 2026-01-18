@@ -1075,6 +1075,28 @@ export class TraceQueryService {
     const parsedEvents = uniqueEvents.map((event: any) => {
       let attributes = {};
       try {
+        // Enhanced logging for llm_call events to debug attribute parsing
+        const isLlmCall = event.event_type === "llm_call";
+        if (isLlmCall) {
+          console.log(
+            `[TraceQueryService] Parsing llm_call event (trace: ${event.trace_id}, span: ${event.span_id}):`
+          );
+          console.log(
+            `[TraceQueryService] attributes_json type: ${typeof event.attributes_json}`
+          );
+          console.log(
+            `[TraceQueryService] attributes_json is null/undefined: ${event.attributes_json === null || event.attributes_json === undefined}`
+          );
+          if (typeof event.attributes_json === "string") {
+            console.log(
+              `[TraceQueryService] attributes_json length: ${event.attributes_json.length}`
+            );
+            console.log(
+              `[TraceQueryService] attributes_json preview (first 500 chars): ${event.attributes_json.substring(0, 500)}`
+            );
+          }
+        }
+
         if (typeof event.attributes_json === "string") {
           // Validate JSON string before parsing
           let jsonStr = event.attributes_json.trim();
@@ -1087,9 +1109,51 @@ export class TraceQueryService {
             jsonStr = jsonStr.replace(/\\\\'/g, "\\'");
 
             attributes = JSON.parse(jsonStr);
+            
+            // Log parsed result for llm_call events
+            if (isLlmCall) {
+              console.log(
+                `[TraceQueryService] ✅ Successfully parsed attributes_json`
+              );
+              console.log(
+                `[TraceQueryService] Parsed attributes keys: ${Object.keys(attributes).join(", ")}`
+              );
+              const hasLlmCall = attributes && typeof attributes === "object" && "llm_call" in attributes;
+              console.log(
+                `[TraceQueryService] Has llm_call key: ${hasLlmCall ? "YES" : "NO"}`
+              );
+              if (hasLlmCall && attributes && typeof attributes === "object") {
+                const llmCallData = (attributes as any).llm_call;
+                if (llmCallData) {
+                  console.log(
+                    `[TraceQueryService] llm_call.model: ${llmCallData.model || "missing"}`
+                  );
+                  console.log(
+                    `[TraceQueryService] llm_call.input: ${llmCallData.input?.substring(0, 50) || "missing"}`
+                  );
+                }
+              }
+            }
+          } else {
+            if (isLlmCall) {
+              console.warn(
+                `[TraceQueryService] ⚠️  attributes_json is empty string after trim`
+              );
+            }
           }
         } else if (event.attributes) {
           attributes = event.attributes;
+          if (isLlmCall) {
+            console.log(
+              `[TraceQueryService] Using event.attributes (not attributes_json)`
+            );
+          }
+        } else {
+          if (isLlmCall) {
+            console.warn(
+              `[TraceQueryService] ⚠️  No attributes_json (type: ${typeof event.attributes_json}) and no event.attributes`
+            );
+          }
         }
       } catch (e) {
         const errorMsg = e instanceof Error ? e.message : String(e);
@@ -1205,6 +1269,21 @@ export class TraceQueryService {
         // Determine span name based on event type
         let spanName = "Span";
         if (event.event_type === "llm_call") {
+          // Debug logging for llm_call events
+          if (!event.attributes) {
+            console.warn(
+              `[TraceQueryService] ⚠️  llm_call event (trace: ${event.trace_id}, span: ${event.span_id}) has no attributes after parsing`
+            );
+          } else if (!event.attributes.llm_call) {
+            console.warn(
+              `[TraceQueryService] ⚠️  llm_call event (trace: ${event.trace_id}, span: ${event.span_id}) has attributes but no llm_call key. Attributes keys:`,
+              Object.keys(event.attributes)
+            );
+            console.warn(
+              `[TraceQueryService] Full attributes:`,
+              JSON.stringify(event.attributes, null, 2).substring(0, 500)
+            );
+          }
           const model = event.attributes?.llm_call?.model || "unknown";
           spanName = `LLM Call: ${model}`;
         } else if (event.event_type === "tool_call") {
@@ -1304,6 +1383,24 @@ export class TraceQueryService {
 
       // Add event to span with unique ID
       const eventId = `${spanId}-${event.event_type}-${event.timestamp}`;
+      
+      // Enhanced logging for llm_call events to verify attributes are preserved
+      const isLlmCall = event.event_type === "llm_call";
+      if (isLlmCall) {
+        console.log(
+          `[TraceQueryService] Adding llm_call event to span ${spanId}:`
+        );
+        console.log(
+          `[TraceQueryService] event.attributes type: ${typeof event.attributes}`
+        );
+        console.log(
+          `[TraceQueryService] event.attributes keys: ${Object.keys(event.attributes || {}).join(", ")}`
+        );
+        console.log(
+          `[TraceQueryService] event.attributes.llm_call exists: ${!!event.attributes?.llm_call}`
+        );
+      }
+      
       spanEventsMap.get(spanId)!.push({
         id: eventId, // Add unique id for each event
         event_type: event.event_type,
@@ -1366,6 +1463,25 @@ export class TraceQueryService {
       }
 
       // Extract LLM call details
+      if (llmCallEvent) {
+        // Debug logging if llm_call event exists but attributes are missing
+        if (!llmCallEvent.attributes) {
+          console.warn(
+            `[TraceQueryService] ⚠️  llmCallEvent (span: ${spanId}) has no attributes property`
+          );
+        } else if (!llmCallEvent.attributes.llm_call) {
+          console.warn(
+            `[TraceQueryService] ⚠️  llmCallEvent (span: ${spanId}) attributes missing llm_call key. Available keys:`,
+            Object.keys(llmCallEvent.attributes)
+          );
+          console.warn(
+            `[TraceQueryService] attributes_json raw value:`,
+            typeof llmCallEvent.attributes_json === "string"
+              ? llmCallEvent.attributes_json.substring(0, 500)
+              : "not a string"
+          );
+        }
+      }
       if (llmCallEvent?.attributes?.llm_call) {
         const llmAttrs = llmCallEvent.attributes.llm_call;
         span.llm_call = {
