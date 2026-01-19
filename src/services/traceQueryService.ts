@@ -1326,6 +1326,83 @@ export class TraceQueryService {
       return result;
     };
 
+    const stripArgumentsStringValues = (input: string): string => {
+      let output = "";
+      let i = 0;
+      let inString = false;
+      let escaped = false;
+
+      while (i < input.length) {
+        const ch = input[i];
+
+        if (inString) {
+          output += ch;
+          if (escaped) {
+            escaped = false;
+          } else if (ch === "\\") {
+            escaped = true;
+          } else if (ch === '"') {
+            inString = false;
+          }
+          i += 1;
+          continue;
+        }
+
+        if (ch === '"') {
+          // Potential key
+          if (input.startsWith('"arguments"', i)) {
+            output += '"arguments"';
+            i += '"arguments"'.length;
+
+            // Copy whitespace/colon
+            while (i < input.length && /\s/.test(input[i])) {
+              output += input[i];
+              i += 1;
+            }
+            if (input[i] === ":") {
+              output += ":";
+              i += 1;
+            }
+            while (i < input.length && /\s/.test(input[i])) {
+              output += input[i];
+              i += 1;
+            }
+
+            if (input[i] === '"') {
+              // Replace string value with empty object
+              output += "{}";
+              i += 1; // skip opening quote
+
+              let localEscaped = false;
+              while (i < input.length) {
+                const c = input[i];
+                if (localEscaped) {
+                  localEscaped = false;
+                } else if (c === "\\") {
+                  localEscaped = true;
+                } else if (c === '"') {
+                  i += 1; // consume closing quote
+                  break;
+                }
+                i += 1;
+              }
+              continue;
+            }
+          }
+
+          inString = true;
+          output += ch;
+          i += 1;
+          continue;
+        }
+
+        output += ch;
+        i += 1;
+      }
+
+      return output;
+    };
+
     // Parse events and extract attributes
     const parsedEvents = uniqueEvents.map((event: any) => {
       let attributes = {};
@@ -1356,6 +1433,7 @@ export class TraceQueryService {
           // Validate JSON string before parsing
           let jsonStr = event.attributes_json.trim();
           if (jsonStr && jsonStr.length > 0) {
+            jsonStr = stripArgumentsStringValues(jsonStr);
             // Try multiple parsing strategies to handle malformed JSON
             let parsed = false;
             
