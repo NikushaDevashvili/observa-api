@@ -1239,63 +1239,91 @@ export class TraceQueryService {
     };
 
     const repairFunctionCallArguments = (input: string): string => {
-      const keyIndex = input.indexOf('"arguments"');
-      if (keyIndex === -1) return input;
+      let result = "";
+      let cursor = 0;
 
-      const colonIndex = input.indexOf(":", keyIndex);
-      if (colonIndex === -1) return input;
+      while (cursor < input.length) {
+        const keyIndex = input.indexOf('"arguments"', cursor);
+        if (keyIndex === -1) {
+          result += input.slice(cursor);
+          break;
+        }
 
-      let i = colonIndex + 1;
-      while (i < input.length && /\s/.test(input[i])) i++;
-      if (input[i] !== '"') return input;
+        // Copy everything up to the key
+        result += input.slice(cursor, keyIndex);
+        result += '"arguments"';
 
-      const startQuote = i;
-      i++;
+        const colonIndex = input.indexOf(":", keyIndex);
+        if (colonIndex === -1) {
+          result += input.slice(keyIndex + '"arguments"'.length);
+          break;
+        }
 
-      let escaped = false;
-      let fragment = "";
-      for (; i < input.length; i++) {
-        const ch = input[i];
+        result += input.slice(keyIndex + '"arguments"'.length, colonIndex + 1);
 
-        if (escaped) {
-          fragment += "\\" + ch;
-          escaped = false;
+        let i = colonIndex + 1;
+        while (i < input.length && /\s/.test(input[i])) i++;
+
+        // If not a string value, just continue scanning
+        if (input[i] !== '"') {
+          cursor = i;
           continue;
         }
 
-        if (ch === "\\") {
-          escaped = true;
-          continue;
-        }
+        const startQuote = i;
+        i++;
 
-        if (ch === '"') {
-          let j = i + 1;
-          while (j < input.length && /\s/.test(input[j])) j++;
-          const nextNonWhitespace = j < input.length ? input[j] : "";
-          const isStringTerminator =
-            nextNonWhitespace === "," ||
-            nextNonWhitespace === "}" ||
-            nextNonWhitespace === "]" ||
-            nextNonWhitespace === "";
+        let escaped = false;
+        let braceDepth = 0;
+        let fragment = "";
 
-          if (isStringTerminator) {
-            const unescaped = unescapeJsonStringFragment(fragment);
-            const repaired = JSON.stringify(unescaped);
-            return (
-              input.slice(0, startQuote) +
-              repaired +
-              input.slice(i + 1)
-            );
+        for (; i < input.length; i++) {
+          const ch = input[i];
+
+          if (escaped) {
+            fragment += "\\" + ch;
+            escaped = false;
+            continue;
           }
 
-          fragment += '\\"';
-          continue;
+          if (ch === "\\") {
+            escaped = true;
+            continue;
+          }
+
+          if (ch === "{") {
+            braceDepth += 1;
+          } else if (ch === "}") {
+            if (braceDepth > 0) braceDepth -= 1;
+          }
+
+          if (ch === '"' && braceDepth === 0) {
+            // End of string value
+            const unescaped = unescapeJsonStringFragment(fragment);
+            let repairedValue = JSON.stringify(unescaped);
+            try {
+              const parsedArgs = JSON.parse(unescaped);
+              repairedValue = JSON.stringify(parsedArgs);
+            } catch {
+              // keep as string
+            }
+
+            result += repairedValue;
+            cursor = i + 1;
+            break;
+          }
+
+          fragment += ch;
         }
 
-        fragment += ch;
+        if (cursor <= startQuote) {
+          // Failed to find closing quote; force a safe placeholder and advance
+          result += "null";
+          cursor = startQuote + 1;
+        }
       }
 
-      return input;
+      return result;
     };
 
     // Parse events and extract attributes
