@@ -1675,10 +1675,12 @@ export class TraceQueryService {
           spanName = "Trace";
         }
 
+        const safeParentSpanId =
+          parentSpanId === spanId ? null : parentSpanId;
         const spanData: any = {
           id: spanId, // Add id field for frontend compatibility
           span_id: spanId,
-          parent_span_id: parentSpanId,
+          parent_span_id: safeParentSpanId,
           name: spanName,
           start_time: event.timestamp,
           end_time: event.timestamp,
@@ -3008,6 +3010,13 @@ export class TraceQueryService {
         }
 
         if (parentSpan) {
+          if (parentSpan === span || parentSpan.id === span.id) {
+            console.warn(
+              `[TraceQueryService] Span has self parent reference; skipping child link. span_id=${span.id}`
+            );
+            rootSpans.push(span);
+            continue;
+          }
           if (!parentSpan.children) {
             parentSpan.children = [];
           }
