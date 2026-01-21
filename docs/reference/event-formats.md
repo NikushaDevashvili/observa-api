@@ -63,6 +63,8 @@ attributes: {
     tokens_total: number;
     latency_ms: number;
     cost?: number;
+    tool_definitions?: Array<Record<string, any>>; // Tool schemas sent to the model
+    tools?: Array<Record<string, any>>; // Alias for tool_definitions
   }
 }
 ```

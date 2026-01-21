@@ -98,6 +98,9 @@ export interface EventAttributes {
       type: string;
       content: string | any;
     }> | null; // gen_ai.system_instructions
+    // Tool definitions sent with the LLM request (provider schema)
+    tool_definitions?: Array<Record<string, any>> | null;
+    tools?: Array<Record<string, any>> | null;
     // TIER 2: Server metadata
     server_address?: string | null; // server.address
     server_port?: number | null; // server.port

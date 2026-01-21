@@ -1990,6 +1990,10 @@ export class TraceQueryService {
           // TIER 2: Conversation grouping
           conversation_id_otel: llmAttrs.conversation_id_otel || null,
           choice_count: llmAttrs.choice_count || null,
+          // Tool definitions provided to the model
+          tool_definitions:
+            llmAttrs.tool_definitions || llmAttrs.tools || null,
+          tools: llmAttrs.tools || llmAttrs.tool_definitions || null,
         };
       }
 
@@ -3296,6 +3300,26 @@ export class TraceQueryService {
     // Create a flat array of all spans for easy lookup by frontend
     // This ensures the frontend can find any span by ID, regardless of hierarchy
     const allSpans = Array.from(spansMap.values());
+    const toolCallSpans = allSpans.filter((span) => span.tool_call);
+    const toolCallsByParent = new Map<string, any[]>();
+
+    for (const toolSpan of toolCallSpans) {
+      if (toolSpan.parent_span_id) {
+        if (!toolCallsByParent.has(toolSpan.parent_span_id)) {
+          toolCallsByParent.set(toolSpan.parent_span_id, []);
+        }
+        toolCallsByParent.get(toolSpan.parent_span_id)!.push(toolSpan);
+      }
+      if (
+        toolSpan.original_span_id &&
+        toolSpan.original_span_id !== toolSpan.parent_span_id
+      ) {
+        if (!toolCallsByParent.has(toolSpan.original_span_id)) {
+          toolCallsByParent.set(toolSpan.original_span_id, []);
+        }
+        toolCallsByParent.get(toolSpan.original_span_id)!.push(toolSpan);
+      }
+    }
 
     // Ensure all spans have consistent identifiers and are properly structured
     // Add additional lookup fields for frontend compatibility
@@ -3361,6 +3385,63 @@ export class TraceQueryService {
             span_id: span.span_id,
             parent_span_id: span.parent_span_id,
           };
+        }
+      }
+
+      if (span.llm_call) {
+        const toolDefs =
+          span.llm_call.tool_definitions || span.llm_call.tools || null;
+        if (Array.isArray(toolDefs)) {
+          span.available_tools = toolDefs;
+          span.available_tool_names = toolDefs
+            .map((def: any) => def?.name || def?.function?.name || def?.tool?.name)
+            .filter(Boolean);
+        } else {
+          span.available_tools = null;
+          span.available_tool_names = [];
+        }
+
+        const executedToolSpans = [
+          ...(toolCallsByParent.get(span.id) || []),
+          ...(toolCallsByParent.get(span.span_id) || []),
+          ...(span.original_span_id
+            ? toolCallsByParent.get(span.original_span_id) || []
+            : []),
+        ];
+        const seenToolKeys = new Set<string>();
+        span.executed_tools = executedToolSpans
+          .map((toolSpan: any) => {
+            const tool = toolSpan.tool_call || {};
+            const key =
+              tool.tool_call_id ||
+              `${tool.tool_name || "unknown"}-${toolSpan.id || toolSpan.span_id}`;
+            if (seenToolKeys.has(key)) return null;
+            seenToolKeys.add(key);
+            return {
+              tool_name: tool.tool_name || "unknown",
+              result_status: tool.result_status || "unknown",
+              latency_ms: tool.latency_ms ?? null,
+              error_message: tool.error_message || null,
+              tool_call_id: tool.tool_call_id || null,
+            };
+          })
+          .filter(Boolean);
+      }
+
+      if (!span.status) {
+        if (
+          span.error ||
+          span.error_message ||
+          span.tool_call?.result_status === "error" ||
+          span.tool_call?.result_status === "timeout" ||
+          span.llm_call?.finish_reason === "error"
+        ) {
+          span.status =
+            span.tool_call?.result_status === "timeout" ? "timeout" : "error";
+        } else if (span.tool_call?.result_status) {
+          span.status = span.tool_call.result_status;
+        } else {
+          span.status = "success";
         }
       }
 

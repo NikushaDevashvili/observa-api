@@ -6,6 +6,7 @@ import { TraceService } from "../services/traceService.js";
 import { AuthService } from "../services/authService.js";
 import { TraceQueryService } from "../services/traceQueryService.js";
 import { AgentPrismAdapterService } from "../services/agentPrismAdapter.js";
+import { AuditService } from "../services/auditService.js";
 import { TraceEvent } from "../types.js";
 import { traceEventSchema } from "../validation/schemas.js";
 import { query } from "../db/client.js";
@@ -61,6 +62,42 @@ function parseStringList(value: unknown): string[] | undefined {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+function parseAuditReason(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (Array.isArray(value)) {
+    const first = value.find((item) => typeof item === "string");
+    return first ? String(first).trim() : null;
+  }
+  const reason = String(value).trim();
+  return reason.length > 0 ? reason : null;
+}
+
+async function logTraceContextReveal(params: {
+  tenantId: string;
+  userId: string;
+  traceId: string;
+  projectId?: string | null;
+  format?: string | null;
+  reason?: string | null;
+  req: Request;
+}): Promise<void> {
+  await AuditService.log({
+    tenantId: params.tenantId,
+    projectId: params.projectId ?? null,
+    userId: params.userId,
+    action: "trace_context_revealed",
+    resourceType: "trace",
+    resourceId: params.traceId,
+    metadata: {
+      format: params.format || null,
+      reason: params.reason || null,
+      includeMessages: true,
+    },
+    ipAddress: params.req.ip,
+    userAgent: params.req.get("user-agent") || null,
+  });
 }
 
 function performanceBadgeFromLatency(
@@ -791,6 +828,7 @@ router.get("/:traceId/export", async (req: Request, res: Response) => {
     const { traceId } = req.params;
     const format = String(req.query.format || "json").toLowerCase();
     const includeMessages = parseBool(req.query.includeMessages) ?? false;
+    const includeMessagesReason = parseAuditReason(req.query.reason);
 
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -817,6 +855,18 @@ router.get("/:traceId/export", async (req: Request, res: Response) => {
     if (!traceTree) {
       return res.status(404).json({
         error: "Trace not found",
+      });
+    }
+
+    if (includeMessages) {
+      await logTraceContextReveal({
+        tenantId: user.tenantId,
+        userId: user.id,
+        traceId,
+        projectId,
+        format,
+        reason: includeMessagesReason,
+        req,
       });
     }
 
@@ -944,6 +994,7 @@ router.get("/:traceId", async (req: Request, res: Response) => {
     const { traceId } = req.params;
     const format = String(req.query.format || "tree").toLowerCase(); // default to tree
     const includeMessages = parseBool(req.query.includeMessages) ?? false;
+    const includeMessagesReason = parseAuditReason(req.query.reason);
 
     // Get user from session
     const authHeader = req.headers.authorization;
@@ -973,6 +1024,18 @@ router.get("/:traceId", async (req: Request, res: Response) => {
       if (!traceTree) {
         return res.status(404).json({
           error: "Trace not found",
+        });
+      }
+
+      if (includeMessages) {
+        await logTraceContextReveal({
+          tenantId: user.tenantId,
+          userId: user.id,
+          traceId,
+          projectId: (req.query.projectId as string | undefined) || null,
+          format,
+          reason: includeMessagesReason,
+          req,
         });
       }
 
@@ -1015,6 +1078,18 @@ router.get("/:traceId", async (req: Request, res: Response) => {
       if (!traceTree) {
         return res.status(404).json({
           error: "Trace not found",
+        });
+      }
+
+      if (includeMessages) {
+        await logTraceContextReveal({
+          tenantId: user.tenantId,
+          userId: user.id,
+          traceId,
+          projectId: (req.query.projectId as string | undefined) || null,
+          format,
+          reason: includeMessagesReason,
+          req,
         });
       }
 

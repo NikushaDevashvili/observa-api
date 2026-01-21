@@ -86,6 +86,8 @@ export interface ObservaSpan {
     input_messages?: Array<any> | null;
     output_messages?: Array<any> | null;
     system_instructions?: Array<any> | null;
+    tool_definitions?: Array<any> | null;
+    tools?: Array<any> | null;
     // TIER 2: Server metadata
     server_address?: string | null;
     server_port?: number | null;
@@ -93,6 +95,8 @@ export interface ObservaSpan {
     conversation_id_otel?: string | null;
     choice_count?: number | null;
   };
+  available_tools?: Array<any> | null;
+  executed_tools?: Array<any> | null;
   tool_call?: {
     tool_name?: string;
     args?: any;
@@ -816,6 +820,11 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
     if (llm.system_instructions && llm.system_instructions.length > 0) {
       attributes["gen_ai.system_instructions"] = llm.system_instructions;
     }
+    if (llm.tool_definitions && llm.tool_definitions.length > 0) {
+      attributes["gen_ai.request.tools"] = llm.tool_definitions;
+    } else if (llm.tools && llm.tools.length > 0) {
+      attributes["gen_ai.request.tools"] = llm.tools;
+    }
 
     // TIER 2: Server Metadata
     if (llm.server_address) {
@@ -851,6 +860,17 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
     attributes["llm_call.streaming_duration_ms"] = llm.streaming_duration_ms;
     attributes["llm_call.response_id"] = llm.response_id;
     attributes["llm_call.system_fingerprint"] = llm.system_fingerprint;
+    if (llm.tool_definitions && llm.tool_definitions.length > 0) {
+      attributes["llm_call.tool_definitions"] = llm.tool_definitions;
+    } else if (llm.tools && llm.tools.length > 0) {
+      attributes["llm_call.tool_definitions"] = llm.tools;
+    }
+    if (span.available_tools && span.available_tools.length > 0) {
+      attributes["observa.available_tools"] = span.available_tools;
+    }
+    if (span.executed_tools && span.executed_tools.length > 0) {
+      attributes["observa.executed_tools"] = span.executed_tools;
+    }
   }
 
   // Add tool call attributes (TIER 2: OTEL Tool Standardization)
