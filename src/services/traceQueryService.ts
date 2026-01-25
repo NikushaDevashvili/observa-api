@@ -1747,6 +1747,41 @@ export class TraceQueryService {
               );
             }
             
+            // Before stripArgumentsStringValues, try to fix the JSON if it's completely broken
+            // The error shows "arguments":""query" which suggests the JSON might have literal double quotes
+            // Try a very aggressive fix: find and replace the exact error pattern
+            const errorPattern = /"arguments"\s*:\s*""([^"]+)"\s*:\s*"([^"]*)"([,}])/g;
+            let errorPatternFixCount = 0;
+            const beforeErrorFix = jsonStr;
+            jsonStr = jsonStr.replace(errorPattern, (match: string, key: string, value: string, after: string) => {
+              errorPatternFixCount++;
+              const repaired = JSON.stringify({ [key]: value });
+              if (isLlmCall) {
+                console.log(
+                  `[TraceQueryService] 🔧 ERROR PATTERN FIX: Found "${key}":"${value.substring(0, 50)}" and repaired`
+                );
+              }
+              return `"arguments":${repaired}${after}`;
+            });
+            
+            if (errorPatternFixCount > 0 && isLlmCall) {
+              console.log(
+                `[TraceQueryService] ✅ ERROR PATTERN: Fixed ${errorPatternFixCount} instance(s)`
+              );
+              // Show before/after around the fix
+              const samplePos = beforeErrorFix.indexOf('"arguments"');
+              if (samplePos !== -1) {
+                const beforeSample = beforeErrorFix.substring(samplePos, samplePos + 200);
+                const afterSample = jsonStr.substring(samplePos, samplePos + 200);
+                console.log(
+                  `[TraceQueryService] BEFORE: ${beforeSample}`
+                );
+                console.log(
+                  `[TraceQueryService] AFTER:  ${afterSample}`
+                );
+              }
+            }
+            
             jsonStr = stripArgumentsStringValues(jsonStr);
             // Try multiple parsing strategies to handle malformed JSON
             let parsed = false;
