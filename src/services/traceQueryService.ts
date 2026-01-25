@@ -1558,16 +1558,45 @@ export class TraceQueryService {
             // "arguments":"\"query\":\"value\"" (escaped quotes in the string value)
             // We need to find and convert it to: "arguments":{"query":"value"}
             
-            // FIRST: Try to find the exact error pattern from the logs
-            // The error shows: "arguments":""query":"value"" which means in the stored JSON we have:
-            // Option 1: "arguments": ""query":"value"" (invalid - two quotes, but this wouldn't be stored)
-            // Option 2: "arguments": "\"query\":\"value\"" (valid JSON, but string value is malformed)
-            // We need to handle both cases
+            // FIRST: The error shows "arguments":""query":"value"" - this is INVALID JSON
+            // The stored JSON must have this literal pattern (two consecutive quotes)
+            // We need to find and fix it BEFORE any parsing attempts
             
-            // Try to find pattern where arguments has a string value that starts with quote and colon
-            // This catches: "arguments": "\"query\":\"value\""
-            const escapedPattern = /"arguments"\s*:\s*"\\"([^"\\]+)\\"\s*:\s*\\"([^"\\]*)\\""/g;
+            // Pattern 1: Find "arguments":""key":"value"" (literal double quotes - invalid JSON)
+            // The error context shows: "arguments":""query":"philosophy major courses Stanford""
+            // This pattern has TWO consecutive quotes after the colon - this is invalid JSON
+            // We need to match: "arguments":"" followed by key, then ":" followed by value, then ""
+            const literalDoubleQuotePattern = /"arguments"\s*:\s*""([^"]+)"\s*:\s*"([^"]*)"([,}])/g;
             let aggressiveRepairCount = 0;
+            const beforeFirstFix = jsonStr;
+            jsonStr = jsonStr.replace(literalDoubleQuotePattern, (match: string, key: string, value: string, after: string) => {
+              aggressiveRepairCount++;
+              const repaired = JSON.stringify({ [key]: value });
+              if (isLlmCall) {
+                console.log(
+                  `[TraceQueryService] 🔧 AGGRESSIVE FIX (literal double quotes): Found "arguments": ""${key}":"${value}"" and repaired to: "arguments":${repaired}${after}`
+                );
+              }
+              return `"arguments":${repaired}${after}`;
+            });
+            
+            if (aggressiveRepairCount > 0 && isLlmCall) {
+              // Show before/after to verify the fix
+              const samplePos = beforeFirstFix.indexOf('"arguments"');
+              if (samplePos !== -1) {
+                const beforeSample = beforeFirstFix.substring(samplePos, samplePos + 150);
+                const afterSample = jsonStr.substring(samplePos, samplePos + 150);
+                console.log(
+                  `[TraceQueryService] BEFORE Pattern 1: ${beforeSample}`
+                );
+                console.log(
+                  `[TraceQueryService] AFTER Pattern 1:  ${afterSample}`
+                );
+              }
+            }
+            
+            // Pattern 2: Find "arguments": "\"key\":\"value\"" (escaped quotes - valid JSON but malformed content)
+            const escapedPattern = /"arguments"\s*:\s*"\\"([^"\\]+)\\"\s*:\s*\\"([^"\\]*)\\""/g;
             jsonStr = jsonStr.replace(escapedPattern, (match: string, key: string, value: string) => {
               aggressiveRepairCount++;
               const repaired = JSON.stringify({ [key]: value });
@@ -1579,14 +1608,14 @@ export class TraceQueryService {
               return `"arguments":${repaired}`;
             });
             
-            // Also try literal pattern (in case it somehow got stored without escaping)
-            const literalPattern = /"arguments"\s*:\s*""([^"]+)"\s*:\s*"([^"]*)""/g;
-            jsonStr = jsonStr.replace(literalPattern, (match: string, key: string, value: string) => {
+            // Pattern 3: Also try with escaped backslashes (double-escaped)
+            const doubleEscapedPattern = /"arguments"\s*:\s*"\\\\"([^"\\\\]+)\\\\"\s*:\s*\\\\"([^"\\\\]*)\\\\""/g;
+            jsonStr = jsonStr.replace(doubleEscapedPattern, (match: string, key: string, value: string) => {
               aggressiveRepairCount++;
               const repaired = JSON.stringify({ [key]: value });
               if (isLlmCall) {
                 console.log(
-                  `[TraceQueryService] 🔧 AGGRESSIVE FIX (literal): Found "arguments": ""${key}":"${value}"" and repaired to: "arguments":${repaired}`
+                  `[TraceQueryService] 🔧 AGGRESSIVE FIX (double-escaped): Found and repaired`
                 );
               }
               return `"arguments":${repaired}`;
@@ -1747,26 +1776,50 @@ export class TraceQueryService {
               );
             }
             
-            // Before stripArgumentsStringValues, try to fix the JSON if it's completely broken
-            // The error shows "arguments":""query" which suggests the JSON might have literal double quotes
-            // Try a very aggressive fix: find and replace the exact error pattern
-            const errorPattern = /"arguments"\s*:\s*""([^"]+)"\s*:\s*"([^"]*)"([,}])/g;
+            // CRITICAL: Before stripArgumentsStringValues, try to fix the JSON if it's completely broken
+            // The error shows "arguments":""query" which means the JSON has invalid syntax
+            // We need to find this EXACT pattern and fix it BEFORE any parsing attempts
+            
+            // The error context shows: "arguments":""query":"philosophy major courses Stanford""
+            // This means in the raw JSON string we have literal: "arguments":""query":"value""
+            // This is invalid JSON syntax (two consecutive quotes)
+            
+            // Try multiple patterns to catch this:
+            // Pattern A: "arguments":""key":"value"" (literal, most likely)
+            const errorPatternA = /"arguments"\s*:\s*""([^"]+)"\s*:\s*"([^"]*)"([,}])/g;
+            // Pattern B: "arguments":"\"key\":\"value\"" (escaped, but malformed content)
+            const errorPatternB = /"arguments"\s*:\s*"\\"([^"\\]+)\\"\s*:\s*\\"([^"\\]*)\\""/g;
+            
             let errorPatternFixCount = 0;
             const beforeErrorFix = jsonStr;
-            jsonStr = jsonStr.replace(errorPattern, (match: string, key: string, value: string, after: string) => {
+            
+            // Try Pattern A first (literal double quotes)
+            jsonStr = jsonStr.replace(errorPatternA, (match: string, key: string, value: string, after: string) => {
               errorPatternFixCount++;
               const repaired = JSON.stringify({ [key]: value });
               if (isLlmCall) {
                 console.log(
-                  `[TraceQueryService] 🔧 ERROR PATTERN FIX: Found "${key}":"${value.substring(0, 50)}" and repaired`
+                  `[TraceQueryService] 🔧 ERROR PATTERN FIX A: Found "arguments": ""${key}":"${value.substring(0, 50)}"" and repaired to: "arguments":${repaired}${after}`
                 );
               }
               return `"arguments":${repaired}${after}`;
             });
             
+            // Try Pattern B (escaped quotes)
+            jsonStr = jsonStr.replace(errorPatternB, (match: string, key: string, value: string) => {
+              errorPatternFixCount++;
+              const repaired = JSON.stringify({ [key]: value });
+              if (isLlmCall) {
+                console.log(
+                  `[TraceQueryService] 🔧 ERROR PATTERN FIX B: Found "arguments": "\\"${key}\\":\\"${value.substring(0, 50)}\\" and repaired`
+                );
+              }
+              return `"arguments":${repaired}`;
+            });
+            
             if (errorPatternFixCount > 0 && isLlmCall) {
               console.log(
-                `[TraceQueryService] ✅ ERROR PATTERN: Fixed ${errorPatternFixCount} instance(s)`
+                `[TraceQueryService] ✅ ERROR PATTERN: Fixed ${errorPatternFixCount} instance(s) BEFORE parsing`
               );
               // Show before/after around the fix
               const samplePos = beforeErrorFix.indexOf('"arguments"');
@@ -1774,10 +1827,10 @@ export class TraceQueryService {
                 const beforeSample = beforeErrorFix.substring(samplePos, samplePos + 200);
                 const afterSample = jsonStr.substring(samplePos, samplePos + 200);
                 console.log(
-                  `[TraceQueryService] BEFORE: ${beforeSample}`
+                  `[TraceQueryService] BEFORE ERROR FIX: ${beforeSample}`
                 );
                 console.log(
-                  `[TraceQueryService] AFTER:  ${afterSample}`
+                  `[TraceQueryService] AFTER ERROR FIX:  ${afterSample}`
                 );
               }
             }
