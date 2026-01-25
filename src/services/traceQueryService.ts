@@ -1818,6 +1818,53 @@ export class TraceQueryService {
             // This means in the raw JSON string we have literal: "arguments":""query":"value""
             // This is invalid JSON syntax (two consecutive quotes)
             
+            // FIRST: Fix the simplest pattern - "arguments":""query": -> "arguments":{"query":
+            // The actual pattern in the JSON is: "arguments":""query": where "query" is already in quotes
+            // We need to match: "arguments":"" followed by "key": and replace with "arguments":{"key":
+            const simpleFixPattern = /"arguments"\s*:\s*""\s*"([^"]+)"\s*:/g;
+            const beforeSimpleFix = jsonStr;
+            let simpleFixCount = 0;
+            jsonStr = jsonStr.replace(simpleFixPattern, (match: string, key: string) => {
+              simpleFixCount++;
+              if (isLlmCall) {
+                console.log(
+                  `[TraceQueryService] 🔧 SIMPLE FIX: Replacing "arguments":""${key}": with "arguments":{"${key}":`
+                );
+              }
+              return `"arguments":{"${key}":`;
+            });
+            
+            // Also try pattern without quotes around the key (in case of variations)
+            // Pattern: "arguments":""key": where key is not quoted
+            const unquotedKeyPattern = /"arguments"\s*:\s*""([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g;
+            jsonStr = jsonStr.replace(unquotedKeyPattern, (match: string, key: string) => {
+              simpleFixCount++;
+              if (isLlmCall) {
+                console.log(
+                  `[TraceQueryService] 🔧 UNQUOTED KEY FIX: Replacing "arguments":""${key}": with "arguments":{"${key}":`
+                );
+              }
+              return `"arguments":{"${key}":`;
+            });
+            
+            if (simpleFixCount > 0 && isLlmCall) {
+              console.log(
+                `[TraceQueryService] ✅ SIMPLE FIX: Applied ${simpleFixCount} fix(es) for missing opening brace pattern`
+              );
+              // Show before/after for debugging
+              const samplePos = beforeSimpleFix.indexOf('"arguments"');
+              if (samplePos !== -1) {
+                const beforeSample = beforeSimpleFix.substring(samplePos, Math.min(samplePos + 150, beforeSimpleFix.length));
+                const afterSample = jsonStr.substring(samplePos, Math.min(samplePos + 150, jsonStr.length));
+                console.log(
+                  `[TraceQueryService] BEFORE SIMPLE FIX: ${beforeSample}`
+                );
+                console.log(
+                  `[TraceQueryService] AFTER SIMPLE FIX:  ${afterSample}`
+                );
+              }
+            }
+            
             // Try multiple patterns to catch this:
             // Pattern A: "arguments":""key":"value"" (literal, most likely)
             const errorPatternA = /"arguments"\s*:\s*""([^"]+)"\s*:\s*"([^"]*)"([,}])/g;
@@ -1909,10 +1956,13 @@ export class TraceQueryService {
                     // Fix the specific pattern from the error: "arguments":""query":"value"
                     // This occurs when the opening brace is missing after "arguments":
                     // Pattern: "arguments":""property_name": -> "arguments":{"property_name":
-                    fixedJson = fixedJson.replace(/"arguments"\s*:\s*""([a-zA-Z_][a-zA-Z0-9_]*)"\s*:/g, '"arguments":{"$1":');
+                    // Use a more flexible pattern that handles various whitespace and property name formats
+                    fixedJson = fixedJson.replace(/"arguments"\s*:\s*""\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*"\s*:/g, '"arguments":{"$1":');
+                    // Also handle cases where there might be escaped quotes: "arguments":"\"key\":
+                    fixedJson = fixedJson.replace(/"arguments"\s*:\s*"\\"\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\\"\s*:/g, '"arguments":{"$1":');
                     // Fix similar patterns for other object properties that should be objects
                     // Pattern: "property":""key": -> "property":{"key":
-                    fixedJson = fixedJson.replace(/("(?:function_call|tool_calls|additional_kwargs)"\s*:\s*)""([a-zA-Z_][a-zA-Z0-9_]*)"\s*:/g, '$1{"$2":');
+                    fixedJson = fixedJson.replace(/("(?:function_call|tool_calls|additional_kwargs)"\s*:\s*)""\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*"\s*:/g, '$1{"$2":');
                     
                     attributes = JSON.parse(fixedJson);
                     parsed = true;
