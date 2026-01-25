@@ -1553,6 +1553,40 @@ export class TraceQueryService {
           // Validate JSON string before parsing
           let jsonStr = event.attributes_json.trim();
           if (jsonStr && jsonStr.length > 0) {
+            // ULTRA-AGGRESSIVE FIRST PASS: Fix the exact error pattern from logs
+            // The error shows: "arguments":""query":"philosophy major courses Stanford""
+            // This is invalid JSON with TWO consecutive quotes - we MUST fix this FIRST
+            // Try to find this pattern using a simple string search and replace
+            const ultraAggressivePattern = /"arguments"\s*:\s*""([^"]+)"\s*:\s*"([^"]*)"([,}])/g;
+            let ultraAggressiveCount = 0;
+            const originalJsonStr = jsonStr;
+            jsonStr = jsonStr.replace(ultraAggressivePattern, (match: string, key: string, value: string, after: string) => {
+              ultraAggressiveCount++;
+              const repaired = JSON.stringify({ [key]: value });
+              if (isLlmCall) {
+                console.log(
+                  `[TraceQueryService] 🚨 ULTRA-AGGRESSIVE FIX: Found and fixed "arguments": ""${key}":"${value.substring(0, 50)}""`
+                );
+              }
+              return `"arguments":${repaired}${after}`;
+            });
+            
+            if (ultraAggressiveCount > 0 && isLlmCall) {
+              console.log(
+                `[TraceQueryService] ✅ ULTRA-AGGRESSIVE: Fixed ${ultraAggressiveCount} instance(s) in FIRST PASS`
+              );
+              // Show the exact fix
+              const pos = originalJsonStr.indexOf('"arguments"');
+              if (pos !== -1) {
+                console.log(
+                  `[TraceQueryService] ORIGINAL (first 200 chars from arguments): ${originalJsonStr.substring(pos, pos + 200)}`
+                );
+                console.log(
+                  `[TraceQueryService] FIXED (first 200 chars from arguments): ${jsonStr.substring(pos, pos + 200)}`
+                );
+              }
+            }
+            
             // CRITICAL PRE-PROCESSING: Fix the malformed pattern BEFORE any parsing attempts
             // The error shows: "arguments":""query":"value"" which means the JSON contains:
             // "arguments":"\"query\":\"value\"" (escaped quotes in the string value)
