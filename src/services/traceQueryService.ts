@@ -1305,7 +1305,50 @@ export class TraceQueryService {
               const parsedArgs = JSON.parse(unescaped);
               repairedValue = JSON.stringify(parsedArgs);
             } catch {
-              // keep as string
+              // If parsing failed, check if it's malformed JSON missing outer braces
+              // Pattern: "key":"value" (should be {"key":"value"})
+              const trimmed = unescaped.trim();
+              if (
+                trimmed.startsWith('"') &&
+                !trimmed.startsWith('"{') &&
+                trimmed.includes(':') &&
+                trimmed.length > 3
+              ) {
+                // Try wrapping in braces
+                try {
+                  const wrapped = `{${trimmed}}`;
+                  const parsedArgs = JSON.parse(wrapped);
+                  repairedValue = JSON.stringify(parsedArgs);
+                } catch {
+                  // If wrapping fails, try to reconstruct manually
+                  // Extract key and value using regex
+                  const keyValueMatch = trimmed.match(/^"([^"]+)"\s*:\s*(.+)$/);
+                  if (keyValueMatch && keyValueMatch[1]) {
+                    const key: string = keyValueMatch[1];
+                    let val: any = keyValueMatch[2] || '';
+                    
+                    // Try to parse the value
+                    try {
+                      // If value is quoted, extract it
+                      if (val.startsWith('"') && val.endsWith('"')) {
+                        val = val.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                      } else {
+                        // Try parsing as JSON (for numbers, booleans, etc.)
+                        try {
+                          val = JSON.parse(val);
+                        } catch {
+                          // Keep as string
+                        }
+                      }
+                      const reconstructed = { [key]: val };
+                      repairedValue = JSON.stringify(reconstructed);
+                    } catch {
+                      // If reconstruction fails, keep as string (original behavior)
+                    }
+                  }
+                }
+              }
+              // If none of the fixes worked, keep as string (original behavior)
             }
 
             result += repairedValue;
@@ -1369,22 +1412,66 @@ export class TraceQueryService {
             }
 
             if (input[i] === '"') {
-              // Replace string value with empty object
-              output += "{}";
+              // Check if this looks like a malformed JSON string (e.g., ""key":"value"")
+              // We need to capture the full string value to potentially repair it
+              const stringStart = i;
               i += 1; // skip opening quote
-
+              
               let localEscaped = false;
+              let stringContent = "";
+              let foundClosingQuote = false;
+              
               while (i < input.length) {
                 const c = input[i];
                 if (localEscaped) {
+                  stringContent += "\\" + c;
                   localEscaped = false;
                 } else if (c === "\\") {
                   localEscaped = true;
+                  stringContent += c;
                 } else if (c === '"') {
-                  i += 1; // consume closing quote
-                  break;
+                  // Check if this is a closing quote or part of the content
+                  // If the next char is also '"', it might be the start of a key in malformed JSON
+                  if (i + 1 < input.length && input[i + 1] === '"' && stringContent.trim().length > 0 && stringContent.includes(':')) {
+                    // This looks like malformed JSON - continue collecting
+                    stringContent += c;
+                  } else {
+                    // This is the closing quote
+                    foundClosingQuote = true;
+                    i += 1; // consume closing quote
+                    break;
+                  }
+                } else {
+                  stringContent += c;
                 }
                 i += 1;
+              }
+              
+              // Check if the string content looks like malformed JSON (missing outer braces)
+              const trimmed = stringContent.trim();
+              if (
+                trimmed.startsWith('"') &&
+                !trimmed.startsWith('"{') &&
+                trimmed.includes(':') &&
+                trimmed.length > 3
+              ) {
+                // Try to repair it by wrapping in braces
+                try {
+                  const wrapped = `{${trimmed}}`;
+                  JSON.parse(wrapped); // Validate it's parseable
+                  output += wrapped; // Use the repaired version
+                } catch {
+                  // If repair fails, use empty object (original behavior)
+                  output += "{}";
+                }
+              } else {
+                // Not malformed, use empty object (original behavior)
+                output += "{}";
+              }
+              
+              if (!foundClosingQuote) {
+                // If we didn't find a closing quote, we've consumed the rest
+                break;
               }
               continue;
             }
