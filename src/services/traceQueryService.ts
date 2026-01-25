@@ -1902,31 +1902,51 @@ export class TraceQueryService {
                     );
                   }
                 } catch (parseError3) {
-                  // Strategy 4: Try fixing common escaping issues
+                  // Strategy 4: Fix malformed object properties where opening brace is missing
+                  // Fixes patterns like "arguments":""query" to "arguments":{"query"
                   try {
-                    // Fix incorrect single quote escaping
-                    let fixedJson = jsonStr.replace(/\\'/g, "'");
-                    // Fix double-escaped backslashes
-                    fixedJson = fixedJson.replace(/\\\\'/g, "\\'");
-                    // Fix double-escaped quotes (common when JSON is stored in a JSON string)
-                    fixedJson = fixedJson.replace(/\\"/g, '"');
-                    fixedJson = fixedJson.replace(/\\\\"/g, '\\"');
+                    let fixedJson = jsonStr;
+                    // Fix the specific pattern from the error: "arguments":""query":"value"
+                    // This occurs when the opening brace is missing after "arguments":
+                    // Pattern: "arguments":""property_name": -> "arguments":{"property_name":
+                    fixedJson = fixedJson.replace(/"arguments"\s*:\s*""([a-zA-Z_][a-zA-Z0-9_]*)"\s*:/g, '"arguments":{"$1":');
+                    // Fix similar patterns for other object properties that should be objects
+                    // Pattern: "property":""key": -> "property":{"key":
+                    fixedJson = fixedJson.replace(/("(?:function_call|tool_calls|additional_kwargs)"\s*:\s*)""([a-zA-Z_][a-zA-Z0-9_]*)"\s*:/g, '$1{"$2":');
                     
                     attributes = JSON.parse(fixedJson);
                     parsed = true;
                     if (isLlmCall) {
                       console.log(
-                        `[TraceQueryService] ⚠️  Fixed JSON escaping issues and parsed successfully`
+                        `[TraceQueryService] ⚠️  Fixed missing opening brace in object property and parsed successfully`
                       );
                     }
-                  } catch (parseError4) {
-                    // Strategy 5: Try unescaping if double-encoded
+                  } catch (parseError4a) {
+                    // Strategy 4b: Try fixing common escaping issues
                     try {
-                      // Check if it's a double-encoded JSON string
-                      // Try removing one level of escaping
-                      if (jsonStr.startsWith('"') && jsonStr.endsWith('"')) {
-                        // Might be a JSON string inside a JSON string
-                        try {
+                      // Fix incorrect single quote escaping
+                      let fixedJson = jsonStr.replace(/\\'/g, "'");
+                      // Fix double-escaped backslashes
+                      fixedJson = fixedJson.replace(/\\\\'/g, "\\'");
+                      // Fix double-escaped quotes (common when JSON is stored in a JSON string)
+                      fixedJson = fixedJson.replace(/\\"/g, '"');
+                      fixedJson = fixedJson.replace(/\\\\"/g, '\\"');
+                      
+                      attributes = JSON.parse(fixedJson);
+                      parsed = true;
+                      if (isLlmCall) {
+                        console.log(
+                          `[TraceQueryService] ⚠️  Fixed JSON escaping issues and parsed successfully`
+                        );
+                      }
+                    } catch (parseError4) {
+                      // Strategy 5: Try unescaping if double-encoded
+                      try {
+                        // Check if it's a double-encoded JSON string
+                        // Try removing one level of escaping
+                        if (jsonStr.startsWith('"') && jsonStr.endsWith('"')) {
+                          // Might be a JSON string inside a JSON string
+                          try {
                           const firstParse = JSON.parse(jsonStr); // This should give us the inner string
                           if (typeof firstParse === "string") {
                             attributes = JSON.parse(firstParse);
@@ -2009,6 +2029,7 @@ export class TraceQueryService {
                 }
               }
             }
+          }
             
             // Log parsed result for llm_call events
             if (isLlmCall) {
