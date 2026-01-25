@@ -182,32 +182,32 @@ export class TraceQueryService {
       if (bottleneckPercentage !== null && bottleneckPercentage >= 50) {
         suggestions.push(
           `Most time is spent in "${name}" (~${bottleneckPercentage.toFixed(
-            1
-          )}% of total). Consider caching, batching, or reducing work in this step.`
+            1,
+          )}% of total). Consider caching, batching, or reducing work in this step.`,
         );
       } else if (
         bottleneckDurationMs !== null &&
         bottleneckDurationMs >= 1000
       ) {
         suggestions.push(
-          `"${name}" took ${bottleneckDurationMs}ms. Consider adding timeouts, retries with backoff, and caching where applicable.`
+          `"${name}" took ${bottleneckDurationMs}ms. Consider adding timeouts, retries with backoff, and caching where applicable.`,
         );
       }
 
       const t = String(slowest.type || slowest.event_type || "").toLowerCase();
       if (t.includes("retrieval")) {
         suggestions.push(
-          `Retrieval was a bottleneck. Consider smaller top-k, better indexes, caching, or pre-filtering before retrieval.`
+          `Retrieval was a bottleneck. Consider smaller top-k, better indexes, caching, or pre-filtering before retrieval.`,
         );
       }
       if (t.includes("tool")) {
         suggestions.push(
-          `Tool execution was a bottleneck. Consider parallelizing tool calls or adding memoization for deterministic results.`
+          `Tool execution was a bottleneck. Consider parallelizing tool calls or adding memoization for deterministic results.`,
         );
       }
       if (t.includes("llm")) {
         suggestions.push(
-          `LLM call was a bottleneck. Consider faster models, shorter prompts, or streaming + early stopping for UX.`
+          `LLM call was a bottleneck. Consider faster models, shorter prompts, or streaming + early stopping for UX.`,
         );
       }
     }
@@ -247,7 +247,7 @@ export class TraceQueryService {
       if (!summary?.total_cost) total += costNum;
 
       const typeKey = String(
-        s?.type || s?.event_type || "unknown"
+        s?.type || s?.event_type || "unknown",
       ).toLowerCase();
       byType[typeKey] = (byType[typeKey] || 0) + costNum;
       bySpan.push({
@@ -265,7 +265,7 @@ export class TraceQueryService {
     return {
       totalCostUsd: total > 0 ? Number(total.toFixed(6)) : null,
       byType: Object.fromEntries(
-        Object.entries(byType).map(([k, v]) => [k, Number(v.toFixed(6))])
+        Object.entries(byType).map(([k, v]) => [k, Number(v.toFixed(6))]),
       ),
       topSpans: bySpan.slice(0, 5),
     };
@@ -330,7 +330,7 @@ export class TraceQueryService {
 
     const scoreExplain = (
       label: string,
-      score: any
+      score: any,
     ): { score: number | null; explanation: string } => {
       if (typeof score !== "number") {
         return { score: null, explanation: `${label} score not available.` };
@@ -351,27 +351,27 @@ export class TraceQueryService {
     const improvements: string[] = [];
     if (analysis.hasContextDrop)
       improvements.push(
-        "Improve retrieval quality and ensure relevant context is included."
+        "Improve retrieval quality and ensure relevant context is included.",
       );
     if (analysis.hasFaithfulnessIssue)
       improvements.push(
-        "Add citations/grounding and tighten instructions to avoid unsupported claims."
+        "Add citations/grounding and tighten instructions to avoid unsupported claims.",
       );
     if (analysis.hasPromptInjection)
       improvements.push(
-        "Add prompt-injection guardrails and input sanitization."
+        "Add prompt-injection guardrails and input sanitization.",
       );
     if (analysis.hasContextOverflow)
       improvements.push(
-        "Reduce prompt size with summarization or better chunk selection."
+        "Reduce prompt size with summarization or better chunk selection.",
       );
     if (analysis.hasLatencyAnomaly)
       improvements.push(
-        "Optimize slow spans (retrieval/tool/LLM) and add caching where possible."
+        "Optimize slow spans (retrieval/tool/LLM) and add caching where possible.",
       );
     if (analysis.hasCostAnomaly)
       improvements.push(
-        "Consider cheaper models, shorter prompts, and token budgeting."
+        "Consider cheaper models, shorter prompts, and token budgeting.",
       );
 
     return {
@@ -387,7 +387,7 @@ export class TraceQueryService {
 
   private static buildTraceListWhereClause(
     tenantId: string,
-    opts: TraceListQueryOptions
+    opts: TraceListQueryOptions,
   ): { whereClause: string; params: any[]; nextIndex: number } {
     let whereClause = `WHERE tenant_id = $1`;
     const params: any[] = [tenantId];
@@ -521,7 +521,7 @@ export class TraceQueryService {
 
   static async getTracesV2(
     tenantId: string,
-    opts: TraceListQueryOptions
+    opts: TraceListQueryOptions,
   ): Promise<{
     traces: TraceSummary[];
     total: number;
@@ -536,7 +536,7 @@ export class TraceQueryService {
 
       const { whereClause, params, nextIndex } = this.buildTraceListWhereClause(
         tenantId,
-        opts
+        opts,
       );
 
       const estimatedCost = this.estimatedCostSql();
@@ -596,12 +596,12 @@ export class TraceQueryService {
         ${whereClause}
         ${orderBy}
         LIMIT $${nextIndex} OFFSET $${nextIndex + 1}`,
-        [...params, limit, offset]
+        [...params, limit, offset],
       );
 
       const countResult = await query<{ count: string }>(
         `SELECT COUNT(*) as count FROM analysis_results ${whereClause}`,
-        params
+        params,
       );
       const total = parseInt(countResult[0]?.count || "0", 10);
 
@@ -617,7 +617,7 @@ export class TraceQueryService {
             SUM(CASE WHEN status IS NOT NULL AND status >= 400 THEN 1 ELSE 0 END)::int as error_count
           FROM analysis_results
           ${whereClause}`,
-          params
+          params,
         );
         const s = statsRows?.[0] as any;
         const totalTraces = Number(s?.total_traces || 0);
@@ -735,7 +735,7 @@ export class TraceQueryService {
       GROUP BY model
       ORDER BY count DESC, model ASC
       LIMIT $${idx}`,
-      [...values, limit]
+      [...values, limit],
     );
 
     return rows.map((r: any) => ({
@@ -756,7 +756,7 @@ export class TraceQueryService {
     projectId?: string | null,
     limit: number = 50,
     offset: number = 0,
-    issueType?: string
+    issueType?: string,
   ): Promise<{ traces: TraceSummary[]; total: number }> {
     const result = await this.getTracesV2(tenantId, {
       projectId: projectId ?? null,
@@ -777,7 +777,7 @@ export class TraceQueryService {
   static async getTraceDetail(
     traceId: string,
     tenantId: string,
-    projectId?: string | null
+    projectId?: string | null,
   ): Promise<any | null> {
     try {
       let whereClause = `WHERE trace_id = $1 AND tenant_id = $2`;
@@ -790,7 +790,7 @@ export class TraceQueryService {
 
       const rows = await query(
         `SELECT * FROM analysis_results ${whereClause} LIMIT 1`,
-        params
+        params,
       );
 
       if (rows.length === 0) {
@@ -828,7 +828,7 @@ export class TraceQueryService {
        FROM analysis_results
        ${whereClause}
        ORDER BY COALESCE(message_index, 2147483647) ASC, COALESCE(timestamp, analyzed_at) ASC`,
-      values
+      values,
     );
 
     const totalMessages = rows.length;
@@ -853,7 +853,7 @@ export class TraceQueryService {
         SUM(CASE WHEN (${issueCount}) > 0 THEN 1 ELSE 0 END)::int as issue_count
       FROM analysis_results
       ${whereClause}`,
-      values
+      values,
     );
     const m = metricsRows?.[0] as any;
 
@@ -888,7 +888,7 @@ export class TraceQueryService {
   static async getTraceDetailTree(
     traceId: string,
     tenantId: string,
-    projectId?: string | null
+    projectId?: string | null,
   ): Promise<any | null> {
     try {
       // Get canonical events from Tinybird
@@ -899,7 +899,7 @@ export class TraceQueryService {
         const eventsData: any = await TinybirdRepository.getTraceEvents(
           traceId,
           tenantId,
-          projectId || null
+          projectId || null,
         );
 
         // Tinybird returns data in format: { data: [...], meta: [...] }
@@ -915,20 +915,20 @@ export class TraceQueryService {
 
         if (canonicalEvents.length === 0) {
           console.log(
-            `[TraceQueryService] ⚠️  No canonical events found in Tinybird for trace ${traceId}`
+            `[TraceQueryService] ⚠️  No canonical events found in Tinybird for trace ${traceId}`,
           );
           return null;
         }
 
         console.log(
-          `[TraceQueryService] ✅ Found ${canonicalEvents.length} canonical events for trace ${traceId}`
+          `[TraceQueryService] ✅ Found ${canonicalEvents.length} canonical events for trace ${traceId}`,
         );
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : String(error);
         console.error(
           `[TraceQueryService] ❌ Error fetching canonical events from Tinybird for trace ${traceId}:`,
-          errorMessage
+          errorMessage,
         );
         return null;
       }
@@ -960,7 +960,7 @@ export class TraceQueryService {
               runId: "run1",
               hypothesisId: "M",
             }),
-          }
+          },
         ).catch(() => {});
       } catch {
         // ignore debug logging errors
@@ -971,7 +971,7 @@ export class TraceQueryService {
         canonicalEvents,
         traceId,
         tenantId,
-        projectId || null
+        projectId || null,
       );
       // #region agent log
       try {
@@ -1001,7 +1001,7 @@ export class TraceQueryService {
               runId: "run1",
               hypothesisId: "N",
             }),
-          }
+          },
         ).catch(() => {});
       } catch {
         // ignore debug logging errors
@@ -1012,7 +1012,7 @@ export class TraceQueryService {
     } catch (error) {
       console.error(
         "[TraceQueryService] Error querying trace detail tree:",
-        error
+        error,
       );
       throw error;
     }
@@ -1026,7 +1026,7 @@ export class TraceQueryService {
     events: any[],
     traceId: string,
     tenantId: string,
-    projectId: string | null
+    projectId: string | null,
   ): Promise<any> {
     if (events.length === 0) {
       return null;
@@ -1043,7 +1043,7 @@ export class TraceQueryService {
       console.warn(
         `[TraceQueryService] Filtered ${
           events.length - filteredEvents.length
-        } events that don't belong to trace ${traceId}`
+        } events that don't belong to trace ${traceId}`,
       );
     }
 
@@ -1057,7 +1057,7 @@ export class TraceQueryService {
         eventMap.set(eventKey, event);
       } else {
         console.warn(
-          `[TraceQueryService] Duplicate event detected and skipped: ${eventKey}`
+          `[TraceQueryService] Duplicate event detected and skipped: ${eventKey}`,
         );
       }
     }
@@ -1067,7 +1067,7 @@ export class TraceQueryService {
       console.warn(
         `[TraceQueryService] Removed ${
           filteredEvents.length - uniqueEvents.length
-        } duplicate events`
+        } duplicate events`,
       );
     }
 
@@ -1311,7 +1311,7 @@ export class TraceQueryService {
               if (
                 trimmed.startsWith('"') &&
                 !trimmed.startsWith('"{') &&
-                trimmed.includes(':') &&
+                trimmed.includes(":") &&
                 trimmed.length > 3
               ) {
                 // Try wrapping in braces
@@ -1325,13 +1325,16 @@ export class TraceQueryService {
                   const keyValueMatch = trimmed.match(/^"([^"]+)"\s*:\s*(.+)$/);
                   if (keyValueMatch && keyValueMatch[1]) {
                     const key: string = keyValueMatch[1];
-                    let val: any = keyValueMatch[2] || '';
-                    
+                    let val: any = keyValueMatch[2] || "";
+
                     // Try to parse the value
                     try {
                       // If value is quoted, extract it
                       if (val.startsWith('"') && val.endsWith('"')) {
-                        val = val.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                        val = val
+                          .slice(1, -1)
+                          .replace(/\\"/g, '"')
+                          .replace(/\\\\/g, "\\");
                       } else {
                         // Try parsing as JSON (for numbers, booleans, etc.)
                         try {
@@ -1416,11 +1419,11 @@ export class TraceQueryService {
               // We need to capture the full string value to potentially repair it
               const stringStart = i;
               i += 1; // skip opening quote
-              
+
               let localEscaped = false;
               let stringContent = "";
               let foundClosingQuote = false;
-              
+
               while (i < input.length) {
                 const c = input[i];
                 if (localEscaped) {
@@ -1432,7 +1435,12 @@ export class TraceQueryService {
                 } else if (c === '"') {
                   // Check if this is a closing quote or part of the content
                   // If the next char is also '"', it might be the start of a key in malformed JSON
-                  if (i + 1 < input.length && input[i + 1] === '"' && stringContent.trim().length > 0 && stringContent.includes(':')) {
+                  if (
+                    i + 1 < input.length &&
+                    input[i + 1] === '"' &&
+                    stringContent.trim().length > 0 &&
+                    stringContent.includes(":")
+                  ) {
                     // This looks like malformed JSON - continue collecting
                     stringContent += c;
                   } else {
@@ -1446,24 +1454,27 @@ export class TraceQueryService {
                 }
                 i += 1;
               }
-              
+
               // Check if the string content looks like malformed JSON (missing outer braces)
               const trimmed = stringContent.trim();
               if (
                 trimmed.startsWith('"') &&
                 !trimmed.startsWith('"{') &&
-                trimmed.includes(':') &&
+                trimmed.includes(":") &&
                 trimmed.length > 3
               ) {
                 // Try to repair it by extracting key and value, then reconstructing
                 const keyValueMatch = trimmed.match(/^"([^"]+)"\s*:\s*(.+)$/);
                 if (keyValueMatch && keyValueMatch[1]) {
                   const key: string = keyValueMatch[1];
-                  let val: any = keyValueMatch[2] || '';
-                  
+                  let val: any = keyValueMatch[2] || "";
+
                   // Parse the value
                   if (val.startsWith('"') && val.endsWith('"')) {
-                    val = val.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                    val = val
+                      .slice(1, -1)
+                      .replace(/\\"/g, '"')
+                      .replace(/\\\\/g, "\\");
                   } else {
                     try {
                       val = JSON.parse(val);
@@ -1471,7 +1482,7 @@ export class TraceQueryService {
                       // Keep as string
                     }
                   }
-                  
+
                   // Reconstruct as valid JSON object
                   try {
                     const repaired = JSON.stringify({ [key]: val });
@@ -1501,7 +1512,7 @@ export class TraceQueryService {
                 // Not malformed, use empty object (original behavior)
                 output += "{}";
               }
-              
+
               if (!foundClosingQuote) {
                 // If we didn't find a closing quote, we've consumed the rest
                 break;
@@ -1531,20 +1542,20 @@ export class TraceQueryService {
         const isLlmCall = event.event_type === "llm_call";
         if (isLlmCall) {
           console.log(
-            `[TraceQueryService] Parsing llm_call event (trace: ${event.trace_id}, span: ${event.span_id}):`
+            `[TraceQueryService] Parsing llm_call event (trace: ${event.trace_id}, span: ${event.span_id}):`,
           );
           console.log(
-            `[TraceQueryService] attributes_json type: ${typeof event.attributes_json}`
+            `[TraceQueryService] attributes_json type: ${typeof event.attributes_json}`,
           );
           console.log(
-            `[TraceQueryService] attributes_json is null/undefined: ${event.attributes_json === null || event.attributes_json === undefined}`
+            `[TraceQueryService] attributes_json is null/undefined: ${event.attributes_json === null || event.attributes_json === undefined}`,
           );
           if (typeof event.attributes_json === "string") {
             console.log(
-              `[TraceQueryService] attributes_json length: ${event.attributes_json.length}`
+              `[TraceQueryService] attributes_json length: ${event.attributes_json.length}`,
             );
             console.log(
-              `[TraceQueryService] attributes_json preview (first 500 chars): ${event.attributes_json.substring(0, 500)}`
+              `[TraceQueryService] attributes_json preview (first 500 chars): ${event.attributes_json.substring(0, 500)}`,
             );
           }
         }
@@ -1557,110 +1568,132 @@ export class TraceQueryService {
             // The error shows: "arguments":""query":"philosophy major courses Stanford""
             // This is invalid JSON with TWO consecutive quotes - we MUST fix this FIRST
             // Try to find this pattern using a simple string search and replace
-            const ultraAggressivePattern = /"arguments"\s*:\s*""([^"]+)"\s*:\s*"([^"]*)"([,}])/g;
+            const ultraAggressivePattern =
+              /"arguments"\s*:\s*""([^"]+)"\s*:\s*"([^"]*)"([,}])/g;
             let ultraAggressiveCount = 0;
             const originalJsonStr = jsonStr;
-            jsonStr = jsonStr.replace(ultraAggressivePattern, (match: string, key: string, value: string, after: string) => {
-              ultraAggressiveCount++;
-              const repaired = JSON.stringify({ [key]: value });
-              if (isLlmCall) {
-                console.log(
-                  `[TraceQueryService] 🚨 ULTRA-AGGRESSIVE FIX: Found and fixed "arguments": ""${key}":"${value.substring(0, 50)}""`
-                );
-              }
-              return `"arguments":${repaired}${after}`;
-            });
-            
+            jsonStr = jsonStr.replace(
+              ultraAggressivePattern,
+              (match: string, key: string, value: string, after: string) => {
+                ultraAggressiveCount++;
+                const repaired = JSON.stringify({ [key]: value });
+                if (isLlmCall) {
+                  console.log(
+                    `[TraceQueryService] 🚨 ULTRA-AGGRESSIVE FIX: Found and fixed "arguments": ""${key}":"${value.substring(0, 50)}""`,
+                  );
+                }
+                return `"arguments":${repaired}${after}`;
+              },
+            );
+
             if (ultraAggressiveCount > 0 && isLlmCall) {
               console.log(
-                `[TraceQueryService] ✅ ULTRA-AGGRESSIVE: Fixed ${ultraAggressiveCount} instance(s) in FIRST PASS`
+                `[TraceQueryService] ✅ ULTRA-AGGRESSIVE: Fixed ${ultraAggressiveCount} instance(s) in FIRST PASS`,
               );
               // Show the exact fix
               const pos = originalJsonStr.indexOf('"arguments"');
               if (pos !== -1) {
                 console.log(
-                  `[TraceQueryService] ORIGINAL (first 200 chars from arguments): ${originalJsonStr.substring(pos, pos + 200)}`
+                  `[TraceQueryService] ORIGINAL (first 200 chars from arguments): ${originalJsonStr.substring(pos, pos + 200)}`,
                 );
                 console.log(
-                  `[TraceQueryService] FIXED (first 200 chars from arguments): ${jsonStr.substring(pos, pos + 200)}`
+                  `[TraceQueryService] FIXED (first 200 chars from arguments): ${jsonStr.substring(pos, pos + 200)}`,
                 );
               }
             }
-            
+
             // CRITICAL PRE-PROCESSING: Fix the malformed pattern BEFORE any parsing attempts
             // The error shows: "arguments":""query":"value"" which means the JSON contains:
             // "arguments":"\"query\":\"value\"" (escaped quotes in the string value)
             // We need to find and convert it to: "arguments":{"query":"value"}
-            
+
             // FIRST: The error shows "arguments":""query":"value"" - this is INVALID JSON
             // The stored JSON must have this literal pattern (two consecutive quotes)
             // We need to find and fix it BEFORE any parsing attempts
-            
+
             // Pattern 1: Find "arguments":""key":"value"" (literal double quotes - invalid JSON)
             // The error context shows: "arguments":""query":"philosophy major courses Stanford""
             // This pattern has TWO consecutive quotes after the colon - this is invalid JSON
             // We need to match: "arguments":"" followed by key, then ":" followed by value, then ""
-            const literalDoubleQuotePattern = /"arguments"\s*:\s*""([^"]+)"\s*:\s*"([^"]*)"([,}])/g;
+            const literalDoubleQuotePattern =
+              /"arguments"\s*:\s*""([^"]+)"\s*:\s*"([^"]*)"([,}])/g;
             let aggressiveRepairCount = 0;
             const beforeFirstFix = jsonStr;
-            jsonStr = jsonStr.replace(literalDoubleQuotePattern, (match: string, key: string, value: string, after: string) => {
-              aggressiveRepairCount++;
-              const repaired = JSON.stringify({ [key]: value });
-              if (isLlmCall) {
-                console.log(
-                  `[TraceQueryService] 🔧 AGGRESSIVE FIX (literal double quotes): Found "arguments": ""${key}":"${value}"" and repaired to: "arguments":${repaired}${after}`
-                );
-              }
-              return `"arguments":${repaired}${after}`;
-            });
-            
+            jsonStr = jsonStr.replace(
+              literalDoubleQuotePattern,
+              (match: string, key: string, value: string, after: string) => {
+                aggressiveRepairCount++;
+                const repaired = JSON.stringify({ [key]: value });
+                if (isLlmCall) {
+                  console.log(
+                    `[TraceQueryService] 🔧 AGGRESSIVE FIX (literal double quotes): Found "arguments": ""${key}":"${value}"" and repaired to: "arguments":${repaired}${after}`,
+                  );
+                }
+                return `"arguments":${repaired}${after}`;
+              },
+            );
+
             if (aggressiveRepairCount > 0 && isLlmCall) {
               // Show before/after to verify the fix
               const samplePos = beforeFirstFix.indexOf('"arguments"');
               if (samplePos !== -1) {
-                const beforeSample = beforeFirstFix.substring(samplePos, samplePos + 150);
-                const afterSample = jsonStr.substring(samplePos, samplePos + 150);
-                console.log(
-                  `[TraceQueryService] BEFORE Pattern 1: ${beforeSample}`
+                const beforeSample = beforeFirstFix.substring(
+                  samplePos,
+                  samplePos + 150,
+                );
+                const afterSample = jsonStr.substring(
+                  samplePos,
+                  samplePos + 150,
                 );
                 console.log(
-                  `[TraceQueryService] AFTER Pattern 1:  ${afterSample}`
+                  `[TraceQueryService] BEFORE Pattern 1: ${beforeSample}`,
+                );
+                console.log(
+                  `[TraceQueryService] AFTER Pattern 1:  ${afterSample}`,
                 );
               }
             }
-            
+
             // Pattern 2: Find "arguments": "\"key\":\"value\"" (escaped quotes - valid JSON but malformed content)
-            const escapedPattern = /"arguments"\s*:\s*"\\"([^"\\]+)\\"\s*:\s*\\"([^"\\]*)\\""/g;
-            jsonStr = jsonStr.replace(escapedPattern, (match: string, key: string, value: string) => {
-              aggressiveRepairCount++;
-              const repaired = JSON.stringify({ [key]: value });
-              if (isLlmCall) {
-                console.log(
-                  `[TraceQueryService] 🔧 AGGRESSIVE FIX (escaped): Found "arguments": "\\"${key}\\":\\"${value}\\"" and repaired to: "arguments":${repaired}`
-                );
-              }
-              return `"arguments":${repaired}`;
-            });
-            
+            const escapedPattern =
+              /"arguments"\s*:\s*"\\"([^"\\]+)\\"\s*:\s*\\"([^"\\]*)\\""/g;
+            jsonStr = jsonStr.replace(
+              escapedPattern,
+              (match: string, key: string, value: string) => {
+                aggressiveRepairCount++;
+                const repaired = JSON.stringify({ [key]: value });
+                if (isLlmCall) {
+                  console.log(
+                    `[TraceQueryService] 🔧 AGGRESSIVE FIX (escaped): Found "arguments": "\\"${key}\\":\\"${value}\\"" and repaired to: "arguments":${repaired}`,
+                  );
+                }
+                return `"arguments":${repaired}`;
+              },
+            );
+
             // Pattern 3: Also try with escaped backslashes (double-escaped)
-            const doubleEscapedPattern = /"arguments"\s*:\s*"\\\\"([^"\\\\]+)\\\\"\s*:\s*\\\\"([^"\\\\]*)\\\\""/g;
-            jsonStr = jsonStr.replace(doubleEscapedPattern, (match: string, key: string, value: string) => {
-              aggressiveRepairCount++;
-              const repaired = JSON.stringify({ [key]: value });
-              if (isLlmCall) {
-                console.log(
-                  `[TraceQueryService] 🔧 AGGRESSIVE FIX (double-escaped): Found and repaired`
-                );
-              }
-              return `"arguments":${repaired}`;
-            });
-            
+            const doubleEscapedPattern =
+              /"arguments"\s*:\s*"\\\\"([^"\\\\]+)\\\\"\s*:\s*\\\\"([^"\\\\]*)\\\\""/g;
+            jsonStr = jsonStr.replace(
+              doubleEscapedPattern,
+              (match: string, key: string, value: string) => {
+                aggressiveRepairCount++;
+                const repaired = JSON.stringify({ [key]: value });
+                if (isLlmCall) {
+                  console.log(
+                    `[TraceQueryService] 🔧 AGGRESSIVE FIX (double-escaped): Found and repaired`,
+                  );
+                }
+                return `"arguments":${repaired}`;
+              },
+            );
+
             if (aggressiveRepairCount > 0 && isLlmCall) {
               console.log(
-                `[TraceQueryService] ✅ AGGRESSIVE: Fixed ${aggressiveRepairCount} malformed pattern(s)`
+                `[TraceQueryService] ✅ AGGRESSIVE: Fixed ${aggressiveRepairCount} malformed pattern(s)`,
               );
             }
-            
+
             // Log a sample around the error position to see what we're dealing with
             if (isLlmCall) {
               const errorPos = 2305; // From the error logs
@@ -1668,51 +1701,57 @@ export class TraceQueryService {
               const sampleEnd = Math.min(jsonStr.length, errorPos + 150);
               const sample = jsonStr.substring(sampleStart, sampleEnd);
               console.log(
-                `[TraceQueryService] 🔍 Sample around error position ${errorPos}: ${sample}`
+                `[TraceQueryService] 🔍 Sample around error position ${errorPos}: ${sample}`,
               );
             }
-            
+
             // SECOND: Use a state machine to find and fix escaped patterns
             // Use a state machine to find and fix the pattern - more reliable than regex for nested JSON
             let repairCount = 0;
             const fixMalformedArgumentsPattern = (str: string): string => {
               let result = str;
               let searchPos = 0;
-              
+
               while (true) {
                 // Find the next occurrence of "arguments":
                 const argsKeyPos = result.indexOf('"arguments"', searchPos);
                 if (argsKeyPos === -1) break;
-                
+
                 // Find the colon after "arguments"
                 let colonPos = argsKeyPos + '"arguments"'.length;
-                while (colonPos < result.length && /\s/.test(result[colonPos])) {
+                while (
+                  colonPos < result.length &&
+                  /\s/.test(result[colonPos])
+                ) {
                   colonPos++;
                 }
-                if (colonPos >= result.length || result[colonPos] !== ':') {
+                if (colonPos >= result.length || result[colonPos] !== ":") {
                   searchPos = argsKeyPos + 1;
                   continue;
                 }
-                
+
                 // Skip whitespace after colon
                 let valueStart = colonPos + 1;
-                while (valueStart < result.length && /\s/.test(result[valueStart])) {
+                while (
+                  valueStart < result.length &&
+                  /\s/.test(result[valueStart])
+                ) {
                   valueStart++;
                 }
-                
+
                 // Check if value starts with a quote (string value)
                 if (valueStart >= result.length || result[valueStart] !== '"') {
                   searchPos = argsKeyPos + 1;
                   continue;
                 }
-                
+
                 // Find the end of the string value (handling escaped quotes)
                 let valueEnd = valueStart + 1;
                 let escaped = false;
                 while (valueEnd < result.length) {
                   if (escaped) {
                     escaped = false;
-                  } else if (result[valueEnd] === '\\') {
+                  } else if (result[valueEnd] === "\\") {
                     escaped = true;
                   } else if (result[valueEnd] === '"') {
                     // Found closing quote
@@ -1720,42 +1759,50 @@ export class TraceQueryService {
                   }
                   valueEnd++;
                 }
-                
+
                 if (valueEnd >= result.length) {
                   searchPos = argsKeyPos + 1;
                   continue;
                 }
-                
+
                 // Extract the string value (without outer quotes)
-                const stringContent = result.substring(valueStart + 1, valueEnd);
-                
+                const stringContent = result.substring(
+                  valueStart + 1,
+                  valueEnd,
+                );
+
                 // Unescape the content
                 let unescaped: string;
                 try {
                   unescaped = JSON.parse(`"${stringContent}"`);
                 } catch {
                   // Manual unescape
-                  unescaped = stringContent.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                  unescaped = stringContent
+                    .replace(/\\"/g, '"')
+                    .replace(/\\\\/g, "\\");
                 }
-                
+
                 // Check if unescaped looks like malformed JSON (pattern: "key":"value" without braces)
                 const trimmed = unescaped.trim();
                 if (
                   trimmed.startsWith('"') &&
                   !trimmed.startsWith('"{') &&
-                  trimmed.includes(':') &&
+                  trimmed.includes(":") &&
                   trimmed.length > 3
                 ) {
                   // This is the malformed pattern - try to extract key and value
                   const keyValueMatch = trimmed.match(/^"([^"]+)"\s*:\s*(.+)$/);
                   if (keyValueMatch && keyValueMatch[1]) {
                     const key: string = keyValueMatch[1];
-                    let val: any = keyValueMatch[2] || '';
-                    
+                    let val: any = keyValueMatch[2] || "";
+
                     // Parse the value
                     if (val.startsWith('"') && val.endsWith('"')) {
                       // Quoted string - extract and unescape
-                      val = val.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                      val = val
+                        .slice(1, -1)
+                        .replace(/\\"/g, '"')
+                        .replace(/\\\\/g, "\\");
                     } else {
                       // Try parsing as JSON (for numbers, booleans, etc.)
                       try {
@@ -1764,162 +1811,193 @@ export class TraceQueryService {
                         // Keep as string
                       }
                     }
-                    
+
                     // Reconstruct as valid JSON object
                     try {
                       const repaired = JSON.stringify({ [key]: val });
                       repairCount++;
                       if (isLlmCall) {
                         console.log(
-                          `[TraceQueryService] 🔧 Pre-processed and repaired malformed arguments: "${key}":"${typeof val === 'string' ? val.substring(0, 50) : val}"`
+                          `[TraceQueryService] 🔧 Pre-processed and repaired malformed arguments: "${key}":"${typeof val === "string" ? val.substring(0, 50) : val}"`,
                         );
                       }
                       // Replace the malformed string value with the repaired object
-                      result = result.substring(0, valueStart) + repaired + result.substring(valueEnd + 1);
+                      result =
+                        result.substring(0, valueStart) +
+                        repaired +
+                        result.substring(valueEnd + 1);
                       // Continue searching from after the replacement
-                      searchPos = argsKeyPos + '"arguments"'.length + repaired.length;
+                      searchPos =
+                        argsKeyPos + '"arguments"'.length + repaired.length;
                       continue;
                     } catch {
                       // If reconstruction fails, continue
                     }
                   }
                 }
-                
+
                 // Move search position forward
                 searchPos = argsKeyPos + 1;
               }
-              
+
               return result;
             };
-            
+
             jsonStr = fixMalformedArgumentsPattern(jsonStr);
-            
+
             if (repairCount > 0 && isLlmCall) {
               console.log(
-                `[TraceQueryService] ✅ STATE MACHINE: Fixed ${repairCount} malformed arguments pattern(s)`
+                `[TraceQueryService] ✅ STATE MACHINE: Fixed ${repairCount} malformed arguments pattern(s)`,
               );
             }
-            
+
             // Log the JSON string after all repairs for debugging
             if (isLlmCall && (aggressiveRepairCount > 0 || repairCount > 0)) {
               const errorPos = 2305; // Approximate error position from logs
               const contextStart = Math.max(0, errorPos - 100);
               const contextEnd = Math.min(jsonStr.length, errorPos + 100);
               console.log(
-                `[TraceQueryService] 🔍 JSON after repairs (around position ${errorPos}): ${jsonStr.substring(contextStart, contextEnd)}`
+                `[TraceQueryService] 🔍 JSON after repairs (around position ${errorPos}): ${jsonStr.substring(contextStart, contextEnd)}`,
               );
             }
-            
+
             // CRITICAL: Before stripArgumentsStringValues, try to fix the JSON if it's completely broken
             // The error shows "arguments":""query" which means the JSON has invalid syntax
             // We need to find this EXACT pattern and fix it BEFORE any parsing attempts
-            
+
             // The error context shows: "arguments":""query":"philosophy major courses Stanford""
             // This means in the raw JSON string we have literal: "arguments":""query":"value""
             // This is invalid JSON syntax (two consecutive quotes)
-            
+
             // FIRST: Fix the simplest pattern - "arguments":""query": -> "arguments":{"query":
             // The actual pattern in the JSON is: "arguments":""query": where "query" is already in quotes
             // We need to match: "arguments":"" followed by "key": and replace with "arguments":{"key":
             const simpleFixPattern = /"arguments"\s*:\s*""\s*"([^"]+)"\s*:/g;
             const beforeSimpleFix = jsonStr;
             let simpleFixCount = 0;
-            jsonStr = jsonStr.replace(simpleFixPattern, (match: string, key: string) => {
-              simpleFixCount++;
-              if (isLlmCall) {
-                console.log(
-                  `[TraceQueryService] 🔧 SIMPLE FIX: Replacing "arguments":""${key}": with "arguments":{"${key}":`
-                );
-              }
-              return `"arguments":{"${key}":`;
-            });
-            
+            jsonStr = jsonStr.replace(
+              simpleFixPattern,
+              (match: string, key: string) => {
+                simpleFixCount++;
+                if (isLlmCall) {
+                  console.log(
+                    `[TraceQueryService] 🔧 SIMPLE FIX: Replacing "arguments":""${key}": with "arguments":{"${key}":`,
+                  );
+                }
+                return `"arguments":{"${key}":`;
+              },
+            );
+
             // Also try pattern without quotes around the key (in case of variations)
             // Pattern: "arguments":""key": where key is not quoted
-            const unquotedKeyPattern = /"arguments"\s*:\s*""([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g;
-            jsonStr = jsonStr.replace(unquotedKeyPattern, (match: string, key: string) => {
-              simpleFixCount++;
-              if (isLlmCall) {
-                console.log(
-                  `[TraceQueryService] 🔧 UNQUOTED KEY FIX: Replacing "arguments":""${key}": with "arguments":{"${key}":`
-                );
-              }
-              return `"arguments":{"${key}":`;
-            });
-            
+            const unquotedKeyPattern =
+              /"arguments"\s*:\s*""([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g;
+            jsonStr = jsonStr.replace(
+              unquotedKeyPattern,
+              (match: string, key: string) => {
+                simpleFixCount++;
+                if (isLlmCall) {
+                  console.log(
+                    `[TraceQueryService] 🔧 UNQUOTED KEY FIX: Replacing "arguments":""${key}": with "arguments":{"${key}":`,
+                  );
+                }
+                return `"arguments":{"${key}":`;
+              },
+            );
+
             if (simpleFixCount > 0 && isLlmCall) {
               console.log(
-                `[TraceQueryService] ✅ SIMPLE FIX: Applied ${simpleFixCount} fix(es) for missing opening brace pattern`
+                `[TraceQueryService] ✅ SIMPLE FIX: Applied ${simpleFixCount} fix(es) for missing opening brace pattern`,
               );
               // Show before/after for debugging
               const samplePos = beforeSimpleFix.indexOf('"arguments"');
               if (samplePos !== -1) {
-                const beforeSample = beforeSimpleFix.substring(samplePos, Math.min(samplePos + 150, beforeSimpleFix.length));
-                const afterSample = jsonStr.substring(samplePos, Math.min(samplePos + 150, jsonStr.length));
-                console.log(
-                  `[TraceQueryService] BEFORE SIMPLE FIX: ${beforeSample}`
+                const beforeSample = beforeSimpleFix.substring(
+                  samplePos,
+                  Math.min(samplePos + 150, beforeSimpleFix.length),
+                );
+                const afterSample = jsonStr.substring(
+                  samplePos,
+                  Math.min(samplePos + 150, jsonStr.length),
                 );
                 console.log(
-                  `[TraceQueryService] AFTER SIMPLE FIX:  ${afterSample}`
+                  `[TraceQueryService] BEFORE SIMPLE FIX: ${beforeSample}`,
+                );
+                console.log(
+                  `[TraceQueryService] AFTER SIMPLE FIX:  ${afterSample}`,
                 );
               }
             }
-            
+
             // Try multiple patterns to catch this:
             // Pattern A: "arguments":""key":"value"" (literal, most likely)
-            const errorPatternA = /"arguments"\s*:\s*""([^"]+)"\s*:\s*"([^"]*)"([,}])/g;
+            const errorPatternA =
+              /"arguments"\s*:\s*""([^"]+)"\s*:\s*"([^"]*)"([,}])/g;
             // Pattern B: "arguments":"\"key\":\"value\"" (escaped, but malformed content)
-            const errorPatternB = /"arguments"\s*:\s*"\\"([^"\\]+)\\"\s*:\s*\\"([^"\\]*)\\""/g;
-            
+            const errorPatternB =
+              /"arguments"\s*:\s*"\\"([^"\\]+)\\"\s*:\s*\\"([^"\\]*)\\""/g;
+
             let errorPatternFixCount = 0;
             const beforeErrorFix = jsonStr;
-            
+
             // Try Pattern A first (literal double quotes)
-            jsonStr = jsonStr.replace(errorPatternA, (match: string, key: string, value: string, after: string) => {
-              errorPatternFixCount++;
-              const repaired = JSON.stringify({ [key]: value });
-              if (isLlmCall) {
-                console.log(
-                  `[TraceQueryService] 🔧 ERROR PATTERN FIX A: Found "arguments": ""${key}":"${value.substring(0, 50)}"" and repaired to: "arguments":${repaired}${after}`
-                );
-              }
-              return `"arguments":${repaired}${after}`;
-            });
-            
+            jsonStr = jsonStr.replace(
+              errorPatternA,
+              (match: string, key: string, value: string, after: string) => {
+                errorPatternFixCount++;
+                const repaired = JSON.stringify({ [key]: value });
+                if (isLlmCall) {
+                  console.log(
+                    `[TraceQueryService] 🔧 ERROR PATTERN FIX A: Found "arguments": ""${key}":"${value.substring(0, 50)}"" and repaired to: "arguments":${repaired}${after}`,
+                  );
+                }
+                return `"arguments":${repaired}${after}`;
+              },
+            );
+
             // Try Pattern B (escaped quotes)
-            jsonStr = jsonStr.replace(errorPatternB, (match: string, key: string, value: string) => {
-              errorPatternFixCount++;
-              const repaired = JSON.stringify({ [key]: value });
-              if (isLlmCall) {
-                console.log(
-                  `[TraceQueryService] 🔧 ERROR PATTERN FIX B: Found "arguments": "\\"${key}\\":\\"${value.substring(0, 50)}\\" and repaired`
-                );
-              }
-              return `"arguments":${repaired}`;
-            });
-            
+            jsonStr = jsonStr.replace(
+              errorPatternB,
+              (match: string, key: string, value: string) => {
+                errorPatternFixCount++;
+                const repaired = JSON.stringify({ [key]: value });
+                if (isLlmCall) {
+                  console.log(
+                    `[TraceQueryService] 🔧 ERROR PATTERN FIX B: Found "arguments": "\\"${key}\\":\\"${value.substring(0, 50)}\\" and repaired`,
+                  );
+                }
+                return `"arguments":${repaired}`;
+              },
+            );
+
             if (errorPatternFixCount > 0 && isLlmCall) {
               console.log(
-                `[TraceQueryService] ✅ ERROR PATTERN: Fixed ${errorPatternFixCount} instance(s) BEFORE parsing`
+                `[TraceQueryService] ✅ ERROR PATTERN: Fixed ${errorPatternFixCount} instance(s) BEFORE parsing`,
               );
               // Show before/after around the fix
               const samplePos = beforeErrorFix.indexOf('"arguments"');
               if (samplePos !== -1) {
-                const beforeSample = beforeErrorFix.substring(samplePos, samplePos + 200);
-                const afterSample = jsonStr.substring(samplePos, samplePos + 200);
-                console.log(
-                  `[TraceQueryService] BEFORE ERROR FIX: ${beforeSample}`
+                const beforeSample = beforeErrorFix.substring(
+                  samplePos,
+                  samplePos + 200,
+                );
+                const afterSample = jsonStr.substring(
+                  samplePos,
+                  samplePos + 200,
                 );
                 console.log(
-                  `[TraceQueryService] AFTER ERROR FIX:  ${afterSample}`
+                  `[TraceQueryService] BEFORE ERROR FIX: ${beforeSample}`,
+                );
+                console.log(
+                  `[TraceQueryService] AFTER ERROR FIX:  ${afterSample}`,
                 );
               }
             }
-            
+
             jsonStr = stripArgumentsStringValues(jsonStr);
             // Try multiple parsing strategies to handle malformed JSON
             let parsed = false;
-            
+
             // Strategy 1: Try direct parsing
             try {
               attributes = JSON.parse(jsonStr);
@@ -1934,7 +2012,7 @@ export class TraceQueryService {
                 parsed = true;
                 if (isLlmCall) {
                   console.log(
-                    `[TraceQueryService] ⚠️  Repaired malformed string data and parsed successfully`
+                    `[TraceQueryService] ⚠️  Repaired malformed string data and parsed successfully`,
                   );
                 }
               } catch (parseError2) {
@@ -1945,7 +2023,7 @@ export class TraceQueryService {
                   parsed = true;
                   if (isLlmCall) {
                     console.log(
-                      `[TraceQueryService] ⚠️  Repaired function_call.arguments and parsed successfully`
+                      `[TraceQueryService] ⚠️  Repaired function_call.arguments and parsed successfully`,
                     );
                   }
                 } catch (parseError3) {
@@ -1957,18 +2035,27 @@ export class TraceQueryService {
                     // This occurs when the opening brace is missing after "arguments":
                     // Pattern: "arguments":""property_name": -> "arguments":{"property_name":
                     // Use a more flexible pattern that handles various whitespace and property name formats
-                    fixedJson = fixedJson.replace(/"arguments"\s*:\s*""\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*"\s*:/g, '"arguments":{"$1":');
+                    fixedJson = fixedJson.replace(
+                      /"arguments"\s*:\s*""\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*"\s*:/g,
+                      '"arguments":{"$1":',
+                    );
                     // Also handle cases where there might be escaped quotes: "arguments":"\"key\":
-                    fixedJson = fixedJson.replace(/"arguments"\s*:\s*"\\"\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\\"\s*:/g, '"arguments":{"$1":');
+                    fixedJson = fixedJson.replace(
+                      /"arguments"\s*:\s*"\\"\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\\"\s*:/g,
+                      '"arguments":{"$1":',
+                    );
                     // Fix similar patterns for other object properties that should be objects
                     // Pattern: "property":""key": -> "property":{"key":
-                    fixedJson = fixedJson.replace(/("(?:function_call|tool_calls|additional_kwargs)"\s*:\s*)""\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*"\s*:/g, '$1{"$2":');
-                    
+                    fixedJson = fixedJson.replace(
+                      /("(?:function_call|tool_calls|additional_kwargs)"\s*:\s*)""\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*"\s*:/g,
+                      '$1{"$2":',
+                    );
+
                     attributes = JSON.parse(fixedJson);
                     parsed = true;
                     if (isLlmCall) {
                       console.log(
-                        `[TraceQueryService] ⚠️  Fixed missing opening brace in object property and parsed successfully`
+                        `[TraceQueryService] ⚠️  Fixed missing opening brace in object property and parsed successfully`,
                       );
                     }
                   } catch (parseError4a) {
@@ -1981,12 +2068,12 @@ export class TraceQueryService {
                       // Fix double-escaped quotes (common when JSON is stored in a JSON string)
                       fixedJson = fixedJson.replace(/\\"/g, '"');
                       fixedJson = fixedJson.replace(/\\\\"/g, '\\"');
-                      
+
                       attributes = JSON.parse(fixedJson);
                       parsed = true;
                       if (isLlmCall) {
                         console.log(
-                          `[TraceQueryService] ⚠️  Fixed JSON escaping issues and parsed successfully`
+                          `[TraceQueryService] ⚠️  Fixed JSON escaping issues and parsed successfully`,
                         );
                       }
                     } catch (parseError4) {
@@ -1997,110 +2084,125 @@ export class TraceQueryService {
                         if (jsonStr.startsWith('"') && jsonStr.endsWith('"')) {
                           // Might be a JSON string inside a JSON string
                           try {
-                          const firstParse = JSON.parse(jsonStr); // This should give us the inner string
-                          if (typeof firstParse === "string") {
-                            attributes = JSON.parse(firstParse);
-                            parsed = true;
-                            if (isLlmCall) {
-                              console.log(
-                                `[TraceQueryService] ⚠️  Detected double-encoded JSON and parsed successfully`
-                              );
-                            }
-                          }
-                        } catch {}
-                      }
-                      
-                      if (!parsed) {
-                        throw parseError4; // Re-throw if still failed
-                      }
-                    } catch (parseError5) {
-                      // Strategy 6: Try to salvage what we can by extracting llm_call if visible
-                      if (isLlmCall) {
-                        // Try to extract llm_call data even if JSON is partially broken
-                        const llmCallMatch = jsonStr.match(/"llm_call"\s*:\s*\{/);
-                        if (llmCallMatch) {
-                          // Try to extract a substring around llm_call
-                          const startPos = llmCallMatch.index || 0;
-                          // Look for a reasonable end point (try to find closing brace)
-                          let braceCount = 0;
-                          let foundStart = false;
-                          let endPos = startPos;
-                          
-                          for (let i = startPos; i < jsonStr.length && i < startPos + 10000; i++) {
-                            if (jsonStr[i] === '{') {
-                              braceCount++;
-                              foundStart = true;
-                            } else if (jsonStr[i] === '}') {
-                              braceCount--;
-                              if (foundStart && braceCount === 0) {
-                                endPos = i + 1;
-                                break;
-                              }
-                            }
-                          }
-                          
-                          // Try to parse just the llm_call section
-                          try {
-                            const llmCallJson = jsonStr.substring(startPos - 1, endPos + 1); // Include surrounding braces
-                            const partial = JSON.parse(llmCallJson);
-                            if (partial.llm_call) {
-                              attributes = { llm_call: partial.llm_call };
+                            const firstParse = JSON.parse(jsonStr); // This should give us the inner string
+                            if (typeof firstParse === "string") {
+                              attributes = JSON.parse(firstParse);
                               parsed = true;
                               if (isLlmCall) {
                                 console.log(
-                                  `[TraceQueryService] ⚠️  Salvaged llm_call from malformed JSON`
+                                  `[TraceQueryService] ⚠️  Detected double-encoded JSON and parsed successfully`,
                                 );
                               }
                             }
                           } catch {}
                         }
-                      }
-                      
-                      if (!parsed) {
-                        // Log detailed error for debugging
-                        const errorMsg = parseError5 instanceof Error ? parseError5.message : String(parseError5);
-                        const errorPosition = errorMsg.match(/position (\d+)/)?.[1];
-                        if (errorPosition) {
-                          const pos = parseInt(errorPosition);
-                          const start = Math.max(0, pos - 100);
-                          const end = Math.min(jsonStr.length, pos + 100);
-                          const context = jsonStr.substring(start, end);
-                          console.error(
-                            `[TraceQueryService] Failed to parse attributes_json (error at position ${pos}): ${errorMsg}`
-                          );
-                          console.error(
-                            `[TraceQueryService] Context around error: ...${context}...`
-                          );
+
+                        if (!parsed) {
+                          throw parseError4; // Re-throw if still failed
                         }
-                        throw parseError5;
+                      } catch (parseError5) {
+                        // Strategy 6: Try to salvage what we can by extracting llm_call if visible
+                        if (isLlmCall) {
+                          // Try to extract llm_call data even if JSON is partially broken
+                          const llmCallMatch =
+                            jsonStr.match(/"llm_call"\s*:\s*\{/);
+                          if (llmCallMatch) {
+                            // Try to extract a substring around llm_call
+                            const startPos = llmCallMatch.index || 0;
+                            // Look for a reasonable end point (try to find closing brace)
+                            let braceCount = 0;
+                            let foundStart = false;
+                            let endPos = startPos;
+
+                            for (
+                              let i = startPos;
+                              i < jsonStr.length && i < startPos + 10000;
+                              i++
+                            ) {
+                              if (jsonStr[i] === "{") {
+                                braceCount++;
+                                foundStart = true;
+                              } else if (jsonStr[i] === "}") {
+                                braceCount--;
+                                if (foundStart && braceCount === 0) {
+                                  endPos = i + 1;
+                                  break;
+                                }
+                              }
+                            }
+
+                            // Try to parse just the llm_call section
+                            try {
+                              const llmCallJson = jsonStr.substring(
+                                startPos - 1,
+                                endPos + 1,
+                              ); // Include surrounding braces
+                              const partial = JSON.parse(llmCallJson);
+                              if (partial.llm_call) {
+                                attributes = { llm_call: partial.llm_call };
+                                parsed = true;
+                                if (isLlmCall) {
+                                  console.log(
+                                    `[TraceQueryService] ⚠️  Salvaged llm_call from malformed JSON`,
+                                  );
+                                }
+                              }
+                            } catch {}
+                          }
+                        }
+
+                        if (!parsed) {
+                          // Log detailed error for debugging
+                          const errorMsg =
+                            parseError5 instanceof Error
+                              ? parseError5.message
+                              : String(parseError5);
+                          const errorPosition =
+                            errorMsg.match(/position (\d+)/)?.[1];
+                          if (errorPosition) {
+                            const pos = parseInt(errorPosition);
+                            const start = Math.max(0, pos - 100);
+                            const end = Math.min(jsonStr.length, pos + 100);
+                            const context = jsonStr.substring(start, end);
+                            console.error(
+                              `[TraceQueryService] Failed to parse attributes_json (error at position ${pos}): ${errorMsg}`,
+                            );
+                            console.error(
+                              `[TraceQueryService] Context around error: ...${context}...`,
+                            );
+                          }
+                          throw parseError5;
+                        }
                       }
                     }
                   }
                 }
               }
             }
-          }
-            
+
             // Log parsed result for llm_call events
             if (isLlmCall) {
               console.log(
-                `[TraceQueryService] ✅ Successfully parsed attributes_json`
+                `[TraceQueryService] ✅ Successfully parsed attributes_json`,
               );
               console.log(
-                `[TraceQueryService] Parsed attributes keys: ${Object.keys(attributes).join(", ")}`
+                `[TraceQueryService] Parsed attributes keys: ${Object.keys(attributes).join(", ")}`,
               );
-              const hasLlmCall = attributes && typeof attributes === "object" && "llm_call" in attributes;
+              const hasLlmCall =
+                attributes &&
+                typeof attributes === "object" &&
+                "llm_call" in attributes;
               console.log(
-                `[TraceQueryService] Has llm_call key: ${hasLlmCall ? "YES" : "NO"}`
+                `[TraceQueryService] Has llm_call key: ${hasLlmCall ? "YES" : "NO"}`,
               );
               if (hasLlmCall && attributes && typeof attributes === "object") {
                 const llmCallData = (attributes as any).llm_call;
                 if (llmCallData) {
                   console.log(
-                    `[TraceQueryService] llm_call.model: ${llmCallData.model || "missing"}`
+                    `[TraceQueryService] llm_call.model: ${llmCallData.model || "missing"}`,
                   );
                   console.log(
-                    `[TraceQueryService] llm_call.input: ${llmCallData.input?.substring(0, 50) || "missing"}`
+                    `[TraceQueryService] llm_call.input: ${llmCallData.input?.substring(0, 50) || "missing"}`,
                   );
                 }
               }
@@ -2108,7 +2210,7 @@ export class TraceQueryService {
           } else {
             if (isLlmCall) {
               console.warn(
-                `[TraceQueryService] ⚠️  attributes_json is empty string after trim`
+                `[TraceQueryService] ⚠️  attributes_json is empty string after trim`,
               );
             }
           }
@@ -2116,13 +2218,13 @@ export class TraceQueryService {
           attributes = event.attributes;
           if (isLlmCall) {
             console.log(
-              `[TraceQueryService] Using event.attributes (not attributes_json)`
+              `[TraceQueryService] Using event.attributes (not attributes_json)`,
             );
           }
         } else {
           if (isLlmCall) {
             console.warn(
-              `[TraceQueryService] ⚠️  No attributes_json (type: ${typeof event.attributes_json}) and no event.attributes`
+              `[TraceQueryService] ⚠️  No attributes_json (type: ${typeof event.attributes_json}) and no event.attributes`,
             );
           }
         }
@@ -2134,11 +2236,11 @@ export class TraceQueryService {
             : "not a string";
         console.error(
           `[TraceQueryService] Failed to parse attributes_json for event ${event.event_type} (trace: ${event.trace_id}, span: ${event.span_id}):`,
-          errorMsg
+          errorMsg,
         );
         console.error(
           `[TraceQueryService] Invalid JSON preview (first 200 chars):`,
-          jsonPreview
+          jsonPreview,
         );
         // Set empty attributes to prevent downstream errors
         attributes = {};
@@ -2152,10 +2254,10 @@ export class TraceQueryService {
 
     // Find trace_start and trace_end for summary
     const traceStart = parsedEvents.find(
-      (e: any) => e.event_type === "trace_start"
+      (e: any) => e.event_type === "trace_start",
     );
     const traceEnd = parsedEvents.find(
-      (e: any) => e.event_type === "trace_end"
+      (e: any) => e.event_type === "trace_end",
     );
     const llmCall = parsedEvents.find((e: any) => e.event_type === "llm_call");
     const firstEvent = parsedEvents[0];
@@ -2167,7 +2269,7 @@ export class TraceQueryService {
 
     // Find the root span ID (from events with parent_span_id === null)
     const originalRootSpanId = parsedEvents.find(
-      (e: any) => e.parent_span_id === null
+      (e: any) => e.parent_span_id === null,
     )?.span_id;
 
     // FIRST: Create root "Trace" span if it doesn't exist
@@ -2243,16 +2345,16 @@ export class TraceQueryService {
           // Debug logging for llm_call events
           if (!event.attributes) {
             console.warn(
-              `[TraceQueryService] ⚠️  llm_call event (trace: ${event.trace_id}, span: ${event.span_id}) has no attributes after parsing`
+              `[TraceQueryService] ⚠️  llm_call event (trace: ${event.trace_id}, span: ${event.span_id}) has no attributes after parsing`,
             );
           } else if (!event.attributes.llm_call) {
             console.warn(
               `[TraceQueryService] ⚠️  llm_call event (trace: ${event.trace_id}, span: ${event.span_id}) has attributes but no llm_call key. Attributes keys:`,
-              Object.keys(event.attributes)
+              Object.keys(event.attributes),
             );
             console.warn(
               `[TraceQueryService] Full attributes:`,
-              JSON.stringify(event.attributes, null, 2).substring(0, 500)
+              JSON.stringify(event.attributes, null, 2).substring(0, 500),
             );
           }
           const model = event.attributes?.llm_call?.model || "unknown";
@@ -2288,8 +2390,7 @@ export class TraceQueryService {
           spanName = "Trace";
         }
 
-        const safeParentSpanId =
-          parentSpanId === spanId ? null : parentSpanId;
+        const safeParentSpanId = parentSpanId === spanId ? null : parentSpanId;
         const spanData: any = {
           id: spanId, // Add id field for frontend compatibility
           span_id: spanId,
@@ -2326,27 +2427,27 @@ export class TraceQueryService {
               feedback.type === "like"
                 ? "👍"
                 : feedback.type === "dislike"
-                ? "👎"
-                : feedback.type === "rating"
-                ? "⭐"
-                : "✏️",
+                  ? "👎"
+                  : feedback.type === "rating"
+                    ? "⭐"
+                    : "✏️",
             // Color suggestions for frontend
             color_class:
               feedback.type === "like"
                 ? "text-green-600"
                 : feedback.type === "dislike"
-                ? "text-red-600"
-                : feedback.type === "rating"
-                ? "text-yellow-600"
-                : "text-blue-600",
+                  ? "text-red-600"
+                  : feedback.type === "rating"
+                    ? "text-yellow-600"
+                    : "text-blue-600",
             bg_color_class:
               feedback.type === "like"
                 ? "bg-green-50 border-green-200"
                 : feedback.type === "dislike"
-                ? "bg-red-50 border-red-200"
-                : feedback.type === "rating"
-                ? "bg-yellow-50 border-yellow-200"
-                : "bg-blue-50 border-blue-200",
+                  ? "bg-red-50 border-red-200"
+                  : feedback.type === "rating"
+                    ? "bg-yellow-50 border-yellow-200"
+                    : "bg-blue-50 border-blue-200",
           };
         }
 
@@ -2356,24 +2457,24 @@ export class TraceQueryService {
 
       // Add event to span with unique ID
       const eventId = `${spanId}-${event.event_type}-${event.timestamp}`;
-      
+
       // Enhanced logging for llm_call events to verify attributes are preserved
       const isLlmCall = event.event_type === "llm_call";
       if (isLlmCall) {
         console.log(
-          `[TraceQueryService] Adding llm_call event to span ${spanId}:`
+          `[TraceQueryService] Adding llm_call event to span ${spanId}:`,
         );
         console.log(
-          `[TraceQueryService] event.attributes type: ${typeof event.attributes}`
+          `[TraceQueryService] event.attributes type: ${typeof event.attributes}`,
         );
         console.log(
-          `[TraceQueryService] event.attributes keys: ${Object.keys(event.attributes || {}).join(", ")}`
+          `[TraceQueryService] event.attributes keys: ${Object.keys(event.attributes || {}).join(", ")}`,
         );
         console.log(
-          `[TraceQueryService] event.attributes.llm_call exists: ${!!event.attributes?.llm_call}`
+          `[TraceQueryService] event.attributes.llm_call exists: ${!!event.attributes?.llm_call}`,
         );
       }
-      
+
       spanEventsMap.get(spanId)!.push({
         id: eventId, // Add unique id for each event
         event_type: event.event_type,
@@ -2391,7 +2492,7 @@ export class TraceQueryService {
       // Sort events by timestamp
       spanEvents.sort(
         (a: any, b: any) =>
-          new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+          new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
       );
 
       // Attach events to span with full details
@@ -2399,26 +2500,26 @@ export class TraceQueryService {
 
       // Extract detailed information from events based on type
       const llmCallEvent = spanEvents.find(
-        (e: any) => e.event_type === "llm_call"
+        (e: any) => e.event_type === "llm_call",
       );
       const toolCallEvent = spanEvents.find(
-        (e: any) => e.event_type === "tool_call"
+        (e: any) => e.event_type === "tool_call",
       );
       const retrievalEvent = spanEvents.find(
-        (e: any) => e.event_type === "retrieval"
+        (e: any) => e.event_type === "retrieval",
       );
       const outputEvent = spanEvents.find(
-        (e: any) => e.event_type === "output"
+        (e: any) => e.event_type === "output",
       );
       const traceStartEvent = spanEvents.find(
-        (e: any) => e.event_type === "trace_start"
+        (e: any) => e.event_type === "trace_start",
       );
       const traceEndEvent = spanEvents.find(
-        (e: any) => e.event_type === "trace_end"
+        (e: any) => e.event_type === "trace_end",
       );
       const errorEvent = spanEvents.find((e: any) => e.event_type === "error");
       const feedbackEvent = spanEvents.find(
-        (e: any) => e.event_type === "feedback"
+        (e: any) => e.event_type === "feedback",
       );
 
       // Extract feedback details
@@ -2440,18 +2541,18 @@ export class TraceQueryService {
         // Debug logging if llm_call event exists but attributes are missing
         if (!llmCallEvent.attributes) {
           console.warn(
-            `[TraceQueryService] ⚠️  llmCallEvent (span: ${spanId}) has no attributes property`
+            `[TraceQueryService] ⚠️  llmCallEvent (span: ${spanId}) has no attributes property`,
           );
         } else if (!llmCallEvent.attributes.llm_call) {
           console.warn(
             `[TraceQueryService] ⚠️  llmCallEvent (span: ${spanId}) attributes missing llm_call key. Available keys:`,
-            Object.keys(llmCallEvent.attributes)
+            Object.keys(llmCallEvent.attributes),
           );
           console.warn(
             `[TraceQueryService] attributes_json raw value:`,
             typeof llmCallEvent.attributes_json === "string"
               ? llmCallEvent.attributes_json.substring(0, 500)
-              : "not a string"
+              : "not a string",
           );
         }
       }
@@ -2498,8 +2599,7 @@ export class TraceQueryService {
           conversation_id_otel: llmAttrs.conversation_id_otel || null,
           choice_count: llmAttrs.choice_count || null,
           // Tool definitions provided to the model
-          tool_definitions:
-            llmAttrs.tool_definitions || llmAttrs.tools || null,
+          tool_definitions: llmAttrs.tool_definitions || llmAttrs.tools || null,
           tools: llmAttrs.tools || llmAttrs.tool_definitions || null,
         };
       }
@@ -2557,7 +2657,7 @@ export class TraceQueryService {
 
       // TIER 1: Extract embedding details
       const embeddingEvent = spanEvents.find(
-        (e) => e.event_type === "embedding"
+        (e) => e.event_type === "embedding",
       );
       if (embeddingEvent?.attributes?.embedding) {
         const embeddingAttrs = embeddingEvent.attributes.embedding;
@@ -2580,7 +2680,7 @@ export class TraceQueryService {
 
       // TIER 3: Extract vector DB operation details
       const vectorDbEvent = spanEvents.find(
-        (e) => e.event_type === "vector_db_operation"
+        (e) => e.event_type === "vector_db_operation",
       );
       if (vectorDbEvent?.attributes?.vector_db_operation) {
         const vdbAttrs = vectorDbEvent.attributes.vector_db_operation;
@@ -2601,7 +2701,7 @@ export class TraceQueryService {
 
       // TIER 3: Extract cache operation details
       const cacheEvent = spanEvents.find(
-        (e) => e.event_type === "cache_operation"
+        (e) => e.event_type === "cache_operation",
       );
       if (cacheEvent?.attributes?.cache_operation) {
         const cacheAttrs = cacheEvent.attributes.cache_operation;
@@ -2619,7 +2719,7 @@ export class TraceQueryService {
 
       // TIER 3: Extract agent creation details
       const agentCreateEvent = spanEvents.find(
-        (e) => e.event_type === "agent_create"
+        (e) => e.event_type === "agent_create",
       );
       if (agentCreateEvent?.attributes?.agent_create) {
         const agentAttrs = agentCreateEvent.attributes.agent_create;
@@ -2679,17 +2779,17 @@ export class TraceQueryService {
         if (toolCallEvent?.attributes?.tool_call?.latency_ms) {
           span.duration_ms = toolCallEvent.attributes.tool_call.latency_ms;
           span.end_time = new Date(
-            startTime.getTime() + span.duration_ms
+            startTime.getTime() + span.duration_ms,
           ).toISOString();
         } else if (llmCallEvent?.attributes?.llm_call?.latency_ms) {
           span.duration_ms = llmCallEvent.attributes.llm_call.latency_ms;
           span.end_time = new Date(
-            startTime.getTime() + span.duration_ms
+            startTime.getTime() + span.duration_ms,
           ).toISOString();
         } else if (retrievalEvent?.attributes?.retrieval?.latency_ms) {
           span.duration_ms = retrievalEvent.attributes.retrieval.latency_ms;
           span.end_time = new Date(
-            startTime.getTime() + span.duration_ms
+            startTime.getTime() + span.duration_ms,
           ).toISOString();
         } else {
           span.duration_ms = endTime.getTime() - startTime.getTime();
@@ -2770,7 +2870,7 @@ export class TraceQueryService {
           span.input = JSON.stringify(
             { tool_name: span.tool_call.tool_name },
             null,
-            2
+            2,
           );
         }
 
@@ -2925,13 +3025,13 @@ export class TraceQueryService {
             retrievalOutput.avg_similarity =
               span.retrieval.similarity_scores.reduce(
                 (a: number, b: number) => a + b,
-                0
+                0,
               ) / span.retrieval.similarity_scores.length;
             retrievalOutput.max_similarity = Math.max(
-              ...span.retrieval.similarity_scores
+              ...span.retrieval.similarity_scores,
             );
             retrievalOutput.min_similarity = Math.min(
-              ...span.retrieval.similarity_scores
+              ...span.retrieval.similarity_scores,
             );
           }
           if (
@@ -2951,7 +3051,7 @@ export class TraceQueryService {
                 k: span.retrieval.k || span.retrieval.top_k,
               },
               null,
-              2
+              2,
             );
           }
         }
@@ -3006,7 +3106,7 @@ export class TraceQueryService {
             .slice(0, 3)
             .map(
               (emb: number[]) =>
-                `[${emb.slice(0, 5).join(", ")}, ...] (${emb.length} dims)`
+                `[${emb.slice(0, 5).join(", ")}, ...] (${emb.length} dims)`,
             );
         } else if (span.embedding.embeddings_hash) {
           embeddingOutput.embeddings_hash = span.embedding.embeddings_hash;
@@ -3317,7 +3417,7 @@ export class TraceQueryService {
               // Log warning and use the first one
               console.warn(
                 `[TraceQueryService] Multiple LLM call spans found with same original_span_id: ${event.parent_span_id}. ` +
-                  `This should not happen in a single trace. Using first match. Trace: ${traceId}`
+                  `This should not happen in a single trace. Using first match. Trace: ${traceId}`,
               );
               parentSpan = llmCallSpans[0].span;
             } else {
@@ -3359,7 +3459,7 @@ export class TraceQueryService {
             `parent_span_id: ${event.parent_span_id}, traceId: ${traceId}. ` +
             `Available spans: ${Array.from(spansMap.keys())
               .slice(0, 5)
-              .join(", ")}...`
+              .join(", ")}...`,
         );
         continue;
       }
@@ -3372,7 +3472,7 @@ export class TraceQueryService {
       if (parentEventTraceId && parentEventTraceId !== traceId) {
         console.warn(
           `[TraceQueryService] Parent span trace_id mismatch! ` +
-            `Event trace_id: ${traceId}, Parent span trace_id: ${parentEventTraceId}`
+            `Event trace_id: ${traceId}, Parent span trace_id: ${parentEventTraceId}`,
         );
         continue;
       }
@@ -3410,11 +3510,11 @@ export class TraceQueryService {
         if (existingFeedback) {
           // Check if new feedback is more recent
           const existingFeedbackEvent = parentSpan.events?.find(
-            (e: any) => e.event_type === "feedback"
+            (e: any) => e.event_type === "feedback",
           );
           if (existingFeedbackEvent) {
             const existingTimestamp = new Date(
-              existingFeedbackEvent.timestamp
+              existingFeedbackEvent.timestamp,
             ).getTime();
             const newTimestamp = new Date(event.timestamp).getTime();
 
@@ -3450,7 +3550,7 @@ export class TraceQueryService {
           (e: any) =>
             e.event_type === "feedback" &&
             e.span_id === event.span_id &&
-            e.timestamp === event.timestamp
+            e.timestamp === event.timestamp,
         );
         if (!existingFeedbackEvent) {
           if (!parentSpan.events) parentSpan.events = [];
@@ -3466,7 +3566,7 @@ export class TraceQueryService {
           // Sort events by timestamp after adding
           parentSpan.events.sort(
             (a: any, b: any) =>
-              new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+              new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
           );
         }
       }
@@ -3483,7 +3583,7 @@ export class TraceQueryService {
           (e: any) =>
             e.event_type === "tool_call" &&
             e.span_id === event.span_id &&
-            e.timestamp === event.timestamp
+            e.timestamp === event.timestamp,
         );
         if (!existingToolCallEvent) {
           if (!parentSpan.events) parentSpan.events = [];
@@ -3499,7 +3599,7 @@ export class TraceQueryService {
           // Sort events by timestamp after adding
           parentSpan.events.sort(
             (a: any, b: any) =>
-              new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+              new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
           );
         }
       }
@@ -3521,7 +3621,7 @@ export class TraceQueryService {
           (e: any) =>
             e.event_type === "output" &&
             e.span_id === event.span_id &&
-            e.timestamp === event.timestamp
+            e.timestamp === event.timestamp,
         );
         if (!existingOutputEvent) {
           if (!parentSpan.events) parentSpan.events = [];
@@ -3537,7 +3637,7 @@ export class TraceQueryService {
           // Sort events by timestamp after adding
           parentSpan.events.sort(
             (a: any, b: any) =>
-              new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+              new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
           );
         }
       }
@@ -3549,14 +3649,14 @@ export class TraceQueryService {
       const rootSpan = spansMap.get(originalRootSpanId)!;
       // Update root span duration to cover all child spans
       const allChildSpans = Array.from(spansMap.values()).filter(
-        (s: any) => s.parent_span_id === originalRootSpanId
+        (s: any) => s.parent_span_id === originalRootSpanId,
       );
       if (allChildSpans.length > 0) {
         const earliestStart = Math.min(
-          ...allChildSpans.map((s: any) => new Date(s.start_time).getTime())
+          ...allChildSpans.map((s: any) => new Date(s.start_time).getTime()),
         );
         const latestEnd = Math.max(
-          ...allChildSpans.map((s: any) => new Date(s.end_time).getTime())
+          ...allChildSpans.map((s: any) => new Date(s.end_time).getTime()),
         );
         rootSpan.start_time = new Date(earliestStart).toISOString();
         rootSpan.end_time = new Date(latestEnd).toISOString();
@@ -3629,7 +3729,7 @@ export class TraceQueryService {
         if (parentSpan) {
           if (parentSpan === span || parentSpan.id === span.id) {
             console.warn(
-              `[TraceQueryService] Span has self parent reference; skipping child link. span_id=${span.id}`
+              `[TraceQueryService] Span has self parent reference; skipping child link. span_id=${span.id}`,
             );
             rootSpans.push(span);
             continue;
@@ -3639,7 +3739,7 @@ export class TraceQueryService {
           }
           // CRITICAL: Check if span is already in children to prevent duplicates
           const existingChild = parentSpan.children.find(
-            (c: any) => c.id === span.id || c.span_id === span.span_id
+            (c: any) => c.id === span.id || c.span_id === span.span_id,
           );
           if (!existingChild) {
             // CRITICAL FIX: Ensure child span has all required fields before adding to tree
@@ -3647,14 +3747,14 @@ export class TraceQueryService {
             parentSpan.children.push(span);
           } else {
             console.warn(
-              `[TraceQueryService] Duplicate child span detected and skipped: ${span.id} in parent ${parentSpan.id}`
+              `[TraceQueryService] Duplicate child span detected and skipped: ${span.id} in parent ${parentSpan.id}`,
             );
           }
         } else {
           // Parent not found, treat as root
           // Log warning to help debug missing parent issues
           console.warn(
-            `[TraceQueryService] Parent span not found for ${span.id}, treating as root. Parent ID: ${span.parent_span_id}`
+            `[TraceQueryService] Parent span not found for ${span.id}, treating as root. Parent ID: ${span.parent_span_id}`,
           );
           rootSpans.push(span);
         }
@@ -3667,7 +3767,7 @@ export class TraceQueryService {
 
     // Find output event for response
     const outputEvent = parsedEvents.find(
-      (e: any) => e.event_type === "output"
+      (e: any) => e.event_type === "output",
     );
 
     // Calculate total cost from all cost-bearing events (LLM, embeddings, vector DB, cache savings)
@@ -3683,7 +3783,7 @@ export class TraceQueryService {
           "embedding",
           "vector_db_operation",
           "cache_operation",
-        ].includes(e.event_type)
+        ].includes(e.event_type),
       );
       for (const event of costEvents) {
         if (event.event_type === "llm_call") {
@@ -3775,7 +3875,7 @@ export class TraceQueryService {
     } catch (error) {
       console.warn(
         "[TraceQueryService] Could not fetch analysis results:",
-        error
+        error,
       );
     }
 
@@ -3901,7 +4001,9 @@ export class TraceQueryService {
         if (Array.isArray(toolDefs)) {
           span.available_tools = toolDefs;
           span.available_tool_names = toolDefs
-            .map((def: any) => def?.name || def?.function?.name || def?.tool?.name)
+            .map(
+              (def: any) => def?.name || def?.function?.name || def?.tool?.name,
+            )
             .filter(Boolean);
         } else {
           span.available_tools = null;
@@ -4031,11 +4133,11 @@ export class TraceQueryService {
       if (span.parent_span_id) {
         const parentSpan = allSpans.find(
           (s) =>
-            s.id === span.parent_span_id || s.span_id === span.parent_span_id
+            s.id === span.parent_span_id || s.span_id === span.parent_span_id,
         );
         if (parentSpan && parentSpan.children) {
           const childIndex = parentSpan.children.findIndex(
-            (c: any) => c.id === span.id || c.span_id === span.span_id
+            (c: any) => c.id === span.id || c.span_id === span.span_id,
           );
           if (childIndex >= 0) {
             // Index by parent-child position pattern
@@ -4049,7 +4151,7 @@ export class TraceQueryService {
     const costBreakdown = this.buildCostBreakdown(summary, allSpans);
     const performanceAnalysis = this.buildPerformanceAnalysis(
       summary,
-      allSpans
+      allSpans,
     );
     const tokenEfficiency = this.buildTokenEfficiency(summary, allSpans);
     const qualityExplanation = this.buildQualityExplanation(analysisData);
@@ -4079,7 +4181,7 @@ export class TraceQueryService {
         totalSpans: allSpans.length,
         rootSpans: rootSpans.length,
         hasChildren: rootSpans.some(
-          (s: any) => s.children && s.children.length > 0
+          (s: any) => s.children && s.children.length > 0,
         ),
       },
     };
@@ -4092,7 +4194,7 @@ export class TraceQueryService {
     events: any[],
     traceId: string,
     tenantId: string,
-    projectId: string | null
+    projectId: string | null,
   ): Partial<TraceSummary> {
     if (events.length === 0) {
       return {
@@ -4104,7 +4206,7 @@ export class TraceQueryService {
 
     // Find trace_start event for metadata
     const traceStartEvent = events.find(
-      (e: any) => e.event_type === "trace_start"
+      (e: any) => e.event_type === "trace_start",
     );
 
     // Find LLM call events
@@ -4164,7 +4266,7 @@ export class TraceQueryService {
       const lastLLM = llmEvents[llmEvents.length - 1];
       response = lastLLM.attributes?.llm_call?.output || null;
     }
-
+    // aaaa
     // Get earliest timestamp
     const timestamps = events.map((e: any) => e.timestamp).sort();
     const timestamp = timestamps[0] || new Date().toISOString();
@@ -4200,7 +4302,7 @@ export class TraceQueryService {
   private static async getAnalysisResults(
     tenantId: string,
     traceIds: string[],
-    projectId?: string | null
+    projectId?: string | null,
   ): Promise<any[]> {
     if (traceIds.length === 0) {
       return [];
@@ -4229,7 +4331,7 @@ export class TraceQueryService {
         answer_faithfulness_score
       FROM analysis_results
       ${whereClause}`,
-      params
+      params,
     );
 
     return results;
@@ -4240,7 +4342,7 @@ export class TraceQueryService {
    */
   private static filterByIssueType(
     traces: TraceSummary[],
-    issueType: string
+    issueType: string,
   ): TraceSummary[] {
     switch (issueType) {
       case "hallucination":
