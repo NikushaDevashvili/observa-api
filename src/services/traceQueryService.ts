@@ -1455,14 +1455,47 @@ export class TraceQueryService {
                 trimmed.includes(':') &&
                 trimmed.length > 3
               ) {
-                // Try to repair it by wrapping in braces
-                try {
-                  const wrapped = `{${trimmed}}`;
-                  JSON.parse(wrapped); // Validate it's parseable
-                  output += wrapped; // Use the repaired version
-                } catch {
-                  // If repair fails, use empty object (original behavior)
-                  output += "{}";
+                // Try to repair it by extracting key and value, then reconstructing
+                const keyValueMatch = trimmed.match(/^"([^"]+)"\s*:\s*(.+)$/);
+                if (keyValueMatch && keyValueMatch[1]) {
+                  const key: string = keyValueMatch[1];
+                  let val: any = keyValueMatch[2] || '';
+                  
+                  // Parse the value
+                  if (val.startsWith('"') && val.endsWith('"')) {
+                    val = val.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                  } else {
+                    try {
+                      val = JSON.parse(val);
+                    } catch {
+                      // Keep as string
+                    }
+                  }
+                  
+                  // Reconstruct as valid JSON object
+                  try {
+                    const repaired = JSON.stringify({ [key]: val });
+                    output += repaired; // Use the repaired version
+                  } catch {
+                    // If reconstruction fails, try wrapping in braces
+                    try {
+                      const wrapped = `{${trimmed}}`;
+                      JSON.parse(wrapped); // Validate it's parseable
+                      output += wrapped;
+                    } catch {
+                      // Last resort: use empty object
+                      output += "{}";
+                    }
+                  }
+                } else {
+                  // Try wrapping in braces as fallback
+                  try {
+                    const wrapped = `{${trimmed}}`;
+                    JSON.parse(wrapped);
+                    output += wrapped;
+                  } catch {
+                    output += "{}";
+                  }
                 }
               } else {
                 // Not malformed, use empty object (original behavior)
@@ -1521,91 +1554,130 @@ export class TraceQueryService {
           let jsonStr = event.attributes_json.trim();
           if (jsonStr && jsonStr.length > 0) {
             // CRITICAL PRE-PROCESSING: Fix the malformed pattern BEFORE any parsing attempts
-            // The error shows: "arguments":""query":"value"" which means in the JSON string we have:
-            // "arguments":"\"query\":\"value\"" (escaped quotes)
+            // The error shows: "arguments":""query":"value"" which means the JSON contains:
+            // "arguments":"\"query\":\"value\"" (escaped quotes in the string value)
             // We need to find and convert it to: "arguments":{"query":"value"}
             
+            // Use a state machine to find and fix the pattern - more reliable than regex for nested JSON
             let repairCount = 0;
-            
-            // Strategy 1: Find "arguments":"..." where the string value contains "key":"value" pattern
-            // The pattern in stored JSON: "arguments":"\"query\":\"value\""
-            // We need to match the entire string value including all escaped quotes
-            
-            // More robust regex: match "arguments":" followed by a string that can contain escaped quotes
-            // The string value ends at the first unescaped quote
-            const argumentsPattern = /"arguments"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
-            
-            jsonStr = jsonStr.replace(argumentsPattern, (match: string, escapedStringValue: string) => {
-              // Log what we found
-              if (isLlmCall && escapedStringValue.includes('\\"') && escapedStringValue.includes(':')) {
-                console.log(
-                  `[TraceQueryService] 🔍 Found arguments string value: ${escapedStringValue.substring(0, 100)}`
-                );
-              }
+            const fixMalformedArgumentsPattern = (str: string): string => {
+              let result = str;
+              let searchPos = 0;
               
-              // Unescape the string value to get the actual content
-              let unescaped: string;
-              try {
-                // Try to parse as JSON string to unescape properly
-                // Wrap in quotes to make it a valid JSON string
-                unescaped = JSON.parse(`"${escapedStringValue}"`);
-              } catch (parseErr) {
-                // If that fails, manually unescape
-                unescaped = escapedStringValue.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
-                if (isLlmCall) {
-                  console.log(
-                    `[TraceQueryService] ⚠️ JSON.parse failed for arguments value, using manual unescape: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`
-                  );
+              while (true) {
+                // Find the next occurrence of "arguments":
+                const argsKeyPos = result.indexOf('"arguments"', searchPos);
+                if (argsKeyPos === -1) break;
+                
+                // Find the colon after "arguments"
+                let colonPos = argsKeyPos + '"arguments"'.length;
+                while (colonPos < result.length && /\s/.test(result[colonPos])) {
+                  colonPos++;
                 }
-              }
-              
-              // Check if unescaped looks like malformed JSON (pattern: "key":"value" without braces)
-              const trimmed = unescaped.trim();
-              if (
-                trimmed.startsWith('"') &&
-                !trimmed.startsWith('"{') &&
-                trimmed.includes(':') &&
-                trimmed.length > 3
-              ) {
-                // This is the malformed pattern - try to extract key and value
-                const keyValueMatch = trimmed.match(/^"([^"]+)"\s*:\s*(.+)$/);
-                if (keyValueMatch && keyValueMatch[1]) {
-                  const key: string = keyValueMatch[1];
-                  let val: any = keyValueMatch[2] || '';
-                  
-                  // Parse the value
-                  if (val.startsWith('"') && val.endsWith('"')) {
-                    // Quoted string - extract and unescape
-                    val = val.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
-                  } else {
-                    // Try parsing as JSON (for numbers, booleans, etc.)
+                if (colonPos >= result.length || result[colonPos] !== ':') {
+                  searchPos = argsKeyPos + 1;
+                  continue;
+                }
+                
+                // Skip whitespace after colon
+                let valueStart = colonPos + 1;
+                while (valueStart < result.length && /\s/.test(result[valueStart])) {
+                  valueStart++;
+                }
+                
+                // Check if value starts with a quote (string value)
+                if (valueStart >= result.length || result[valueStart] !== '"') {
+                  searchPos = argsKeyPos + 1;
+                  continue;
+                }
+                
+                // Find the end of the string value (handling escaped quotes)
+                let valueEnd = valueStart + 1;
+                let escaped = false;
+                while (valueEnd < result.length) {
+                  if (escaped) {
+                    escaped = false;
+                  } else if (result[valueEnd] === '\\') {
+                    escaped = true;
+                  } else if (result[valueEnd] === '"') {
+                    // Found closing quote
+                    break;
+                  }
+                  valueEnd++;
+                }
+                
+                if (valueEnd >= result.length) {
+                  searchPos = argsKeyPos + 1;
+                  continue;
+                }
+                
+                // Extract the string value (without outer quotes)
+                const stringContent = result.substring(valueStart + 1, valueEnd);
+                
+                // Unescape the content
+                let unescaped: string;
+                try {
+                  unescaped = JSON.parse(`"${stringContent}"`);
+                } catch {
+                  // Manual unescape
+                  unescaped = stringContent.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                }
+                
+                // Check if unescaped looks like malformed JSON (pattern: "key":"value" without braces)
+                const trimmed = unescaped.trim();
+                if (
+                  trimmed.startsWith('"') &&
+                  !trimmed.startsWith('"{') &&
+                  trimmed.includes(':') &&
+                  trimmed.length > 3
+                ) {
+                  // This is the malformed pattern - try to extract key and value
+                  const keyValueMatch = trimmed.match(/^"([^"]+)"\s*:\s*(.+)$/);
+                  if (keyValueMatch && keyValueMatch[1]) {
+                    const key: string = keyValueMatch[1];
+                    let val: any = keyValueMatch[2] || '';
+                    
+                    // Parse the value
+                    if (val.startsWith('"') && val.endsWith('"')) {
+                      // Quoted string - extract and unescape
+                      val = val.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                    } else {
+                      // Try parsing as JSON (for numbers, booleans, etc.)
+                      try {
+                        val = JSON.parse(val);
+                      } catch {
+                        // Keep as string
+                      }
+                    }
+                    
+                    // Reconstruct as valid JSON object
                     try {
-                      val = JSON.parse(val);
+                      const repaired = JSON.stringify({ [key]: val });
+                      repairCount++;
+                      if (isLlmCall) {
+                        console.log(
+                          `[TraceQueryService] 🔧 Pre-processed and repaired malformed arguments: "${key}":"${typeof val === 'string' ? val.substring(0, 50) : val}"`
+                        );
+                      }
+                      // Replace the malformed string value with the repaired object
+                      result = result.substring(0, valueStart) + repaired + result.substring(valueEnd + 1);
+                      // Continue searching from after the replacement
+                      searchPos = argsKeyPos + '"arguments"'.length + repaired.length;
+                      continue;
                     } catch {
-                      // Keep as string
+                      // If reconstruction fails, continue
                     }
-                  }
-                  
-                  // Reconstruct as valid JSON object
-                  try {
-                    const repaired = JSON.stringify({ [key]: val });
-                    repairCount++;
-                    if (isLlmCall) {
-                      console.log(
-                        `[TraceQueryService] 🔧 Pre-processed and repaired malformed arguments: "${key}":"${typeof val === 'string' ? val.substring(0, 50) : val}"`
-                      );
-                    }
-                    return `"arguments":${repaired}`;
-                  } catch {
-                    // If reconstruction fails, return original
-                    return match;
                   }
                 }
+                
+                // Move search position forward
+                searchPos = argsKeyPos + 1;
               }
               
-              // Not malformed, return original
-              return match;
-            });
+              return result;
+            };
+            
+            jsonStr = fixMalformedArgumentsPattern(jsonStr);
             
             if (repairCount > 0 && isLlmCall) {
               console.log(
