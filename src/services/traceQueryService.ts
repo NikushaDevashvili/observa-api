@@ -3808,16 +3808,6 @@ export class TraceQueryService {
     // This ensures the frontend can find any span by ID, regardless of hierarchy
     const allSpans = Array.from(spansMap.values());
     const toolCallSpans = allSpans.filter((span) => span.tool_call);
-    const traceHasToolFinishReason = allSpans.some((s) => {
-      const fr = s.llm_call?.finish_reason;
-      if (typeof fr !== "string") return false;
-      const lower = fr.toLowerCase();
-      return (
-        lower === "tool_calls" ||
-        lower === "function_call" ||
-        lower.includes("tool_call")
-      );
-    });
     const toolCallsByParent = new Map<string, any[]>();
 
     for (const toolSpan of toolCallSpans) {
@@ -3946,19 +3936,12 @@ export class TraceQueryService {
       }
 
       if (!span.status) {
-        // EmptyResponseError when trace has tool_calls or LLM finish_reason
-        // indicates tool use = tool-approval flow (AI returns only tool_calls,
-        // no text). Not a real error.
-        const isEmptyResponseInToolFlow =
-          span.error?.error_type === "EmptyResponseError" &&
-          (toolCallSpans.length > 0 || traceHasToolFinishReason);
         if (
-          !isEmptyResponseInToolFlow &&
-          (span.error ||
-            span.error_message ||
-            span.tool_call?.result_status === "error" ||
-            span.tool_call?.result_status === "timeout" ||
-            span.llm_call?.finish_reason === "error")
+          span.error ||
+          span.error_message ||
+          span.tool_call?.result_status === "error" ||
+          span.tool_call?.result_status === "timeout" ||
+          span.llm_call?.finish_reason === "error"
         ) {
           span.status =
             span.tool_call?.result_status === "timeout" ? "timeout" : "error";

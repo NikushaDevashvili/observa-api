@@ -696,39 +696,10 @@ function determineImpact(
   return "minimal_impact";
 }
 
-function collectAllSpans(spans: ObservaSpan[]): ObservaSpan[] {
-  const out: ObservaSpan[] = [];
-  for (const s of spans) {
-    out.push(s);
-    if (s.children?.length) out.push(...collectAllSpans(s.children));
-  }
-  return out;
-}
-
-function computeTraceHasToolFlow(spans: ObservaSpan[]): boolean {
-  const all = collectAllSpans(spans);
-  return all.some((s) => {
-    if (s.tool_call) return true;
-    const fr = s.llm_call?.finish_reason;
-    if (typeof fr !== "string") return false;
-    const lower = fr.toLowerCase();
-    return (
-      lower === "tool_calls" ||
-      lower === "function_call" ||
-      lower.includes("tool_call")
-    );
-  });
-}
-
-type TransformContext = { traceHasToolFlow: boolean };
-
 /**
  * Transform a single Observa span to Agent-Prism TraceSpan
  */
-function transformSpan(
-  span: ObservaSpan,
-  ctx?: TransformContext
-): AgentPrismTraceSpan {
+function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
   const startTime = isoToUnixMs(span.start_time);
   const endTime = isoToUnixMs(span.end_time);
 
@@ -1292,17 +1263,12 @@ function transformSpan(
 
   // Extract error information with comprehensive SOTA context
   if (span.error || errorEvent) {
+    status = "error";
     const errorData = span.error || errorEvent?.attributes?.error;
-    const errorType = errorData?.error_type || "error";
-    // EmptyResponseError when trace has tool_calls/finish_reason = tool-approval
-    // flow; not a real error.
-    const skipEmptyResponseError =
-      errorType === "EmptyResponseError" && !!ctx?.traceHasToolFlow;
-    if (!skipEmptyResponseError) {
-      status = "error";
-    }
-    if (errorData && !skipEmptyResponseError) {
+
+    if (errorData) {
       const errorMessage = errorData.error_message || "Unknown error";
+      const errorType = errorData.error_type || "error";
       const errorContext = errorData.context || {};
 
       // CRITICAL FIX: Extract error_category and error_code directly from errorData
@@ -1883,8 +1849,7 @@ function transformSpan(
   const attributesArray = convertAttributesToArray(attributes);
 
   // Recursively transform children first to calculate error count
-  const transformedChildren =
-    span.children?.map((c) => transformSpan(c, ctx)) || [];
+  const transformedChildren = span.children?.map(transformSpan) || [];
 
   // Calculate error count (errors in this span + errors in children)
   let errorCount = errorInfo ? 1 : 0;
@@ -2137,11 +2102,8 @@ export function adaptObservaTraceToAgentPrism(
     }
   }
 
-  const traceHasToolFlow = computeTraceHasToolFlow(mainSpans);
-  const ctx: TransformContext = { traceHasToolFlow };
-
   // Transform all spans (recursive transformation handles children)
-  const transformedSpans = mainSpans.map((s) => transformSpan(s, ctx));
+  const transformedSpans = mainSpans.map(transformSpan);
 
   // Count all spans recursively (including nested children)
   const totalSpansCount = countAllSpansRecursively(transformedSpans);

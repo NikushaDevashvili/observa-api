@@ -1034,33 +1034,14 @@ async function storeTraceSummaries(
     };
 
     const errorEvents = traceEvents.filter((e) => e.event_type === "error");
-    const toolCalls = traceEvents.filter((e) => e.event_type === "tool_call");
-
-    // EmptyResponseError is emitted when the model returns only tool_calls (no text),
-    // e.g. during tool-approval flow. Don't treat it as an error when we have tool_calls
-    // or when the LLM finish_reason indicates tool use (tool_calls / function_call).
-    const hasToolCalls = toolCalls.length > 0;
-    const finishReason = llmAttrs?.finish_reason;
-    const fr = typeof finishReason === "string" ? finishReason.toLowerCase() : "";
-    const isToolFinishReason =
-      fr === "tool_calls" ||
-      fr === "function_call" ||
-      fr.includes("tool_call");
-    const isEmptyResponseExpected = hasToolCalls || isToolFinishReason;
-    const effectiveErrorEvents = isEmptyResponseExpected
-      ? errorEvents.filter((e) => {
-          const attrs = getAttributes(e);
-          return attrs?.error?.error_type !== "EmptyResponseError";
-        })
-      : errorEvents;
-
     const errorTypes: Record<string, number> = {};
-    for (const e of effectiveErrorEvents) {
+    for (const e of errorEvents) {
       const attrs = getAttributes(e);
       const t = attrs?.error?.error_type || "error";
       errorTypes[t] = (errorTypes[t] || 0) + 1;
     }
 
+    const toolCalls = traceEvents.filter((e) => e.event_type === "tool_call");
     const toolFailures = toolCalls.filter((e) => {
       const attrs = getAttributes(e);
       return (
@@ -1074,7 +1055,7 @@ async function storeTraceSummaries(
     });
 
     const hasIssues =
-      effectiveErrorEvents.length > 0 ||
+      errorEvents.length > 0 ||
       toolFailures.length > 0 ||
       toolTimeouts.length > 0;
     const derivedStatus = hasIssues ? 500 : 200;
@@ -1138,7 +1119,7 @@ async function storeTraceSummaries(
       metadata: {
         issues: {
           has_issues: hasIssues,
-          error_events: effectiveErrorEvents.length,
+          error_events: errorEvents.length,
           error_types: errorTypes,
           tool_failures: toolFailures.length,
           tool_timeouts: toolTimeouts.length,
