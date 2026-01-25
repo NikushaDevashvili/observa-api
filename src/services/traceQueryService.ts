@@ -1558,6 +1558,58 @@ export class TraceQueryService {
             // "arguments":"\"query\":\"value\"" (escaped quotes in the string value)
             // We need to find and convert it to: "arguments":{"query":"value"}
             
+            // FIRST: Try to find the exact error pattern from the logs
+            // The error shows: "arguments":""query":"value"" which means in the stored JSON we have:
+            // Option 1: "arguments": ""query":"value"" (invalid - two quotes, but this wouldn't be stored)
+            // Option 2: "arguments": "\"query\":\"value\"" (valid JSON, but string value is malformed)
+            // We need to handle both cases
+            
+            // Try to find pattern where arguments has a string value that starts with quote and colon
+            // This catches: "arguments": "\"query\":\"value\""
+            const escapedPattern = /"arguments"\s*:\s*"\\"([^"\\]+)\\"\s*:\s*\\"([^"\\]*)\\""/g;
+            let aggressiveRepairCount = 0;
+            jsonStr = jsonStr.replace(escapedPattern, (match: string, key: string, value: string) => {
+              aggressiveRepairCount++;
+              const repaired = JSON.stringify({ [key]: value });
+              if (isLlmCall) {
+                console.log(
+                  `[TraceQueryService] 🔧 AGGRESSIVE FIX (escaped): Found "arguments": "\\"${key}\\":\\"${value}\\"" and repaired to: "arguments":${repaired}`
+                );
+              }
+              return `"arguments":${repaired}`;
+            });
+            
+            // Also try literal pattern (in case it somehow got stored without escaping)
+            const literalPattern = /"arguments"\s*:\s*""([^"]+)"\s*:\s*"([^"]*)""/g;
+            jsonStr = jsonStr.replace(literalPattern, (match: string, key: string, value: string) => {
+              aggressiveRepairCount++;
+              const repaired = JSON.stringify({ [key]: value });
+              if (isLlmCall) {
+                console.log(
+                  `[TraceQueryService] 🔧 AGGRESSIVE FIX (literal): Found "arguments": ""${key}":"${value}"" and repaired to: "arguments":${repaired}`
+                );
+              }
+              return `"arguments":${repaired}`;
+            });
+            
+            if (aggressiveRepairCount > 0 && isLlmCall) {
+              console.log(
+                `[TraceQueryService] ✅ AGGRESSIVE: Fixed ${aggressiveRepairCount} malformed pattern(s)`
+              );
+            }
+            
+            // Log a sample around the error position to see what we're dealing with
+            if (isLlmCall) {
+              const errorPos = 2305; // From the error logs
+              const sampleStart = Math.max(0, errorPos - 150);
+              const sampleEnd = Math.min(jsonStr.length, errorPos + 150);
+              const sample = jsonStr.substring(sampleStart, sampleEnd);
+              console.log(
+                `[TraceQueryService] 🔍 Sample around error position ${errorPos}: ${sample}`
+              );
+            }
+            
+            // SECOND: Use a state machine to find and fix escaped patterns
             // Use a state machine to find and fix the pattern - more reliable than regex for nested JSON
             let repairCount = 0;
             const fixMalformedArgumentsPattern = (str: string): string => {
@@ -1681,7 +1733,17 @@ export class TraceQueryService {
             
             if (repairCount > 0 && isLlmCall) {
               console.log(
-                `[TraceQueryService] ✅ Pre-processed ${repairCount} malformed arguments pattern(s)`
+                `[TraceQueryService] ✅ STATE MACHINE: Fixed ${repairCount} malformed arguments pattern(s)`
+              );
+            }
+            
+            // Log the JSON string after all repairs for debugging
+            if (isLlmCall && (aggressiveRepairCount > 0 || repairCount > 0)) {
+              const errorPos = 2305; // Approximate error position from logs
+              const contextStart = Math.max(0, errorPos - 100);
+              const contextEnd = Math.min(jsonStr.length, errorPos + 100);
+              console.log(
+                `[TraceQueryService] 🔍 JSON after repairs (around position ${errorPos}): ${jsonStr.substring(contextStart, contextEnd)}`
               );
             }
             
