@@ -54,7 +54,122 @@ function sanitizeAttributes(value: any): any {
     const sanitized: Record<string, any> = {};
     for (const [key, val] of Object.entries(value)) {
       if (key === "arguments" && typeof val === "string") {
-        sanitized[key] = tryParseJsonString(val);
+        // Handle arguments field - try to parse, and if it's malformed, fix it
+        const trimmed = val.trim();
+        // Check if it's malformed JSON (pattern: "key":"value" without outer braces)
+        if (
+          trimmed.startsWith('"') &&
+          !trimmed.startsWith('"{') &&
+          trimmed.includes(':') &&
+          trimmed.length > 3
+        ) {
+          // Try to extract key and value and reconstruct as valid JSON object
+          const keyValueMatch = trimmed.match(/^"([^"]+)"\s*:\s*(.+)$/);
+          if (keyValueMatch && keyValueMatch[1]) {
+            const argKey: string = keyValueMatch[1];
+            let argVal: any = keyValueMatch[2] || '';
+            
+            // Parse the value
+            if (argVal.startsWith('"') && argVal.endsWith('"')) {
+              // Quoted string - extract and unescape
+              argVal = argVal.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+            } else {
+              // Try parsing as JSON (for numbers, booleans, etc.)
+              try {
+                argVal = JSON.parse(argVal);
+              } catch {
+                // Keep as string
+              }
+            }
+            
+            // Reconstruct as valid JSON object
+            try {
+              sanitized[key] = { [argKey]: argVal };
+            } catch {
+              // If reconstruction fails, try original parsing
+              sanitized[key] = tryParseJsonString(val);
+            }
+          } else {
+            sanitized[key] = tryParseJsonString(val);
+          }
+        } else {
+          sanitized[key] = tryParseJsonString(val);
+        }
+      } else if (key === "function_call" && val && typeof val === "object" && "arguments" in val) {
+        // Handle function_call.arguments
+        const fc = { ...val } as Record<string, any>;
+        if (typeof fc.arguments === "string") {
+          // Apply the same fix as above for arguments
+          const trimmed = fc.arguments.trim();
+          if (
+            trimmed.startsWith('"') &&
+            !trimmed.startsWith('"{') &&
+            trimmed.includes(':') &&
+            trimmed.length > 3
+          ) {
+            const keyValueMatch = trimmed.match(/^"([^"]+)"\s*:\s*(.+)$/);
+            if (keyValueMatch && keyValueMatch[1]) {
+              const argKey: string = keyValueMatch[1];
+              let argVal: any = keyValueMatch[2] || '';
+              if (argVal.startsWith('"') && argVal.endsWith('"')) {
+                argVal = argVal.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+              } else {
+                try {
+                  argVal = JSON.parse(argVal);
+                } catch {
+                  // Keep as string
+                }
+              }
+              try {
+                fc.arguments = { [argKey]: argVal };
+              } catch {
+                fc.arguments = tryParseJsonString(fc.arguments);
+              }
+            } else {
+              fc.arguments = tryParseJsonString(fc.arguments);
+            }
+          } else {
+            fc.arguments = tryParseJsonString(fc.arguments);
+          }
+        }
+        sanitized[key] = sanitizeAttributes(fc);
+      } else if (key === "function" && val && typeof val === "object" && "arguments" in val) {
+        // Handle tool_calls[].function.arguments
+        const fn = { ...val } as Record<string, any>;
+        if (typeof fn.arguments === "string") {
+          const trimmed = fn.arguments.trim();
+          if (
+            trimmed.startsWith('"') &&
+            !trimmed.startsWith('"{') &&
+            trimmed.includes(':') &&
+            trimmed.length > 3
+          ) {
+            const keyValueMatch = trimmed.match(/^"([^"]+)"\s*:\s*(.+)$/);
+            if (keyValueMatch && keyValueMatch[1]) {
+              const argKey: string = keyValueMatch[1];
+              let argVal: any = keyValueMatch[2] || '';
+              if (argVal.startsWith('"') && argVal.endsWith('"')) {
+                argVal = argVal.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+              } else {
+                try {
+                  argVal = JSON.parse(argVal);
+                } catch {
+                  // Keep as string
+                }
+              }
+              try {
+                fn.arguments = { [argKey]: argVal };
+              } catch {
+                fn.arguments = tryParseJsonString(fn.arguments);
+              }
+            } else {
+              fn.arguments = tryParseJsonString(fn.arguments);
+            }
+          } else {
+            fn.arguments = tryParseJsonString(fn.arguments);
+          }
+        }
+        sanitized[key] = sanitizeAttributes(fn);
       } else {
         sanitized[key] = sanitizeAttributes(val);
       }
@@ -522,7 +637,71 @@ router.post(
 
                 // Ensure cleaned is an object (not undefined)
                 const finalAttributes = cleaned !== undefined ? cleaned : {};
-                const jsonStr = JSON.stringify(finalAttributes);
+                
+                // CRITICAL: Double-check for any remaining malformed arguments before stringifying
+                // This is a final safety net to catch any that might have been missed
+                const finalCheck = (obj: any): any => {
+                  if (obj === null || obj === undefined) return obj;
+                  if (typeof obj === 'string') {
+                    const trimmed = obj.trim();
+                    if (
+                      trimmed.startsWith('"') &&
+                      !trimmed.startsWith('"{') &&
+                      trimmed.includes(':') &&
+                      trimmed.length > 3
+                    ) {
+                      // This looks like malformed JSON - try to fix it
+                      const keyValueMatch = trimmed.match(/^"([^"]+)"\s*:\s*(.+)$/);
+                      if (keyValueMatch && keyValueMatch[1]) {
+                        const key: string = keyValueMatch[1];
+                        let val: any = keyValueMatch[2] || '';
+                        if (val.startsWith('"') && val.endsWith('"')) {
+                          val = val.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                        } else {
+                          try {
+                            val = JSON.parse(val);
+                          } catch {
+                            // Keep as string
+                          }
+                        }
+                        try {
+                          return { [key]: val };
+                        } catch {
+                          return obj;
+                        }
+                      }
+                    }
+                    return obj;
+                  }
+                  if (Array.isArray(obj)) {
+                    return obj.map(finalCheck);
+                  }
+                  if (typeof obj === 'object') {
+                    const result: Record<string, any> = {};
+                    for (const [key, val] of Object.entries(obj)) {
+                      if (key === 'arguments' && typeof val === 'string') {
+                        result[key] = finalCheck(val);
+                      } else if (key === 'function_call' && val && typeof val === 'object' && 'arguments' in val) {
+                        result[key] = {
+                          ...val,
+                          arguments: typeof val.arguments === 'string' ? finalCheck(val.arguments) : finalCheck(val.arguments)
+                        };
+                      } else if (key === 'function' && val && typeof val === 'object' && 'arguments' in val) {
+                        result[key] = {
+                          ...val,
+                          arguments: typeof val.arguments === 'string' ? finalCheck(val.arguments) : finalCheck(val.arguments)
+                        };
+                      } else {
+                        result[key] = finalCheck(val);
+                      }
+                    }
+                    return result;
+                  }
+                  return obj;
+                };
+                
+                const fullySanitized = finalCheck(finalAttributes);
+                const jsonStr = JSON.stringify(fullySanitized);
 
                 // Validate it can be parsed back
                 JSON.parse(jsonStr);
