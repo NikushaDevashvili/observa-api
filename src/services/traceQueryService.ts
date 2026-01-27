@@ -1814,6 +1814,7 @@ export class TraceQueryService {
         event_type: event.event_type,
         timestamp: event.timestamp,
         attributes: event.attributes,
+        attributes_json: event.attributes_json,
         span_id: event.span_id, // Include original span_id for reference
         original_span_id: event.span_id, // Keep original for frontend matching
       });

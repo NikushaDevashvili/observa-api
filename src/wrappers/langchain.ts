@@ -194,7 +194,10 @@ export class ObservaLangChainHandler extends BaseCallbackHandler {
         input: run.input ?? null,
         output: this.safeString(output),
       };
-      const attributesJson = this.buildAttributesJson({ llm_call: llmPayload });
+      const normalizedAttributes = AttributeNormalizer.normalize({
+        llm_call: llmPayload,
+      });
+      const attributesJson = this.buildAttributesJson(normalizedAttributes);
 
       try {
         await this.observa.trackLLMCall({
@@ -202,6 +205,12 @@ export class ObservaLangChainHandler extends BaseCallbackHandler {
           input: llmPayload.input,
           output: llmPayload.output,
           latencyMs: latency,
+          attributes:
+            normalizedAttributes &&
+            typeof normalizedAttributes === "object" &&
+            !Array.isArray(normalizedAttributes)
+              ? (normalizedAttributes as Record<string, JsonValue>)
+              : undefined,
           attributes_json: attributesJson,
           spanId: run.spanId || null,
           parentSpanId: run.parentSpanId || null,
@@ -215,10 +224,15 @@ export class ObservaLangChainHandler extends BaseCallbackHandler {
     this.runMap.delete(runId);
   }
 
-  async handleToolStart(tool: any, input: unknown, runId: string) {
+  async handleToolStart(
+    tool: any,
+    input: unknown,
+    runId: string,
+    parentRunId?: string,
+  ) {
     const spanInfo = this.spanManager.createSpan(
       runId,
-      this.activeChainRunId || null,
+      parentRunId || this.activeChainRunId || null,
     );
     const payload = {
       toolName: tool?.name || "unknown",
