@@ -12,7 +12,7 @@ export interface DefensiveJSONParserOptions<T> {
 }
 
 export class DefensiveJSONParser {
-  private static readonly DEFAULT_MAX_ATTEMPTS = 6;
+  private static readonly DEFAULT_MAX_ATTEMPTS = 10;
 
   /**
    * Parse any input into JSON with defensive fallbacks.
@@ -71,12 +71,26 @@ export class DefensiveJSONParser {
     candidates.push(DefensiveJSONParser.fixMalformedArguments(raw));
     candidates.push(DefensiveJSONParser.fixMissingObjectBraces(raw));
     candidates.push(DefensiveJSONParser.escapeControlCharacters(raw));
+    candidates.push(DefensiveJSONParser.sanitizeInvalidEscapes(raw));
+    candidates.push(DefensiveJSONParser.collapseDoubleBackslashes(raw));
+    candidates.push(
+      DefensiveJSONParser.sanitizeInvalidEscapes(
+        DefensiveJSONParser.collapseDoubleBackslashes(raw),
+      ),
+    );
 
     // Try to unwrap double-encoded JSON strings.
     const unwrapped = DefensiveJSONParser.tryUnwrapJsonString(raw);
     if (unwrapped !== null) {
       candidates.push(unwrapped);
       candidates.push(DefensiveJSONParser.fixMalformedArguments(unwrapped));
+      candidates.push(DefensiveJSONParser.sanitizeInvalidEscapes(unwrapped));
+      candidates.push(DefensiveJSONParser.collapseDoubleBackslashes(unwrapped));
+      candidates.push(
+        DefensiveJSONParser.sanitizeInvalidEscapes(
+          DefensiveJSONParser.collapseDoubleBackslashes(unwrapped),
+        ),
+      );
     }
 
     return candidates.filter(Boolean);
@@ -106,11 +120,27 @@ export class DefensiveJSONParser {
     } catch {
       return value
         .replace(/\\"/g, '"')
+        .replace(/\\'/g, "'")
         .replace(/\\\\/g, "\\")
         .replace(/\\n/g, "\n")
         .replace(/\\r/g, "\r")
         .replace(/\\t/g, "\t");
     }
+  }
+
+  /**
+   * Remove invalid JSON escape sequences that often show up
+   * when strings are double-escaped (e.g., \\' -> ').
+   */
+  private static sanitizeInvalidEscapes(value: string): string {
+    return value.replace(/\\'/g, "'");
+  }
+
+  /**
+   * Collapse double-escaped backslashes (\\\\ -> \\).
+   */
+  private static collapseDoubleBackslashes(value: string): string {
+    return value.replace(/\\\\/g, "\\");
   }
 
   private static escapeControlCharacters(value: string): string {
