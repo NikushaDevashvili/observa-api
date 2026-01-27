@@ -183,6 +183,17 @@ export interface ObservaSpan {
     final_output?: string | null;
     output_length?: number | null;
   };
+  trace_start?: {
+    name?: string | null;
+    metadata?: Record<string, any> | null;
+    chain_type?: string | null;
+    num_prompts?: number | null;
+    created_at?: string | null;
+  };
+  trace_end?: {
+    total_latency_ms?: number | null;
+    total_tokens?: number | null;
+  };
   feedback?: {
     type?: string;
     outcome?: string;
@@ -1159,6 +1170,37 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
     }
   }
 
+  // Add trace_start attributes
+  if (span.trace_start) {
+    const traceStart = span.trace_start;
+    if (traceStart.name) {
+      attributes["trace_start.name"] = traceStart.name;
+    }
+    if (traceStart.chain_type) {
+      attributes["trace_start.chain_type"] = traceStart.chain_type;
+    }
+    if (traceStart.num_prompts !== null && traceStart.num_prompts !== undefined) {
+      attributes["trace_start.num_prompts"] = traceStart.num_prompts;
+    }
+    if (traceStart.created_at) {
+      attributes["trace_start.created_at"] = traceStart.created_at;
+    }
+    if (traceStart.metadata) {
+      attributes["trace_start.metadata"] = traceStart.metadata;
+    }
+  }
+
+  // Add trace_end attributes
+  if (span.trace_end) {
+    const traceEnd = span.trace_end;
+    if (traceEnd.total_latency_ms !== null && traceEnd.total_latency_ms !== undefined) {
+      attributes["trace_end.total_latency_ms"] = traceEnd.total_latency_ms;
+    }
+    if (traceEnd.total_tokens !== null && traceEnd.total_tokens !== undefined) {
+      attributes["trace_end.total_tokens"] = traceEnd.total_tokens;
+    }
+  }
+
   // Add feedback attributes
   if (span.feedback || span.feedback_metadata || span.feedback_type) {
     const feedback = span.feedback || {
@@ -1860,6 +1902,8 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
     ...(span.tool_call && { tool_call: span.tool_call }),
     ...(span.retrieval && { retrieval: span.retrieval }),
     ...(span.output && { output: span.output }),
+    ...(span.trace_start && { trace_start: span.trace_start }),
+    ...(span.trace_end && { trace_end: span.trace_end }),
     ...(span.metadata && { metadata: span.metadata }),
     attributes,
   };

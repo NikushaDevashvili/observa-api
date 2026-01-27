@@ -2129,9 +2129,13 @@ export class TraceQueryService {
 
       // Extract trace lifecycle details
       if (traceStartEvent?.attributes?.trace_start) {
+        const traceStartAttrs = traceStartEvent.attributes.trace_start;
         span.trace_start = {
-          name: traceStartEvent.attributes.trace_start.name || null,
-          metadata: traceStartEvent.attributes.trace_start.metadata || null,
+          name: traceStartAttrs.name || null,
+          metadata: traceStartAttrs.metadata || null,
+          chain_type: traceStartAttrs.chain_type || null,
+          num_prompts: traceStartAttrs.num_prompts ?? null,
+          created_at: traceStartAttrs.created_at || null,
         };
       }
 
