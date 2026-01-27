@@ -11,8 +11,21 @@ import crypto from "node:crypto";
 import { AttributeNormalizer, JsonValue } from "../utils/attributeNormalizer.js";
 
 export interface ObservaClient {
-  startTrace(payload: { name: string }): string | Promise<string>;
+  startTrace(payload: {
+    name: string;
+    chainType?: string;
+    numPrompts?: number;
+    attributes?: Record<string, JsonValue>;
+    attributes_json?: string;
+  }): string | Promise<string>;
   endTrace(): void | Promise<void>;
+  trackTraceStart?(payload: {
+    spanId: string;
+    parentSpanId: string | null;
+    traceId: string | null;
+    attributes?: Record<string, JsonValue>;
+    attributes_json?: string;
+  }): void | Promise<void>;
   trackLLMCall(payload: {
     model: string;
     input: string | null;
@@ -108,9 +121,11 @@ export class ObservaLangChainHandler extends BaseCallbackHandler {
   name = "ObservaLangChainHandler";
   private observa: ObservaClient;
   private traceId: string | null = null;
+  private rootSpanId: string | null = null;
   private runMap: Map<string, RunState> = new Map();
   private spanManager: SpanManager;
   private activeChainRunId: string | null = null;
+  private chainStartTime: number | null = null;
 
   constructor(observaClient: ObservaClient) {
     super();
@@ -120,18 +135,89 @@ export class ObservaLangChainHandler extends BaseCallbackHandler {
 
   async handleChainStart(
     chain: any,
-    _inputs: unknown,
+    inputs: unknown,
     runId: string,
     parentRunId?: string,
   ) {
-    if (!this.traceId) {
+    // Only create root trace on the first chain (no parent)
+    if (!this.traceId && !parentRunId) {
+      // Extract chain information before creating trace
+      const chainType = this.extractChainType(chain);
+      const numPrompts = this.extractNumPrompts(inputs);
+
+      // Build trace_start payload with proper data
+      const traceStartPayload = {
+        chain_type: chainType,
+        num_prompts: numPrompts,
+        created_at: new Date().toISOString(),
+        name: chain?.name || "LangChain Chain",
+      };
+
+      const normalizedAttributes = AttributeNormalizer.normalize({
+        trace_start: traceStartPayload,
+      });
+      const attributesJson = this.buildAttributesJson(normalizedAttributes);
+
       try {
+        // Try to pass chain data to startTrace (if interface supports it)
         const traceId = await this.observa.startTrace({
           name: chain?.name || "LangChain Chain",
+          chainType: chainType,
+          numPrompts: numPrompts,
+          attributes:
+            normalizedAttributes &&
+            typeof normalizedAttributes === "object" &&
+            !Array.isArray(normalizedAttributes)
+              ? (normalizedAttributes as Record<string, JsonValue>)
+              : undefined,
+          attributes_json: attributesJson,
         });
         this.traceId = typeof traceId === "string" ? traceId : this.traceId;
       } catch {
         // Never throw - continue without traceId
+      }
+    }
+
+    // Create root span for the first chain (root of trace)
+    if (!parentRunId && !this.rootSpanId) {
+      this.rootSpanId = crypto.randomUUID();
+      this.chainStartTime = Date.now();
+
+      // Extract chain information
+      const chainType = this.extractChainType(chain);
+      const numPrompts = this.extractNumPrompts(inputs);
+
+      // Build trace_start payload with proper data
+      const traceStartPayload = {
+        chain_type: chainType,
+        num_prompts: numPrompts,
+        created_at: new Date().toISOString(),
+        name: chain?.name || "LangChain Chain",
+      };
+
+      const normalizedAttributes = AttributeNormalizer.normalize({
+        trace_start: traceStartPayload,
+      });
+      const attributesJson = this.buildAttributesJson(normalizedAttributes);
+
+      // Try to use trackTraceStart if available (fallback if startTrace didn't capture the data)
+      if (this.observa.trackTraceStart) {
+        try {
+          await this.observa.trackTraceStart({
+            spanId: this.rootSpanId,
+            parentSpanId: null,
+            traceId: this.traceId,
+            attributes:
+              normalizedAttributes &&
+              typeof normalizedAttributes === "object" &&
+              !Array.isArray(normalizedAttributes)
+                ? (normalizedAttributes as Record<string, JsonValue>)
+                : undefined,
+            attributes_json: attributesJson,
+          });
+        } catch {
+          // Never throw - continue without trace_start event
+        }
       }
     }
 
@@ -266,6 +352,9 @@ export class ObservaLangChainHandler extends BaseCallbackHandler {
       });
       const attributesJson = this.buildAttributesJson(normalizedAttributes);
 
+      // Use rootSpanId as parent if this is a top-level LLM call
+      const parentSpanId = run.parentSpanId || this.rootSpanId || null;
+
       try {
         await this.observa.trackLLMCall({
           model: llmPayload.model,
@@ -280,7 +369,7 @@ export class ObservaLangChainHandler extends BaseCallbackHandler {
               : undefined,
           attributes_json: attributesJson,
           spanId: run.spanId || null,
-          parentSpanId: run.parentSpanId || null,
+          parentSpanId: parentSpanId,
           traceId: this.traceId,
         });
       } catch {
@@ -471,6 +560,53 @@ export class ObservaLangChainHandler extends BaseCallbackHandler {
     }
   }
 
+  async handleChainEnd(outputs: any, runId: string) {
+    const run = this.runMap.get(runId);
+    if (run?.type === "chain") {
+      const latency = Date.now() - (run.startTime || Date.now());
+      
+      // Only create trace_end for root chain
+      if (runId === this.activeChainRunId && this.rootSpanId && this.chainStartTime) {
+        const totalLatency = Date.now() - this.chainStartTime;
+        
+        const traceEndPayload = {
+          total_latency_ms: totalLatency,
+          outcome: "success",
+          created_at: new Date().toISOString(),
+        };
+
+        const normalizedAttributes = AttributeNormalizer.normalize({
+          trace_end: traceEndPayload,
+        });
+        const attributesJson = this.buildAttributesJson(normalizedAttributes);
+
+        // Try to use trackTraceStart for trace_end if available
+        // (we can reuse the same method signature)
+        if (this.observa.trackTraceStart) {
+          try {
+            const traceEndSpanId = `${this.rootSpanId}-end`;
+            await this.observa.trackTraceStart({
+              spanId: traceEndSpanId,
+              parentSpanId: this.rootSpanId,
+              traceId: this.traceId,
+              attributes:
+                normalizedAttributes &&
+                typeof normalizedAttributes === "object" &&
+                !Array.isArray(normalizedAttributes)
+                  ? (normalizedAttributes as Record<string, JsonValue>)
+                  : undefined,
+              attributes_json: attributesJson,
+            });
+          } catch {
+            // Never throw
+          }
+        }
+      }
+    }
+    this.spanManager.deleteSpan(runId);
+    this.runMap.delete(runId);
+  }
+
   async endTrace() {
     try {
       await this.observa.endTrace();
@@ -478,6 +614,8 @@ export class ObservaLangChainHandler extends BaseCallbackHandler {
       // Never throw
     }
     this.traceId = null;
+    this.rootSpanId = null;
+    this.chainStartTime = null;
     this.runMap.clear();
     this.spanManager.clear();
     this.activeChainRunId = null;
@@ -830,5 +968,60 @@ export class ObservaLangChainHandler extends BaseCallbackHandler {
    */
   private getToolArgsFromRun(run: RunState): JsonValue {
     return run.toolArgs || {};
+  }
+
+  /**
+   * Extract chain type from LangChain chain object.
+   */
+  private extractChainType(chain: any): string {
+    try {
+      if (chain?.id && Array.isArray(chain.id)) {
+        return chain.id[chain.id.length - 1] || "unknown";
+      }
+      if (chain?.id && typeof chain.id === "string") {
+        return chain.id;
+      }
+      if (chain?.constructor?.name) {
+        return chain.constructor.name;
+      }
+      if (chain?.name) {
+        return chain.name;
+      }
+    } catch {
+      // Fall through to default
+    }
+    return "unknown";
+  }
+
+  /**
+   * Extract number of prompts from inputs.
+   */
+  private extractNumPrompts(inputs: unknown): number {
+    try {
+      if (Array.isArray(inputs)) {
+        return inputs.length;
+      }
+      if (inputs && typeof inputs === "object") {
+        // Check for common LangChain input patterns
+        const inputObj = inputs as Record<string, any>;
+        if (inputObj.input && Array.isArray(inputObj.input)) {
+          return inputObj.input.length;
+        }
+        if (inputObj.inputs && Array.isArray(inputObj.inputs)) {
+          return inputObj.inputs.length;
+        }
+        if (inputObj.messages && Array.isArray(inputObj.messages)) {
+          return inputObj.messages.length;
+        }
+        // If it's an object with string values, count them
+        const values = Object.values(inputObj);
+        if (values.length > 0) {
+          return values.length;
+        }
+      }
+    } catch {
+      // Fall through to default
+    }
+    return 1; // Default to 1 prompt
   }
 }

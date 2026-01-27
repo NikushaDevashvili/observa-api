@@ -1597,6 +1597,22 @@ export class TraceQueryService {
     const firstEvent = parsedEvents[0];
     const lastEvent = parsedEvents[parsedEvents.length - 1];
 
+    // Check for incomplete trace_start events (empty attributes_json)
+    if (traceStart) {
+      const traceStartAttrs = traceStart.attributes?.trace_start;
+      if (
+        !traceStartAttrs ||
+        (typeof traceStartAttrs === "object" &&
+          Object.keys(traceStartAttrs).length === 0)
+      ) {
+        console.warn(
+          `[TraceQueryService] trace_start event has no data (trace: ${traceStart.trace_id}, span: ${traceStart.span_id}). ` +
+            `This indicates the trace_start event was created with empty attributes_json: {"trace_start":{}}. ` +
+            `The event will still be displayed, but chain_type, num_prompts, and other metadata are missing.`,
+        );
+      }
+    }
+
     // Build spans map (span_id -> span object)
     const spansMap = new Map<string, any>();
     const spanEventsMap = new Map<string, any[]>();
