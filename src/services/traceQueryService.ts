@@ -1667,6 +1667,19 @@ export class TraceQueryService {
         parentSpanId = null;
       }
 
+      // CRITICAL: For error events with parent_span_id, ensure they create separate spans
+      // This ensures error spans appear as children in the tree (e.g., error under tool call)
+      // Note: Error events without parent_span_id are handled below in rootEventTypes
+      if (
+        event.event_type === "error" &&
+        event.parent_span_id !== null &&
+        !spansMap.has(event.span_id)
+      ) {
+        // Use the event's span_id directly for error spans
+        spanId = event.span_id;
+        // Keep the parent_span_id as is - it will be linked in the tree building phase
+      }
+
       // If this is a root span event (parent_span_id === null), create a unique span for each event type
       // This makes each event type (retrieval, llm_call, output, feedback, etc.) a separate clickable node
       if (
@@ -1681,32 +1694,6 @@ export class TraceQueryService {
       if (!spansMap.has(spanId)) {
         // Determine span name based on event type
         let spanName = "Span";
-        
-        // CRITICAL: For error events with parent_span_id, create a separate error span
-        // This ensures error spans appear as children in the tree (e.g., error under tool call)
-        // Note: Error events without parent_span_id are handled above in rootEventTypes
-        if (
-          event.event_type === "error" &&
-          event.parent_span_id !== null
-        ) {
-          // Use the event's span_id directly for error spans
-          spanId = event.span_id;
-          // Keep the parent_span_id as is - it will be linked in the tree building phase
-          
-          // Extract error details for naming
-          const errorData = event.attributes?.error || event.attributes?.signal;
-          if (errorData) {
-            const errorType = errorData.error_type || errorData.signal_type || "Error";
-            const errorMessage = errorData.error_message || errorData.signal_name;
-            if (errorMessage) {
-              spanName = `Error: ${errorType} - ${errorMessage.substring(0, 50)}${errorMessage.length > 50 ? "..." : ""}`;
-            } else {
-              spanName = `Error: ${errorType}`;
-            }
-          } else {
-            spanName = "Error";
-          }
-        }
         if (event.event_type === "llm_call") {
           // Debug logging for llm_call events
           if (!event.attributes) {
