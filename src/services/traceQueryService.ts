@@ -3114,7 +3114,26 @@ export class TraceQueryService {
             if (
               potentialParent.id === span.parent_span_id ||
               potentialParent.span_id === span.parent_span_id ||
-              id === span.parent_span_id
+              id === span.parent_span_id ||
+              potentialParent.original_span_id === span.parent_span_id
+            ) {
+              parentSpan = potentialParent;
+              break;
+            }
+          }
+        }
+
+        // CRITICAL: For tool call spans, also try matching parent by checking if parent_span_id
+        // matches the original_span_id of any LLM call span (handles synthetic IDs)
+        if (!parentSpan && span.event_type === "tool_call") {
+          for (const [id, potentialParent] of spansMap.entries()) {
+            // Check if this is an LLM call span and if its original_span_id matches our parent_span_id
+            if (
+              (potentialParent.llm_call ||
+                potentialParent.type === "llm_call" ||
+                potentialParent.event_type === "llm_call") &&
+              (potentialParent.original_span_id === span.parent_span_id ||
+                potentialParent.span_id === span.parent_span_id)
             ) {
               parentSpan = potentialParent;
               break;
@@ -3520,6 +3539,25 @@ export class TraceQueryService {
             };
           })
           .filter(Boolean);
+
+        // Extract system instructions from input_messages if not already set
+        if (!span.llm_call.system_instructions && Array.isArray(span.llm_call.input_messages)) {
+          const systemMessages = span.llm_call.input_messages.filter(
+            (msg: any) => msg.role === "system" || msg.role === "System",
+          );
+          if (systemMessages.length > 0) {
+            span.llm_call.system_instructions = systemMessages.map((msg: any) => {
+              if (typeof msg.content === "string") return msg.content;
+              if (Array.isArray(msg.content)) {
+                return msg.content
+                  .map((c: any) => (typeof c === "string" ? c : c?.text || ""))
+                  .filter(Boolean)
+                  .join("\n");
+              }
+              return msg.text || msg.content || "";
+            });
+          }
+        }
 
         // Also extract output text from output_messages if output is missing
         if (!span.llm_call.output && Array.isArray(span.llm_call.output_messages)) {

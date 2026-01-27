@@ -332,6 +332,17 @@ export interface AgentPrismTraceSpan {
   children?: AgentPrismTraceSpan[];
   errorInfo?: SpanErrorInfo; // Error information for this span
   errorCount?: number; // Number of errors in this span and its children
+  // Additional fields for frontend access
+  llm_call?: any; // LLM call data for direct access
+  system_instructions?: Array<any> | null; // System instructions for display
+  available_tools?: Array<any> | null; // Available tools for display
+  executed_tools?: Array<any> | null; // Executed tools for display
+  attempted_tool_calls?: Array<{
+    tool_name: string;
+    tool_call_id?: string | null;
+    function_name?: string | null;
+    arguments?: any;
+  }> | null; // Attempted tool calls for display
 }
 
 /**
@@ -1976,6 +1987,14 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
     errorInfo, // Error information for this span
     errorCount: errorCount > 0 ? errorCount : undefined, // Error count including children
     children: transformedChildren,
+    // Add direct fields for frontend access (in addition to attributes)
+    ...(span.llm_call && {
+      llm_call: span.llm_call,
+      system_instructions: span.llm_call.system_instructions || null,
+    }),
+    ...(span.available_tools && { available_tools: span.available_tools }),
+    ...(span.executed_tools && { executed_tools: span.executed_tools }),
+    ...(span.attempted_tool_calls && { attempted_tool_calls: span.attempted_tool_calls }),
   };
 
   return traceSpan;
