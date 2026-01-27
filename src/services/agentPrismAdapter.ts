@@ -1632,11 +1632,65 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
           ? span.llm_call.input
           : JSON.stringify(span.llm_call.input, null, 2);
     }
+    // CRITICAL: Extract output from multiple sources
+    // 1. First try direct output field
     if (span.llm_call.output !== null && span.llm_call.output !== undefined) {
       output =
         typeof span.llm_call.output === "string"
           ? span.llm_call.output
           : JSON.stringify(span.llm_call.output, null, 2);
+    }
+    // 2. If output is missing, try to extract from output_messages
+    else if (Array.isArray(span.llm_call.output_messages) && span.llm_call.output_messages.length > 0) {
+      const outputTexts = span.llm_call.output_messages
+        .map((msg: any) => {
+          // Handle different message formats
+          if (typeof msg === "string") return msg;
+          if (typeof msg.content === "string") return msg.content;
+          if (Array.isArray(msg.content)) {
+            return msg.content
+              .map((c: any) => (typeof c === "string" ? c : c?.text || ""))
+              .filter(Boolean)
+              .join("\n");
+          }
+          if (msg.text) return msg.text;
+          if (msg.message?.content) {
+            return typeof msg.message.content === "string"
+              ? msg.message.content
+              : JSON.stringify(msg.message.content);
+          }
+          return "";
+        })
+        .filter(Boolean);
+      
+      if (outputTexts.length > 0) {
+        output = outputTexts.join("\n");
+      }
+    }
+    // 3. If still no output, try input_messages (sometimes output is in input_messages for assistant messages)
+    else if (Array.isArray(span.llm_call.input_messages) && span.llm_call.input_messages.length > 0) {
+      // Look for assistant messages in input_messages
+      const assistantMessages = span.llm_call.input_messages.filter(
+        (msg: any) => msg.role === "assistant" || msg.role === "ai"
+      );
+      if (assistantMessages.length > 0) {
+        const outputTexts = assistantMessages
+          .map((msg: any) => {
+            if (typeof msg.content === "string") return msg.content;
+            if (Array.isArray(msg.content)) {
+              return msg.content
+                .map((c: any) => (typeof c === "string" ? c : c?.text || ""))
+                .filter(Boolean)
+                .join("\n");
+            }
+            return msg.text || "";
+          })
+          .filter(Boolean);
+        
+        if (outputTexts.length > 0) {
+          output = outputTexts.join("\n");
+        }
+      }
     }
   } else if (span.tool_call) {
     // CRITICAL: Comprehensive tool call display - SOTA practices

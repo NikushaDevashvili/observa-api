@@ -222,9 +222,10 @@ export class ObservaLangChainHandler extends BaseCallbackHandler {
       const attributesJson = this.buildAttributesJson(normalizedAttributes);
 
       // CRITICAL: Always try to send trace_start event with data
-      // Try multiple methods to ensure the event is sent with proper data
+      // The SDK's startTrace() should use attributes_json parameter, but if it doesn't,
+      // we need to ensure the event is sent via trackTraceStart() or sendEvent()
       
-      // Method 1: Use trackTraceStart if available (preferred)
+      // Method 1: Use trackTraceStart if available (preferred - ensures event is sent with data)
       if (this.observa.trackTraceStart) {
         try {
           await this.observa.trackTraceStart({
@@ -239,14 +240,14 @@ export class ObservaLangChainHandler extends BaseCallbackHandler {
                 : undefined,
             attributes_json: attributesJson,
           });
-          // Success - trace_start event sent with data
-          return; // Exit early if successful
+          console.log(
+            `[ObservaLangChainHandler] ✅ Sent trace_start via trackTraceStart with data: ${attributesJson.substring(0, 100)}...`
+          );
         } catch (error) {
           console.warn(
-            "[ObservaLangChainHandler] trackTraceStart failed, trying fallback:",
-            error
+            "[ObservaLangChainHandler] trackTraceStart failed:",
+            error instanceof Error ? error.message : String(error)
           );
-          // Continue to fallback methods
         }
       }
 
@@ -267,23 +268,30 @@ export class ObservaLangChainHandler extends BaseCallbackHandler {
             attributes_json: attributesJson,
             timestamp: new Date().toISOString(),
           });
-          // Success - trace_start event sent with data
-          return; // Exit early if successful
+          console.log(
+            `[ObservaLangChainHandler] ✅ Sent trace_start via sendEvent with data: ${attributesJson.substring(0, 100)}...`
+          );
         } catch (error) {
           console.warn(
             "[ObservaLangChainHandler] sendEvent failed:",
-            error
+            error instanceof Error ? error.message : String(error)
           );
         }
       }
 
       // Method 3: Log warning if no method available
-      // The SDK's startTrace() should have created the event, but it might be empty
-      console.warn(
-        `[ObservaLangChainHandler] ⚠️ trace_start event may be empty. ` +
-        `SDK needs to implement trackTraceStart() or sendEvent() to capture chain data. ` +
-        `Chain type: ${chainType}, Num prompts: ${numPrompts}, Attributes JSON: ${attributesJson}`
-      );
+      // The SDK's startTrace() MUST use the attributes_json parameter to create trace_start event
+      // If it doesn't, the event will be empty: {"trace_start":{}}
+      if (!this.observa.trackTraceStart && !this.observa.sendEvent) {
+        console.warn(
+          `[ObservaLangChainHandler] ⚠️ CRITICAL: trace_start event may be empty! ` +
+          `SDK needs to either:\n` +
+          `  1. Use attributes_json parameter in startTrace() to create trace_start event, OR\n` +
+          `  2. Implement trackTraceStart() method to send trace_start event with data\n` +
+          `Chain type: ${chainType}, Num prompts: ${numPrompts}\n` +
+          `Attributes JSON that should be in trace_start: ${attributesJson}`
+        );
+      }
     }
 
     this.spanManager.createSpan(runId, parentRunId || null);

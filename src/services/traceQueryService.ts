@@ -1944,10 +1944,69 @@ export class TraceQueryService {
       }
       if (llmCallEvent?.attributes?.llm_call) {
         const llmAttrs = llmCallEvent.attributes.llm_call;
+        
+        // CRITICAL: Extract output from multiple sources
+        // 1. First try direct output field
+        let outputValue = llmAttrs.output || null;
+        
+        // 2. If output is missing, try to extract from output_messages
+        if (!outputValue && Array.isArray(llmAttrs.output_messages) && llmAttrs.output_messages.length > 0) {
+          const outputTexts = llmAttrs.output_messages
+            .map((msg: any) => {
+              // Handle different message formats
+              if (typeof msg === "string") return msg;
+              if (typeof msg.content === "string") return msg.content;
+              if (Array.isArray(msg.content)) {
+                return msg.content
+                  .map((c: any) => (typeof c === "string" ? c : c?.text || ""))
+                  .filter(Boolean)
+                  .join("\n");
+              }
+              if (msg.text) return msg.text;
+              if (msg.message?.content) {
+                return typeof msg.message.content === "string"
+                  ? msg.message.content
+                  : JSON.stringify(msg.message.content);
+              }
+              return "";
+            })
+            .filter(Boolean);
+          
+          if (outputTexts.length > 0) {
+            outputValue = outputTexts.join("\n");
+          }
+        }
+        
+        // 3. If still no output, try input_messages (sometimes output is in input_messages for assistant messages)
+        if (!outputValue && Array.isArray(llmAttrs.input_messages) && llmAttrs.input_messages.length > 0) {
+          // Look for assistant messages in input_messages
+          const assistantMessages = llmAttrs.input_messages.filter(
+            (msg: any) => msg.role === "assistant" || msg.role === "ai"
+          );
+          if (assistantMessages.length > 0) {
+            const outputTexts = assistantMessages
+              .map((msg: any) => {
+                if (typeof msg.content === "string") return msg.content;
+                if (Array.isArray(msg.content)) {
+                  return msg.content
+                    .map((c: any) => (typeof c === "string" ? c : c?.text || ""))
+                    .filter(Boolean)
+                    .join("\n");
+                }
+                return msg.text || "";
+              })
+              .filter(Boolean);
+            
+            if (outputTexts.length > 0) {
+              outputValue = outputTexts.join("\n");
+            }
+          }
+        }
+        
         span.llm_call = {
           model: llmAttrs.model,
           input: llmAttrs.input || null,
-          output: llmAttrs.output || null,
+          output: outputValue, // Use extracted output value
           input_tokens: llmAttrs.input_tokens || null,
           output_tokens: llmAttrs.output_tokens || null,
           total_tokens: llmAttrs.total_tokens || null,
