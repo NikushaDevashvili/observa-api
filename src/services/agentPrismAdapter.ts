@@ -97,6 +97,12 @@ export interface ObservaSpan {
   };
   available_tools?: Array<any> | null;
   executed_tools?: Array<any> | null;
+  attempted_tool_calls?: Array<{
+    tool_name: string;
+    tool_call_id?: string | null;
+    function_name?: string | null;
+    arguments?: any;
+  }> | null;
   tool_call?: {
     tool_name?: string;
     args?: any;
@@ -870,6 +876,9 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
     }
     if (span.executed_tools && span.executed_tools.length > 0) {
       attributes["observa.executed_tools"] = span.executed_tools;
+    }
+    if (span.attempted_tool_calls && span.attempted_tool_calls.length > 0) {
+      attributes["observa.attempted_tool_calls"] = span.attempted_tool_calls;
     }
   }
 

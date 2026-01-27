@@ -1661,6 +1661,10 @@ export class TraceQueryService {
       let spanId = event.span_id;
       let parentSpanId = event.parent_span_id;
 
+      if (parentSpanId === "" || parentSpanId === "null") {
+        parentSpanId = null;
+      }
+
       // If this is a root span event (parent_span_id === null), create a unique span for each event type
       // This makes each event type (retrieval, llm_call, output, feedback, etc.) a separate clickable node
       if (
@@ -2787,16 +2791,32 @@ export class TraceQueryService {
       }
 
       if (!parentSpan) {
-        // Parent span not found - log warning for debugging
-        console.warn(
-          `[TraceQueryService] Parent span not found for feedback event. ` +
-            `Event trace_id: ${event.trace_id}, event span_id: ${event.span_id}, ` +
-            `parent_span_id: ${event.parent_span_id}, traceId: ${traceId}. ` +
-            `Available spans: ${Array.from(spansMap.keys())
-              .slice(0, 5)
-              .join(", ")}...`,
-        );
-        continue;
+        const rootSpan =
+          originalRootSpanId && spansMap.has(originalRootSpanId)
+            ? spansMap.get(originalRootSpanId)
+            : null;
+        if (rootSpan) {
+          parentSpan = rootSpan;
+          parentSpan.feedback_unlinked = true;
+          parentSpan.unlinked_feedback_count =
+            (parentSpan.unlinked_feedback_count || 0) + 1;
+          console.warn(
+            `[TraceQueryService] Parent span not found for feedback event. ` +
+              `Attaching to root span instead. Event trace_id: ${event.trace_id}, ` +
+              `event span_id: ${event.span_id}, parent_span_id: ${event.parent_span_id}, ` +
+              `traceId: ${traceId}.`,
+          );
+        } else {
+          console.warn(
+            `[TraceQueryService] Parent span not found for feedback event. ` +
+              `Event trace_id: ${event.trace_id}, event span_id: ${event.span_id}, ` +
+              `parent_span_id: ${event.parent_span_id}, traceId: ${traceId}. ` +
+              `Available spans: ${Array.from(spansMap.keys())
+                .slice(0, 5)
+                .join(", ")}...`,
+          );
+          continue;
+        }
       }
 
       // CRITICAL: Verify parent span belongs to the same trace
@@ -3039,6 +3059,11 @@ export class TraceQueryService {
       if (span.parent_span_id === null) {
         rootSpans.push(span);
       } else {
+        if (span.parent_span_id === span.id) {
+          span.parent_span_id = null;
+          rootSpans.push(span);
+          continue;
+        }
         // Try to find parent span - check multiple possible parent IDs
         let parentSpan = spansMap.get(span.parent_span_id);
 
@@ -3086,12 +3111,25 @@ export class TraceQueryService {
             );
           }
         } else {
-          // Parent not found, treat as root
-          // Log warning to help debug missing parent issues
-          console.warn(
-            `[TraceQueryService] Parent span not found for ${span.id}, treating as root. Parent ID: ${span.parent_span_id}`,
-          );
-          rootSpans.push(span);
+          // Parent not found, attach to root if available
+          const rootSpan =
+            originalRootSpanId && spansMap.has(originalRootSpanId)
+              ? spansMap.get(originalRootSpanId)
+              : null;
+          if (rootSpan) {
+            if (!rootSpan.children) rootSpan.children = [];
+            rootSpan.children.push(span);
+            span.unlinked_parent = true;
+            console.warn(
+              `[TraceQueryService] Parent span not found for ${span.id}. ` +
+                `Attaching to root span instead. Parent ID: ${span.parent_span_id}`,
+            );
+          } else {
+            console.warn(
+              `[TraceQueryService] Parent span not found for ${span.id}, treating as root. Parent ID: ${span.parent_span_id}`,
+            );
+            rootSpans.push(span);
+          }
         }
       }
     }

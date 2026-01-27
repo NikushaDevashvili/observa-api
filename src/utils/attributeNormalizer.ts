@@ -64,14 +64,17 @@ export class AttributeNormalizer {
     if (depth <= 0) return AttributeNormalizer.toSafePrimitive(value);
     if (value === null) return null;
 
-    const type = typeof value;
-    if (type === "string") {
+    if (typeof value === "string") {
       return AttributeNormalizer.normalizeString(value, options, depth, seen);
     }
-    if (type === "number" || type === "boolean") return value;
-    if (type === "bigint") return value.toString();
-    if (type === "undefined") return null;
-    if (type === "function" || type === "symbol") return String(value);
+    if (typeof value === "number" || typeof value === "boolean") {
+      return value;
+    }
+    if (typeof value === "bigint") return value.toString();
+    if (typeof value === "undefined") return null;
+    if (typeof value === "function" || typeof value === "symbol") {
+      return String(value);
+    }
 
     if (value instanceof Date) return value.toISOString();
     if (value instanceof Error) {
