@@ -1541,13 +1541,35 @@ export class TraceQueryService {
 
       try {
         if (typeof event.attributes_json === "string") {
-          attributes = DefensiveJSONParser.parseObject(event.attributes_json, {
-            fallback: {},
-          });
+          const parsed = DefensiveJSONParser.parse<Record<string, unknown>>(
+            event.attributes_json,
+            { fallback: {} },
+          );
+          if (
+            parsed &&
+            typeof parsed === "object" &&
+            !Array.isArray(parsed) &&
+            Object.keys(parsed).length > 0
+          ) {
+            attributes = parsed;
+          } else {
+            attributes = {};
+          }
         } else if (event.attributes && typeof event.attributes === "object") {
-          attributes = DefensiveJSONParser.parseObject(event.attributes, {
-            fallback: {},
-          });
+          const parsed = DefensiveJSONParser.parse<Record<string, unknown>>(
+            event.attributes,
+            { fallback: {} },
+          );
+          if (
+            parsed &&
+            typeof parsed === "object" &&
+            !Array.isArray(parsed) &&
+            Object.keys(parsed).length > 0
+          ) {
+            attributes = parsed;
+          } else {
+            attributes = {};
+          }
         }
       } catch (e) {
         const errorMsg = e instanceof Error ? e.message : String(e);
