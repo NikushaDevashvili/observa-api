@@ -1723,7 +1723,19 @@ export class TraceQueryService {
             event.attributes?.agent_create?.agent_name || "agent";
           spanName = `Agent Create: ${agentName}`;
         } else if (event.event_type === "error") {
-          spanName = "Error";
+          // Try to extract error details for better naming
+          const errorData = event.attributes?.error || event.attributes?.signal;
+          if (errorData) {
+            const errorType = errorData.error_type || errorData.signal_type || "Error";
+            const errorMessage = errorData.error_message || errorData.signal_name;
+            if (errorMessage) {
+              spanName = `Error: ${errorType} - ${errorMessage.substring(0, 50)}${errorMessage.length > 50 ? "..." : ""}`;
+            } else {
+              spanName = `Error: ${errorType}`;
+            }
+          } else {
+            spanName = "Error";
+          }
         } else if (event.parent_span_id === null) {
           spanName = "Trace";
         }
@@ -2106,6 +2118,30 @@ export class TraceQueryService {
           // TIER 2: Structured error classification
           error_category: errorEvent.attributes.error.error_category || null,
           error_code: errorEvent.attributes.error.error_code || null,
+        };
+      } else if (errorEvent?.attributes?.signal) {
+        // Convert signal events to error format
+        // Signals are stored as event_type="error" with attributes.signal
+        const signal = errorEvent.attributes.signal;
+        const signalMetadata = signal.metadata || {};
+        span.error = {
+          error_type: signalMetadata.error_type || signal.signal_type || "error",
+          error_message:
+            signalMetadata.error_message ||
+            signalMetadata.tool_name
+              ? `Tool error: ${signalMetadata.tool_name} - ${signalMetadata.error_message || signal.signal_name}`
+              : signal.signal_name || "Error signal",
+          stack_trace: signalMetadata.stack_trace || null,
+          context: {
+            ...signalMetadata,
+            signal_name: signal.signal_name,
+            signal_type: signal.signal_type,
+            signal_severity: signal.signal_severity,
+            signal_value: signal.signal_value,
+          },
+          // TIER 2: Structured error classification
+          error_category: signalMetadata.error_category || signal.signal_type || null,
+          error_code: signal.signal_name || null,
         };
       }
 
@@ -3396,11 +3432,20 @@ export class TraceQueryService {
             if (msg?.additional_kwargs?.tool_calls && Array.isArray(msg.additional_kwargs.tool_calls)) {
               for (const tc of msg.additional_kwargs.tool_calls) {
                 if (tc?.function) {
+                  // Parse arguments if it's a string
+                  let parsedArgs = tc.function.arguments;
+                  if (typeof parsedArgs === "string") {
+                    try {
+                      parsedArgs = JSON.parse(parsedArgs);
+                    } catch {
+                      // Keep as string if parsing fails
+                    }
+                  }
                   attemptedToolCalls.push({
                     tool_name: tc.function.name || "unknown",
                     tool_call_id: tc.id || null,
                     function_name: tc.function.name || null,
-                    arguments: tc.function.arguments || null,
+                    arguments: parsedArgs || null,
                   });
                 }
               }
@@ -3408,22 +3453,40 @@ export class TraceQueryService {
             // Extract from additional_kwargs.function_call (legacy format)
             if (msg?.additional_kwargs?.function_call) {
               const fc = msg.additional_kwargs.function_call;
+              // Parse arguments if it's a string
+              let parsedArgs = fc.arguments;
+              if (typeof parsedArgs === "string") {
+                try {
+                  parsedArgs = JSON.parse(parsedArgs);
+                } catch {
+                  // Keep as string if parsing fails
+                }
+              }
               attemptedToolCalls.push({
                 tool_name: fc.name || "unknown",
                 tool_call_id: null,
                 function_name: fc.name || null,
-                arguments: fc.arguments || null,
+                arguments: parsedArgs || null,
               });
             }
             // Extract from tool_calls (direct property)
             if (msg?.tool_calls && Array.isArray(msg.tool_calls)) {
               for (const tc of msg.tool_calls) {
                 if (tc?.function) {
+                  // Parse arguments if it's a string
+                  let parsedArgs = tc.function.arguments;
+                  if (typeof parsedArgs === "string") {
+                    try {
+                      parsedArgs = JSON.parse(parsedArgs);
+                    } catch {
+                      // Keep as string if parsing fails
+                    }
+                  }
                   attemptedToolCalls.push({
                     tool_name: tc.function.name || "unknown",
                     tool_call_id: tc.id || null,
                     function_name: tc.function.name || null,
-                    arguments: tc.function.arguments || null,
+                    arguments: parsedArgs || null,
                   });
                 }
               }
@@ -3482,9 +3545,12 @@ export class TraceQueryService {
         if (
           span.error ||
           span.error_message ||
+          span.error_type ||
           span.tool_call?.result_status === "error" ||
           span.tool_call?.result_status === "timeout" ||
-          span.llm_call?.finish_reason === "error"
+          span.llm_call?.finish_reason === "error" ||
+          span.event_type === "error" ||
+          span.type === "error"
         ) {
           span.status =
             span.tool_call?.result_status === "timeout" ? "timeout" : "error";
