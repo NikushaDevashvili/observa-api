@@ -31,6 +31,7 @@ export interface ObservaClient {
     resultStatus: "success" | "error";
     latencyMs: number | null;
     attributes?: Record<string, JsonValue>;
+    attributes_json?: string;
     spanId?: string | null;
     parentSpanId?: string | null;
     traceId?: string | null;
@@ -50,6 +51,12 @@ type RunState = {
   parentSpanId?: string | null;
   model?: string;
   input?: string | null;
+  inputMessages?: Array<Record<string, any>> | null;
+  extraParams?: Record<string, any> | null;
+  streamingTokens?: string[];
+  firstTokenTime?: number;
+  toolName?: string;
+  toolArgs?: JsonValue;
 };
 
 type SpanInfo = {
@@ -144,11 +151,13 @@ export class ObservaLangChainHandler extends BaseCallbackHandler {
     prompts: string[],
     runId: string,
     parentRunId?: string,
+    extraParams?: Record<string, unknown>,
   ) {
     const parentForSpan = parentRunId || this.activeChainRunId;
     const spanInfo = this.spanManager.createSpan(runId, parentForSpan || null);
     const model = llm?.modelName || "unknown";
     const input = prompts.join("\n");
+    const inputMessages = prompts.map((p) => ({ role: "user", content: p }));
 
     const payload = {
       model,
@@ -172,6 +181,9 @@ export class ObservaLangChainHandler extends BaseCallbackHandler {
         parentSpanId: spanInfo.parentSpanId,
         model,
         input,
+        inputMessages,
+        extraParams: extraParams || null,
+        streamingTokens: [],
       });
     } catch {
       this.runMap.set(runId, {
@@ -181,7 +193,28 @@ export class ObservaLangChainHandler extends BaseCallbackHandler {
         parentSpanId: spanInfo.parentSpanId,
         model,
         input,
+        inputMessages,
+        extraParams: extraParams || null,
+        streamingTokens: [],
       });
+    }
+  }
+
+  async handleLLMNewToken(
+    token: string,
+    _idx: any,
+    runId: string,
+    _parentRunId?: string,
+  ) {
+    const run = this.runMap.get(runId);
+    if (run?.type === "llm") {
+      if (!run.firstTokenTime) {
+        run.firstTokenTime = Date.now();
+      }
+      if (!run.streamingTokens) {
+        run.streamingTokens = [];
+      }
+      run.streamingTokens.push(token);
     }
   }
 
@@ -189,11 +222,45 @@ export class ObservaLangChainHandler extends BaseCallbackHandler {
     const run = this.runMap.get(runId);
     if (run?.type === "llm") {
       const latency = Date.now() - run.startTime;
+      const timeToFirstToken = run.firstTokenTime
+        ? run.firstTokenTime - run.startTime
+        : null;
+
+      // Extract output text and messages from LangChain output
+      const extracted = this.extractLLMOutput(output, run);
+      const outputText = extracted.outputText;
+      const outputMessages = extracted.outputMessages;
+
+      // Extract token usage
+      const tokens = this.extractTokenUsage(output, run, outputText);
+
+      // Extract tool definitions
+      const toolDefinitions = this.extractToolDefinitions(run.extraParams);
+
+      // Build comprehensive llm_call payload
       const llmPayload = {
         model: run.model || "unknown",
         input: run.input ?? null,
-        output: this.safeString(output),
+        output: outputText,
+        input_tokens: tokens.inputTokens,
+        output_tokens: tokens.outputTokens,
+        total_tokens: tokens.totalTokens,
+        latency_ms: latency,
+        time_to_first_token_ms: timeToFirstToken,
+        finish_reason: this.extractFinishReason(output),
+        response_id: runId,
+        operation_name: "chat",
+        provider_name: this.inferProvider(run.model || "unknown"),
+        response_model: this.extractResponseModel(
+          output,
+          run.model !== undefined ? run.model : null,
+        ),
+        input_messages: run.inputMessages || null,
+        output_messages: outputMessages || null,
+        tool_definitions: toolDefinitions || null,
+        tools: toolDefinitions || null,
       };
+
       const normalizedAttributes = AttributeNormalizer.normalize({
         llm_call: llmPayload,
       });
@@ -232,11 +299,14 @@ export class ObservaLangChainHandler extends BaseCallbackHandler {
   ) {
     const spanInfo = this.spanManager.createSpan(
       runId,
-      parentRunId || this.activeChainRunId || null,
+      (parentRunId || this.activeChainRunId || null) as string | null,
     );
+    const toolName = tool?.name || "unknown";
+    const toolArgs = AttributeNormalizer.normalize(input);
+
     const payload = {
-      toolName: tool?.name || "unknown",
-      args: AttributeNormalizer.normalize(input),
+      toolName,
+      args: toolArgs,
       result: null,
       resultStatus: "success" as const,
       latencyMs: 0,
@@ -255,6 +325,8 @@ export class ObservaLangChainHandler extends BaseCallbackHandler {
         startTime: Date.now(),
         spanId: typeof spanId === "string" ? spanId : undefined,
         parentSpanId: spanInfo.parentSpanId,
+        toolName,
+        toolArgs,
       });
     } catch {
       this.runMap.set(runId, {
@@ -262,6 +334,8 @@ export class ObservaLangChainHandler extends BaseCallbackHandler {
         startTime: Date.now(),
         spanId: spanInfo.spanId,
         parentSpanId: spanInfo.parentSpanId,
+        toolName,
+        toolArgs,
       });
     }
   }
@@ -270,14 +344,40 @@ export class ObservaLangChainHandler extends BaseCallbackHandler {
     const run = this.runMap.get(runId);
     if (run?.type === "tool") {
       const latency = Date.now() - run.startTime;
+      const toolName = this.getToolNameFromRun(run);
+      const toolArgs = this.getToolArgsFromRun(run);
+
+      const toolPayload = {
+        tool_name: toolName,
+        args: toolArgs,
+        result: AttributeNormalizer.normalize(output),
+        result_status: "success" as const,
+        latency_ms: latency,
+        operation_name: "execute_tool",
+      };
+
+      const normalizedAttributes = AttributeNormalizer.normalize({
+        tool_call: toolPayload,
+      });
+      const attributesJson = this.buildAttributesJson(normalizedAttributes);
+
       try {
         await this.observa.trackToolCall({
-          toolName: "unknown",
-          args: {},
+          toolName,
+          args: toolArgs,
           result: AttributeNormalizer.normalize(output),
           resultStatus: "success",
           latencyMs: latency,
-          attributes: this.normalizeAttributes({}),
+          attributes:
+            normalizedAttributes &&
+            typeof normalizedAttributes === "object" &&
+            !Array.isArray(normalizedAttributes)
+              ? (normalizedAttributes as Record<string, JsonValue>)
+              : undefined,
+          attributes_json: attributesJson,
+          spanId: run.spanId || null,
+          parentSpanId: run.parentSpanId || null,
+          traceId: this.traceId,
         });
       } catch {
         // Never throw
@@ -299,15 +399,63 @@ export class ObservaLangChainHandler extends BaseCallbackHandler {
     }
   }
 
-  async handleToolError(err: Error) {
-    try {
-      await this.observa.trackError({
-        errorType: "tool_error",
-        errorMessage: err.message,
-        stackTrace: err.stack || null,
+  async handleToolError(err: Error, runId: string) {
+    const run = this.runMap.get(runId);
+    if (run?.type === "tool") {
+      const latency = Date.now() - run.startTime;
+      const toolName = this.getToolNameFromRun(run);
+      const toolArgs = this.getToolArgsFromRun(run);
+
+      const toolPayload = {
+        tool_name: toolName,
+        args: toolArgs,
+        result: null,
+        result_status: "error" as const,
+        latency_ms: latency,
+        error_message: err.message,
+        error_type: err.name,
+        error_category: "tool_error",
+        operation_name: "execute_tool",
+      };
+
+      const normalizedAttributes = AttributeNormalizer.normalize({
+        tool_call: toolPayload,
       });
-    } catch {
-      // Never throw
+      const attributesJson = this.buildAttributesJson(normalizedAttributes);
+
+      try {
+        await this.observa.trackToolCall({
+          toolName,
+          args: toolArgs,
+          result: null,
+          resultStatus: "error",
+          latencyMs: latency,
+          attributes:
+            normalizedAttributes &&
+            typeof normalizedAttributes === "object" &&
+            !Array.isArray(normalizedAttributes)
+              ? (normalizedAttributes as Record<string, JsonValue>)
+              : undefined,
+          attributes_json: attributesJson,
+          spanId: run.spanId || null,
+          parentSpanId: run.parentSpanId || null,
+          traceId: this.traceId,
+        });
+      } catch {
+        // Never throw
+      }
+      this.spanManager.deleteSpan(runId);
+      this.runMap.delete(runId);
+    } else {
+      try {
+        await this.observa.trackError({
+          errorType: "tool_error",
+          errorMessage: err.message,
+          stackTrace: err.stack || null,
+        });
+      } catch {
+        // Never throw
+      }
     }
   }
 
@@ -367,5 +515,320 @@ export class ObservaLangChainHandler extends BaseCallbackHandler {
     } catch {
       return "{}";
     }
+  }
+
+  /**
+   * Extract output text and messages from LangChain LLM output.
+   */
+  private extractLLMOutput(
+    output: any,
+    run: RunState,
+  ): { outputText: string | null; outputMessages: Array<Record<string, any>> | null } {
+    let outputText: string | null = null;
+    let outputMessages: Array<Record<string, any>> | null = null;
+
+    try {
+      // Handle generations array (standard LangChain format)
+      if (output?.generations && Array.isArray(output.generations)) {
+        const first = output.generations[0];
+        const generation = Array.isArray(first) ? first[0] : first;
+
+        if (generation?.message) {
+          const msg = generation.message;
+          outputText = this.extractMessageContent(msg.content || msg.text || "");
+          outputMessages = this.convertMessage(msg);
+        } else if (generation?.text) {
+          outputText = generation.text;
+          outputMessages = [{ role: "assistant", content: outputText }];
+        }
+      }
+      // Handle direct text property
+      else if (output?.text && typeof output.text === "string") {
+        outputText = output.text;
+        outputMessages = [{ role: "assistant", content: outputText }];
+      }
+      // Handle message content directly
+      else if (output?.content) {
+        outputText = this.extractMessageContent(output.content);
+        outputMessages = [{ role: "assistant", content: outputText }];
+      }
+      // Fallback: reconstruct from streaming tokens
+      if (!outputText && run.streamingTokens && run.streamingTokens.length > 0) {
+        outputText = run.streamingTokens.join("");
+        outputMessages = [{ role: "assistant", content: outputText }];
+      }
+    } catch {
+      // Fallback to streaming tokens if extraction fails
+      if (run.streamingTokens && run.streamingTokens.length > 0) {
+        outputText = run.streamingTokens.join("");
+        outputMessages = [{ role: "assistant", content: outputText }];
+      }
+    }
+
+    return { outputText, outputMessages };
+  }
+
+  /**
+   * Extract text from LangChain message content.
+   */
+  private extractMessageContent(content: any): string {
+    if (typeof content === "string") return content;
+    if (Array.isArray(content)) {
+      return content
+        .map((item) => {
+          if (typeof item === "string") return item;
+          if (item?.text) return item.text;
+          if (item?.content) return this.extractMessageContent(item.content);
+          return "";
+        })
+        .filter(Boolean)
+        .join("\n");
+    }
+    if (content?.text) return content.text;
+    if (content?.content) return this.extractMessageContent(content.content);
+    return String(content || "");
+  }
+
+  /**
+   * Convert LangChain message to Observa message format.
+   */
+  private convertMessage(msg: any): Array<Record<string, any>> {
+    const content = this.extractMessageContent(msg.content || msg.text || "");
+    const result: Record<string, any> = {
+      role: msg._getType?.() || msg.role || "assistant",
+      content,
+    };
+
+    // Extract tool_calls and function_call from additional_kwargs
+    const kwargs = msg.additional_kwargs || msg.kwargs?.additional_kwargs || {};
+    if (kwargs.function_call || kwargs.tool_calls) {
+      result.additional_kwargs = {};
+      if (kwargs.function_call) {
+        result.additional_kwargs.function_call = this.normalizeFunctionCall(
+          kwargs.function_call,
+        );
+      }
+      if (kwargs.tool_calls) {
+        result.additional_kwargs.tool_calls = Array.isArray(kwargs.tool_calls)
+          ? kwargs.tool_calls.map((tc: any) => this.normalizeToolCall(tc))
+          : [];
+      }
+    }
+
+    return [result];
+  }
+
+  /**
+   * Normalize function_call arguments (handle JSON strings).
+   */
+  private normalizeFunctionCall(fc: any): any {
+    if (!fc || typeof fc !== "object") return fc;
+    const normalized = { ...fc };
+    if (typeof fc.arguments === "string") {
+      try {
+        normalized.arguments = JSON.parse(fc.arguments);
+      } catch {
+        // Try to fix malformed JSON
+        const fixed = fc.arguments
+          .replace(/\\\\/g, "\\")
+          .replace(/\\'/g, "'");
+        try {
+          normalized.arguments = JSON.parse(fixed);
+        } catch {
+          normalized.arguments = fc.arguments;
+        }
+      }
+    }
+    return normalized;
+  }
+
+  /**
+   * Normalize tool_call (handle function.arguments as JSON string).
+   */
+  private normalizeToolCall(tc: any): any {
+    if (!tc || typeof tc !== "object") return tc;
+    const normalized = { ...tc };
+    if (tc.function && typeof tc.function === "object") {
+      normalized.function = { ...tc.function };
+      if (typeof tc.function.arguments === "string") {
+        try {
+          normalized.function.arguments = JSON.parse(tc.function.arguments);
+        } catch {
+          const fixed = tc.function.arguments
+            .replace(/\\\\/g, "\\")
+            .replace(/\\'/g, "'");
+          try {
+            normalized.function.arguments = JSON.parse(fixed);
+          } catch {
+            normalized.function.arguments = tc.function.arguments;
+          }
+        }
+      }
+    }
+    return normalized;
+  }
+
+  /**
+   * Extract token usage from LangChain output.
+   */
+  private extractTokenUsage(
+    output: any,
+    run: RunState,
+    outputText: string | null,
+  ): {
+    inputTokens: number | null;
+    outputTokens: number | null;
+    totalTokens: number | null;
+  } {
+    try {
+      const usageMetadata =
+        output?.generations?.[0]?.[0]?.message?.usage_metadata;
+      const tokenUsage = output?.llmOutput?.tokenUsage || output?.tokenUsage || {};
+
+      const inputTokens =
+        usageMetadata?.input_tokens ||
+        tokenUsage.promptTokens ||
+        (run.input ? Math.ceil(run.input.length / 4) : null);
+
+      const outputTokens =
+        usageMetadata?.output_tokens ||
+        tokenUsage.completionTokens ||
+        (outputText ? Math.ceil(outputText.length / 4) : null);
+
+      const totalTokens =
+        usageMetadata?.total_tokens ||
+        tokenUsage.totalTokens ||
+        (inputTokens && outputTokens ? inputTokens + outputTokens : null);
+
+      return {
+        inputTokens: inputTokens ?? null,
+        outputTokens: outputTokens ?? null,
+        totalTokens: totalTokens ?? null,
+      };
+    } catch {
+      return { inputTokens: null, outputTokens: null, totalTokens: null };
+    }
+  }
+
+  /**
+   * Extract tool definitions from extraParams.
+   */
+  private extractToolDefinitions(
+    extraParams: Record<string, any> | null | undefined,
+  ): Array<Record<string, any>> | null {
+    if (!extraParams?.tools) return null;
+
+    try {
+      const tools = extraParams.tools;
+      let toolsArray: Array<{ tool: any; name?: string }> = [];
+
+      if (Array.isArray(tools)) {
+        toolsArray = tools.map((tool: any) => ({ tool }));
+      } else if (tools instanceof Map) {
+        const mapEntries = Array.from(tools.entries());
+        toolsArray = mapEntries.map(([key, value]) => ({
+          tool: value,
+          name: String(key),
+        }));
+      } else if (typeof tools === "object") {
+        toolsArray = Object.entries(tools).map(([key, value]) => ({
+          tool: value,
+          name: key,
+        }));
+      }
+
+      const normalized = toolsArray.map(({ tool, name: keyName }) => {
+        if (typeof tool === "function") {
+          return {
+            type: "function",
+            name: tool.name || keyName || "unknown",
+            description: tool.description || null,
+            inputSchema: tool.parameters || tool.schema || {},
+          };
+        }
+        if (tool && typeof tool === "object") {
+          return {
+            type: tool.type || "function",
+            name: tool.name || tool.function?.name || keyName || "unknown",
+            description: tool.description || tool.function?.description || null,
+            inputSchema:
+              tool.parameters ||
+              tool.schema ||
+              tool.inputSchema ||
+              tool.function?.parameters ||
+              {},
+          };
+        }
+        return {
+          type: "function",
+          name: keyName || "unknown",
+          description: null,
+          inputSchema: {},
+        };
+      });
+
+      return normalized.length > 0 ? normalized : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Extract finish reason from output.
+   */
+  private extractFinishReason(output: any): string | null {
+    try {
+      return (
+        output?.generations?.[0]?.[0]?.message?.response_metadata?.finish_reason ||
+        output?.llmOutput?.finishReason ||
+        output?.finishReason ||
+        null
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Extract response model from output.
+   */
+  private extractResponseModel(output: any, defaultModel: string | null): string | null {
+    try {
+      return (
+        output?.generations?.[0]?.[0]?.message?.response_metadata?.model_name ||
+        output?.llmOutput?.modelName ||
+        output?.model ||
+        defaultModel ||
+        null
+      );
+    } catch {
+      return defaultModel || null;
+    }
+  }
+
+  /**
+   * Infer provider name from model string.
+   */
+  private inferProvider(model: string): string {
+    const modelLower = model.toLowerCase();
+    if (modelLower.includes("gpt") || modelLower.includes("openai")) return "openai";
+    if (modelLower.includes("claude") || modelLower.includes("anthropic"))
+      return "anthropic";
+    if (modelLower.includes("gemini") || modelLower.includes("google")) return "google";
+    return "langchain";
+  }
+
+  /**
+   * Get tool name from run state (stored during handleToolStart).
+   */
+  private getToolNameFromRun(run: RunState): string {
+    return run.toolName || "unknown";
+  }
+
+  /**
+   * Get tool args from run state.
+   */
+  private getToolArgsFromRun(run: RunState): JsonValue {
+    return run.toolArgs || {};
   }
 }

@@ -3345,6 +3345,55 @@ export class TraceQueryService {
           span.available_tool_names = [];
         }
 
+        // Extract attempted tool calls from output_messages
+        const attemptedToolCalls: Array<{
+          tool_name: string;
+          tool_call_id?: string | null;
+          function_name?: string | null;
+          arguments?: any;
+        }> = [];
+        if (Array.isArray(span.llm_call.output_messages)) {
+          for (const msg of span.llm_call.output_messages) {
+            // Extract from additional_kwargs.tool_calls
+            if (msg?.additional_kwargs?.tool_calls && Array.isArray(msg.additional_kwargs.tool_calls)) {
+              for (const tc of msg.additional_kwargs.tool_calls) {
+                if (tc?.function) {
+                  attemptedToolCalls.push({
+                    tool_name: tc.function.name || "unknown",
+                    tool_call_id: tc.id || null,
+                    function_name: tc.function.name || null,
+                    arguments: tc.function.arguments || null,
+                  });
+                }
+              }
+            }
+            // Extract from additional_kwargs.function_call (legacy format)
+            if (msg?.additional_kwargs?.function_call) {
+              const fc = msg.additional_kwargs.function_call;
+              attemptedToolCalls.push({
+                tool_name: fc.name || "unknown",
+                tool_call_id: null,
+                function_name: fc.name || null,
+                arguments: fc.arguments || null,
+              });
+            }
+            // Extract from tool_calls (direct property)
+            if (msg?.tool_calls && Array.isArray(msg.tool_calls)) {
+              for (const tc of msg.tool_calls) {
+                if (tc?.function) {
+                  attemptedToolCalls.push({
+                    tool_name: tc.function.name || "unknown",
+                    tool_call_id: tc.id || null,
+                    function_name: tc.function.name || null,
+                    arguments: tc.function.arguments || null,
+                  });
+                }
+              }
+            }
+          }
+        }
+        span.attempted_tool_calls = attemptedToolCalls.length > 0 ? attemptedToolCalls : null;
+
         const executedToolSpans = [
           ...(toolCallsByParent.get(span.id) || []),
           ...(toolCallsByParent.get(span.span_id) || []),
@@ -3370,6 +3419,25 @@ export class TraceQueryService {
             };
           })
           .filter(Boolean);
+
+        // Also extract output text from output_messages if output is missing
+        if (!span.llm_call.output && Array.isArray(span.llm_call.output_messages)) {
+          const outputTexts = span.llm_call.output_messages
+            .map((msg: any) => {
+              if (typeof msg.content === "string") return msg.content;
+              if (Array.isArray(msg.content)) {
+                return msg.content
+                  .map((c: any) => (typeof c === "string" ? c : c?.text || ""))
+                  .filter(Boolean)
+                  .join("\n");
+              }
+              return msg.text || "";
+            })
+            .filter(Boolean);
+          if (outputTexts.length > 0) {
+            span.llm_call.output = outputTexts.join("\n");
+          }
+        }
       }
 
       if (!span.status) {
