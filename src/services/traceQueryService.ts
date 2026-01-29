@@ -1757,8 +1757,10 @@ export class TraceQueryService {
           // Try to extract error details for better naming
           const errorData = event.attributes?.error || event.attributes?.signal;
           if (errorData) {
-            const errorType = errorData.error_type || errorData.signal_type || "Error";
-            const errorMessage = errorData.error_message || errorData.signal_name;
+            const errorType =
+              errorData.error_type || errorData.signal_type || "Error";
+            const errorMessage =
+              errorData.error_message || errorData.signal_name;
             if (errorMessage) {
               spanName = `Error: ${errorType} - ${errorMessage.substring(0, 50)}${errorMessage.length > 50 ? "..." : ""}`;
             } else {
@@ -1944,13 +1946,17 @@ export class TraceQueryService {
       }
       if (llmCallEvent?.attributes?.llm_call) {
         const llmAttrs = llmCallEvent.attributes.llm_call;
-        
+
         // CRITICAL: Extract output from multiple sources
         // 1. First try direct output field
         let outputValue = llmAttrs.output || null;
-        
+
         // 2. If output is missing, try to extract from output_messages
-        if (!outputValue && Array.isArray(llmAttrs.output_messages) && llmAttrs.output_messages.length > 0) {
+        if (
+          !outputValue &&
+          Array.isArray(llmAttrs.output_messages) &&
+          llmAttrs.output_messages.length > 0
+        ) {
           const outputTexts = llmAttrs.output_messages
             .map((msg: any) => {
               // Handle different message formats
@@ -1971,17 +1977,21 @@ export class TraceQueryService {
               return "";
             })
             .filter(Boolean);
-          
+
           if (outputTexts.length > 0) {
             outputValue = outputTexts.join("\n");
           }
         }
-        
+
         // 3. If still no output, try input_messages (sometimes output is in input_messages for assistant messages)
-        if (!outputValue && Array.isArray(llmAttrs.input_messages) && llmAttrs.input_messages.length > 0) {
+        if (
+          !outputValue &&
+          Array.isArray(llmAttrs.input_messages) &&
+          llmAttrs.input_messages.length > 0
+        ) {
           // Look for assistant messages in input_messages
           const assistantMessages = llmAttrs.input_messages.filter(
-            (msg: any) => msg.role === "assistant" || msg.role === "ai"
+            (msg: any) => msg.role === "assistant" || msg.role === "ai",
           );
           if (assistantMessages.length > 0) {
             const outputTexts = assistantMessages
@@ -1989,20 +1999,22 @@ export class TraceQueryService {
                 if (typeof msg.content === "string") return msg.content;
                 if (Array.isArray(msg.content)) {
                   return msg.content
-                    .map((c: any) => (typeof c === "string" ? c : c?.text || ""))
+                    .map((c: any) =>
+                      typeof c === "string" ? c : c?.text || "",
+                    )
                     .filter(Boolean)
                     .join("\n");
                 }
                 return msg.text || "";
               })
               .filter(Boolean);
-            
+
             if (outputTexts.length > 0) {
               outputValue = outputTexts.join("\n");
             }
           }
         }
-        
+
         span.llm_call = {
           model: llmAttrs.model,
           input: llmAttrs.input || null,
@@ -2223,10 +2235,10 @@ export class TraceQueryService {
         const signal = errorEvent.attributes.signal;
         const signalMetadata = signal.metadata || {};
         span.error = {
-          error_type: signalMetadata.error_type || signal.signal_type || "error",
+          error_type:
+            signalMetadata.error_type || signal.signal_type || "error",
           error_message:
-            signalMetadata.error_message ||
-            signalMetadata.tool_name
+            signalMetadata.error_message || signalMetadata.tool_name
               ? `Tool error: ${signalMetadata.tool_name} - ${signalMetadata.error_message || signal.signal_name}`
               : signal.signal_name || "Error signal",
           stack_trace: signalMetadata.stack_trace || null,
@@ -2238,7 +2250,8 @@ export class TraceQueryService {
             signal_value: signal.signal_value,
           },
           // TIER 2: Structured error classification
-          error_category: signalMetadata.error_category || signal.signal_type || null,
+          error_category:
+            signalMetadata.error_category || signal.signal_type || null,
           error_code: signal.signal_name || null,
         };
       }
@@ -3132,6 +3145,47 @@ export class TraceQueryService {
       }
     }
 
+    // TRACE_TREE_VIEW_SPEC: Attach error/signal events to spans by span_id (signals array)
+    for (const event of parsedEvents) {
+      if (event.event_type !== "error") continue;
+      const targetSpanId = event.span_id;
+      if (!targetSpanId) continue;
+      const signalData = event.attributes?.signal || event.attributes?.error;
+      const signalType =
+        signalData?.signal_type ||
+        signalData?.signal_name ||
+        signalData?.error_type ||
+        "error";
+      // medium_latency refers to LLM call; attach to LLM span if present
+      let targetSpan =
+        signalType === "medium_latency"
+          ? spansMap.get(`${targetSpanId}-llm_call`)
+          : null;
+      if (!targetSpan) {
+        targetSpan =
+          spansMap.get(targetSpanId) ||
+          Array.from(spansMap.values()).find(
+            (s: any) =>
+              s.span_id === targetSpanId || s.original_span_id === targetSpanId,
+          );
+      }
+      if (!targetSpan) continue;
+      const message =
+        signalData?.metadata?.error_message ||
+        signalData?.error_message ||
+        signalData?.metadata?.message ||
+        "";
+      targetSpan.signals = targetSpan.signals || [];
+      targetSpan.signals.push({
+        signal_type: signalType,
+        signal_name: signalData?.signal_name || signalType,
+        message: message || (typeof signalData === "string" ? signalData : ""),
+        severity:
+          signalData?.signal_severity || signalData?.severity || "medium",
+        metadata: signalData?.metadata || {},
+      });
+    }
+
     // Third pass: build parent-child relationships
     // Calculate root trace span duration from all child spans
     if (originalRootSpanId && spansMap.has(originalRootSpanId)) {
@@ -3235,6 +3289,58 @@ export class TraceQueryService {
             ) {
               parentSpan = potentialParent;
               break;
+            }
+          }
+        }
+
+        // TRACE_TREE_VIEW_SPEC: When parent_span_id is missing from span set (e.g. internal run ID),
+        // infer parent from preceding llm_call that invoked this tool (by time + tool name).
+        if (!parentSpan && span.event_type === "tool_call") {
+          const toolName =
+            span.tool_call?.tool_name ||
+            span.events?.[0]?.attributes?.tool_call?.tool_name;
+          const toolTime = span.start_time
+            ? new Date(span.start_time).getTime()
+            : 0;
+          if (toolName) {
+            const precedingLlms = parsedEvents
+              .filter(
+                (e: any) =>
+                  e.event_type === "llm_call" &&
+                  new Date(e.timestamp).getTime() <= toolTime,
+              )
+              .sort(
+                (a: any, b: any) =>
+                  new Date(b.timestamp).getTime() -
+                  new Date(a.timestamp).getTime(),
+              );
+            for (const ev of precedingLlms) {
+              const llmAttrs = ev.attributes?.llm_call;
+              const outputMessages = llmAttrs?.output_messages || [];
+              let invoked = false;
+              for (const msg of outputMessages) {
+                const fc = msg?.additional_kwargs?.function_call;
+                if (fc && fc.name === toolName) {
+                  invoked = true;
+                  break;
+                }
+                const tcs =
+                  msg?.additional_kwargs?.tool_calls || msg?.tool_calls;
+                if (
+                  Array.isArray(tcs) &&
+                  tcs.some(
+                    (tc: any) => (tc?.function?.name || tc?.name) === toolName,
+                  )
+                ) {
+                  invoked = true;
+                  break;
+                }
+              }
+              if (invoked) {
+                const llmSpanId = `${ev.span_id}-llm_call`;
+                parentSpan = spansMap.get(llmSpanId) || null;
+                if (parentSpan) break;
+              }
             }
           }
         }
@@ -3433,6 +3539,48 @@ export class TraceQueryService {
     // Create a flat array of all spans for easy lookup by frontend
     // This ensures the frontend can find any span by ID, regardless of hierarchy
     const allSpans = Array.from(spansMap.values());
+
+    // TRACE_TREE_VIEW_SPEC: Add synthetic child "Error" spans for signals (so tree shows Error under span)
+    for (const span of allSpans) {
+      if (!span.signals || span.signals.length === 0) continue;
+      for (const sig of span.signals) {
+        const errorChildId =
+          `${span.id}-signal-${sig.signal_type}-${sig.signal_name || ""}`.replace(
+            /\s/g,
+            "_",
+          );
+        const name = sig.message
+          ? `Error: ${sig.signal_name || sig.signal_type} — ${sig.message.substring(0, 80)}${sig.message.length > 80 ? "..." : ""}`
+          : `Error: ${sig.signal_name || sig.signal_type}`;
+        const errorChild = {
+          id: errorChildId,
+          span_id: errorChildId,
+          parent_span_id: span.id,
+          name,
+          start_time: span.start_time,
+          end_time: span.end_time,
+          duration_ms: 0,
+          events: [],
+          children: [],
+          event_type: "error",
+          type: "error",
+          signal: sig,
+          signals: [sig],
+          status: "error",
+          key: errorChildId,
+          original_span_id: span.span_id,
+          metadata: span.metadata || {},
+          selectable: true,
+          hasDetails: true,
+          details: sig.metadata || {},
+        };
+        if (!span.children) span.children = [];
+        if (!span.children.some((c: any) => c.id === errorChildId)) {
+          span.children.push(errorChild);
+        }
+      }
+    }
+
     const toolCallSpans = allSpans.filter((span) => span.tool_call);
     const toolCallsByParent = new Map<string, any[]>();
 
@@ -3546,7 +3694,10 @@ export class TraceQueryService {
         if (Array.isArray(span.llm_call.output_messages)) {
           for (const msg of span.llm_call.output_messages) {
             // Extract from additional_kwargs.tool_calls
-            if (msg?.additional_kwargs?.tool_calls && Array.isArray(msg.additional_kwargs.tool_calls)) {
+            if (
+              msg?.additional_kwargs?.tool_calls &&
+              Array.isArray(msg.additional_kwargs.tool_calls)
+            ) {
               for (const tc of msg.additional_kwargs.tool_calls) {
                 if (tc?.function) {
                   // Parse arguments if it's a string
@@ -3610,7 +3761,8 @@ export class TraceQueryService {
             }
           }
         }
-        span.attempted_tool_calls = attemptedToolCalls.length > 0 ? attemptedToolCalls : null;
+        span.attempted_tool_calls =
+          attemptedToolCalls.length > 0 ? attemptedToolCalls : null;
 
         const executedToolSpans = [
           ...(toolCallsByParent.get(span.id) || []),
@@ -3639,26 +3791,36 @@ export class TraceQueryService {
           .filter(Boolean);
 
         // Extract system instructions from input_messages if not already set
-        if (!span.llm_call.system_instructions && Array.isArray(span.llm_call.input_messages)) {
+        if (
+          !span.llm_call.system_instructions &&
+          Array.isArray(span.llm_call.input_messages)
+        ) {
           const systemMessages = span.llm_call.input_messages.filter(
             (msg: any) => msg.role === "system" || msg.role === "System",
           );
           if (systemMessages.length > 0) {
-            span.llm_call.system_instructions = systemMessages.map((msg: any) => {
-              if (typeof msg.content === "string") return msg.content;
-              if (Array.isArray(msg.content)) {
-                return msg.content
-                  .map((c: any) => (typeof c === "string" ? c : c?.text || ""))
-                  .filter(Boolean)
-                  .join("\n");
-              }
-              return msg.text || msg.content || "";
-            });
+            span.llm_call.system_instructions = systemMessages.map(
+              (msg: any) => {
+                if (typeof msg.content === "string") return msg.content;
+                if (Array.isArray(msg.content)) {
+                  return msg.content
+                    .map((c: any) =>
+                      typeof c === "string" ? c : c?.text || "",
+                    )
+                    .filter(Boolean)
+                    .join("\n");
+                }
+                return msg.text || msg.content || "";
+              },
+            );
           }
         }
 
         // Also extract output text from output_messages if output is missing
-        if (!span.llm_call.output && Array.isArray(span.llm_call.output_messages)) {
+        if (
+          !span.llm_call.output &&
+          Array.isArray(span.llm_call.output_messages)
+        ) {
           const outputTexts = span.llm_call.output_messages
             .map((msg: any) => {
               if (typeof msg.content === "string") return msg.content;
@@ -3790,6 +3952,124 @@ export class TraceQueryService {
       }
     }
 
+    // TRACE_TREE_VIEW_SPEC: Attempt grouping and treeView for problem-first UX
+    const attemptRootIds = [
+      ...new Set(
+        parsedEvents
+          .filter((e: any) => e.parent_span_id === null)
+          .map((e: any) => e.span_id),
+      ),
+    ].filter(Boolean);
+    const attemptRootIdToMinTs = new Map<string, number>();
+    for (const e of parsedEvents) {
+      if (e.parent_span_id !== null || !e.span_id) continue;
+      const t = new Date(e.timestamp).getTime();
+      if (
+        !attemptRootIdToMinTs.has(e.span_id) ||
+        t < attemptRootIdToMinTs.get(e.span_id)!
+      ) {
+        attemptRootIdToMinTs.set(e.span_id, t);
+      }
+    }
+    attemptRootIds.sort(
+      (a, b) =>
+        (attemptRootIdToMinTs.get(a) ?? 0) - (attemptRootIdToMinTs.get(b) ?? 0),
+    );
+
+    const getRootAncestor = (span: any): string => {
+      if (span.parent_span_id === null) {
+        return span.span_id || span.original_span_id || span.id || "";
+      }
+      const parent = spansMap.get(span.parent_span_id);
+      if (parent) return getRootAncestor(parent);
+      return span.parent_span_id || "";
+    };
+
+    const attemptSpans = new Map<string, any[]>();
+    for (const span of allSpans) {
+      const r = getRootAncestor(span);
+      if (!r) continue;
+      if (!attemptSpans.has(r)) attemptSpans.set(r, []);
+      attemptSpans.get(r)!.push(span);
+    }
+
+    const hasFailure = (spans: any[]): boolean =>
+      spans.some(
+        (s: any) =>
+          s.status === "error" ||
+          s.status === "timeout" ||
+          s.event_type === "error" ||
+          s.type === "error" ||
+          s.tool_call?.result_status === "error" ||
+          s.error_message ||
+          s.error_type,
+      );
+
+    const treeViewChildren: any[] = attemptRootIds.map((attemptRootId, i) => {
+      const spansInAttempt = attemptSpans.get(attemptRootId) || [];
+      const failed = hasFailure(spansInAttempt);
+      const rootsInAttempt = rootSpans.filter(
+        (s: any) => getRootAncestor(s) === attemptRootId,
+      );
+      const startTime =
+        rootsInAttempt.length > 0
+          ? rootsInAttempt.reduce(
+              (acc: string, s: any) =>
+                !acc || (s.start_time && s.start_time < acc)
+                  ? s.start_time || acc
+                  : acc,
+              "",
+            )
+          : "";
+      const endTime =
+        rootsInAttempt.length > 0
+          ? rootsInAttempt.reduce(
+              (acc: string, s: any) =>
+                !acc || (s.end_time && s.end_time > acc)
+                  ? s.end_time || acc
+                  : acc,
+              "",
+            )
+          : "";
+      return {
+        id: `attempt-${i + 1}-${attemptRootId.slice(0, 8)}`,
+        name: `Attempt ${i + 1} — ${failed ? "Failed" : "Success"}`,
+        status: failed ? "failed" : "success",
+        span_id: attemptRootId,
+        start_time: startTime,
+        end_time: endTime,
+        duration_ms:
+          startTime && endTime
+            ? new Date(endTime).getTime() - new Date(startTime).getTime()
+            : 0,
+        children: rootsInAttempt,
+        _isAttemptNode: true,
+      };
+    });
+
+    const totalDurationMs =
+      summary.end_time && summary.start_time
+        ? new Date(summary.end_time).getTime() -
+          new Date(summary.start_time).getTime()
+        : 0;
+    const treeView = {
+      id: traceId,
+      name: `Trace ${traceId.slice(0, 8)}...`,
+      duration_ms: totalDurationMs,
+      summary: {
+        attempts: attemptRootIds.length,
+        failures: attemptRootIds.filter((r) =>
+          hasFailure(attemptSpans.get(r) || []),
+        ).length,
+        environment: summary.environment || "prod",
+      },
+      children: treeViewChildren,
+    };
+
+    (summary as Record<string, unknown>).attempt_count = attemptRootIds.length;
+    (summary as Record<string, unknown>).failure_count =
+      treeView.summary.failures;
+
     // Phase 1/2: Enrich with deeper insights for trace detail UX
     const costBreakdown = this.buildCostBreakdown(summary, allSpans);
     const performanceAnalysis = this.buildPerformanceAnalysis(
@@ -3804,6 +4084,8 @@ export class TraceQueryService {
     // Solution: Use rootSpans for tree structure, allSpans/spansById for lookup
     return {
       summary,
+      // TRACE_TREE_VIEW_SPEC: problem-first tree with attempt grouping
+      treeView,
       // Return ONLY root spans in main spans array (for tree structure)
       // This prevents frontend from rendering duplicates (spans + children)
       spans: rootSpans.length > 0 ? rootSpans : allSpans,

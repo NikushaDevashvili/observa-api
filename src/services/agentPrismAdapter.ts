@@ -29,6 +29,12 @@ export interface ObservaTraceData {
     session_id?: string | null;
     user_id?: string | null;
     environment?: string | null;
+    attempt_count?: number;
+    failure_count?: number;
+  };
+  treeView?: {
+    summary: { attempts: number; failures: number; environment?: string };
+    children?: any[];
   };
   spans: ObservaSpan[];
   allSpans?: ObservaSpan[];
@@ -394,7 +400,7 @@ function isoToUnixMs(isoString: string): number {
   } catch (error) {
     console.warn(
       `[AgentPrismAdapter] Failed to parse timestamp: ${isoString}`,
-      error
+      error,
     );
     return Date.now();
   }
@@ -405,7 +411,7 @@ function isoToUnixMs(isoString: string): number {
  * Transforms Record<string, any> to AgentPrismTraceSpanAttribute[]
  */
 function convertAttributesToArray(
-  attributesObj: Record<string, any>
+  attributesObj: Record<string, any>,
 ): AgentPrismTraceSpanAttribute[] {
   return Object.entries(attributesObj).map(([key, value]) => {
     // Determine the value type and structure
@@ -459,7 +465,7 @@ function generateSuggestedFixes(
   errorType: string,
   errorMessage: string,
   context: any,
-  span?: ObservaSpan
+  span?: ObservaSpan,
 ): string[] {
   const fixes: string[] = [];
   const errorLower = errorType.toLowerCase();
@@ -473,7 +479,7 @@ function generateSuggestedFixes(
       fixes.push(
         `Consider increasing timeout threshold (current: ${
           context.timeout_ms || context.timeout
-        }ms)`
+        }ms)`,
       );
     } else {
       fixes.push("Consider increasing timeout threshold for this operation");
@@ -481,7 +487,7 @@ function generateSuggestedFixes(
     fixes.push("Check API service status page or health endpoints");
     fixes.push("Review retry policy and implement exponential backoff");
     fixes.push(
-      "Check for network congestion or firewall rules blocking the connection"
+      "Check for network congestion or firewall rules blocking the connection",
     );
   }
 
@@ -492,7 +498,7 @@ function generateSuggestedFixes(
   ) {
     if (messageLower.includes("refused")) {
       fixes.push(
-        "Verify the service is running and listening on the expected port"
+        "Verify the service is running and listening on the expected port",
       );
       fixes.push("Check firewall rules and network security groups");
     } else if (messageLower.includes("reset")) {
@@ -570,7 +576,7 @@ function generateSuggestedFixes(
   // Generic suggestions if no specific fixes
   if (fixes.length === 0) {
     fixes.push(
-      "Review error message and stack trace for specific failure point"
+      "Review error message and stack trace for specific failure point",
     );
     fixes.push("Check application logs for additional context");
     fixes.push("Verify all required parameters and configuration are correct");
@@ -586,7 +592,7 @@ function generateSuggestedFixes(
 function classifyErrorCategory(
   errorType: string,
   errorMessage: string,
-  context: any
+  context: any,
 ): string {
   const errorLower = errorType.toLowerCase();
   const messageLower = errorMessage.toLowerCase();
@@ -657,7 +663,7 @@ function classifyErrorCategory(
  */
 function classifySeverity(
   errorType: string,
-  errorMessage: string
+  errorMessage: string,
 ): "low" | "medium" | "high" | "critical" {
   const errorLower = errorType.toLowerCase();
   const messageLower = errorMessage.toLowerCase();
@@ -701,7 +707,7 @@ function classifySeverity(
  */
 function determineImpact(
   span: ObservaSpan | undefined,
-  errorType: string
+  errorType: string,
 ): string {
   if (!span) return "unknown";
 
@@ -791,7 +797,7 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
     if (llm.finish_reason) {
       // OTEL uses array format
       attributes["gen_ai.response.finish_reasons"] = Array.isArray(
-        llm.finish_reason
+        llm.finish_reason,
       )
         ? llm.finish_reason
         : [llm.finish_reason];
@@ -1179,7 +1185,10 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
     if (traceStart.chain_type) {
       attributes["trace_start.chain_type"] = traceStart.chain_type;
     }
-    if (traceStart.num_prompts !== null && traceStart.num_prompts !== undefined) {
+    if (
+      traceStart.num_prompts !== null &&
+      traceStart.num_prompts !== undefined
+    ) {
       attributes["trace_start.num_prompts"] = traceStart.num_prompts;
     }
     if (traceStart.created_at) {
@@ -1193,7 +1202,10 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
   // Add trace_end attributes
   if (span.trace_end) {
     const traceEnd = span.trace_end;
-    if (traceEnd.total_latency_ms !== null && traceEnd.total_latency_ms !== undefined) {
+    if (
+      traceEnd.total_latency_ms !== null &&
+      traceEnd.total_latency_ms !== undefined
+    ) {
       attributes["trace_end.total_latency_ms"] = traceEnd.total_latency_ms;
     }
     if (traceEnd.total_tokens !== null && traceEnd.total_tokens !== undefined) {
@@ -1402,8 +1414,8 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
             (errorType.includes("timeout")
               ? "connection_timeout"
               : errorType.includes("connection")
-              ? "connection_error"
-              : "unknown"),
+                ? "connection_error"
+                : "unknown"),
           dns_resolved: errorContext.dns_resolved,
           connection_established:
             errorContext.connection_established || errorContext.connected,
@@ -1431,7 +1443,7 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
           errorType,
           errorMessage,
           errorContext,
-          span
+          span,
         ),
 
         // SOTA: Error classification - USE SDK-PROVIDED VALUES
@@ -1539,7 +1551,7 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
         isTimeout ? "timeout_error" : "tool_error",
         errorMessage,
         toolArgs,
-        span
+        span,
       ),
 
       // SOTA: Error classification
@@ -1547,15 +1559,15 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
         category: classifyErrorCategory(
           isTimeout ? "timeout_error" : "tool_error",
           errorMessage,
-          toolArgs
+          toolArgs,
         ),
         severity: classifySeverity(
           isTimeout ? "timeout_error" : "tool_error",
-          errorMessage
+          errorMessage,
         ),
         impact: determineImpact(
           span,
-          isTimeout ? "timeout_error" : "tool_error"
+          isTimeout ? "timeout_error" : "tool_error",
         ),
       },
     };
@@ -1585,7 +1597,7 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
         "tool_error",
         errorMessage,
         toolArgs,
-        span
+        span,
       ),
       classification: {
         category: classifyErrorCategory("tool_error", errorMessage, toolArgs),
@@ -1610,6 +1622,24 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
       type: "http_error",
       message: `HTTP ${span.metadata.status} error`,
       fullMessage: `HTTP error with status code: ${span.metadata.status}`,
+      timestamp: span.start_time,
+    };
+  } else if (!errorInfo && (span as any).signals?.length > 0) {
+    // TRACE_TREE_VIEW_SPEC: Use span.signals (e.g. tool_error, medium_latency) for errorInfo so they show in ErrorSummaryBanner and SpanCard
+    const firstSignal = (span as any).signals[0];
+    const signalType =
+      firstSignal.signal_type || firstSignal.signal_name || "error";
+    const message =
+      firstSignal.message || firstSignal.signal_name || signalType;
+    status =
+      firstSignal.signal_severity === "high" || signalType === "tool_error"
+        ? "error"
+        : "warning";
+    errorInfo = {
+      type: signalType,
+      message:
+        message.length > 100 ? message.substring(0, 100) + "..." : message,
+      fullMessage: message,
       timestamp: span.start_time,
     };
   }
@@ -1641,7 +1671,10 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
           : JSON.stringify(span.llm_call.output, null, 2);
     }
     // 2. If output is missing, try to extract from output_messages
-    else if (Array.isArray(span.llm_call.output_messages) && span.llm_call.output_messages.length > 0) {
+    else if (
+      Array.isArray(span.llm_call.output_messages) &&
+      span.llm_call.output_messages.length > 0
+    ) {
       const outputTexts = span.llm_call.output_messages
         .map((msg: any) => {
           // Handle different message formats
@@ -1662,16 +1695,19 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
           return "";
         })
         .filter(Boolean);
-      
+
       if (outputTexts.length > 0) {
         output = outputTexts.join("\n");
       }
     }
     // 3. If still no output, try input_messages (sometimes output is in input_messages for assistant messages)
-    else if (Array.isArray(span.llm_call.input_messages) && span.llm_call.input_messages.length > 0) {
+    else if (
+      Array.isArray(span.llm_call.input_messages) &&
+      span.llm_call.input_messages.length > 0
+    ) {
       // Look for assistant messages in input_messages
       const assistantMessages = span.llm_call.input_messages.filter(
-        (msg: any) => msg.role === "assistant" || msg.role === "ai"
+        (msg: any) => msg.role === "assistant" || msg.role === "ai",
       );
       if (assistantMessages.length > 0) {
         const outputTexts = assistantMessages
@@ -1686,7 +1722,7 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
             return msg.text || "";
           })
           .filter(Boolean);
-        
+
         if (outputTexts.length > 0) {
           output = outputTexts.join("\n");
         }
@@ -1861,13 +1897,13 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
         retrievalOutput.avg_similarity =
           span.retrieval.similarity_scores.reduce(
             (a: number, b: number) => a + b,
-            0
+            0,
           ) / span.retrieval.similarity_scores.length;
         retrievalOutput.max_similarity = Math.max(
-          ...span.retrieval.similarity_scores
+          ...span.retrieval.similarity_scores,
         );
         retrievalOutput.min_similarity = Math.min(
-          ...span.retrieval.similarity_scores
+          ...span.retrieval.similarity_scores,
         );
       }
       if (
@@ -1887,7 +1923,7 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
             k: span.retrieval.k || span.retrieval.top_k,
           },
           null,
-          2
+          2,
         );
       }
     }
@@ -1923,7 +1959,7 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
         .slice(0, 3)
         .map(
           (emb: number[]) =>
-            `[${emb.slice(0, 5).join(", ")}, ...] (${emb.length} dims)`
+            `[${emb.slice(0, 5).join(", ")}, ...] (${emb.length} dims)`,
         );
     } else if (span.embedding.embeddings_hash) {
       embeddingOutput.embeddings_hash = span.embedding.embeddings_hash;
@@ -2092,7 +2128,13 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
     }),
     ...(span.available_tools && { available_tools: span.available_tools }),
     ...(span.executed_tools && { executed_tools: span.executed_tools }),
-    ...(span.attempted_tool_calls && { attempted_tool_calls: span.attempted_tool_calls }),
+    ...(span.attempted_tool_calls && {
+      attempted_tool_calls: span.attempted_tool_calls,
+    }),
+    // TRACE_TREE_VIEW_SPEC: Pass through signals for observa-app to show (e.g. medium_latency, tool_error)
+    ...((span as any).signals && (span as any).signals.length > 0
+      ? { signals: (span as any).signals }
+      : {}),
   };
 
   return traceSpan;
@@ -2201,7 +2243,7 @@ function calculateErrorSummary(spans: AgentPrismTraceSpan[]): ErrorSummary {
  * @returns Agent-Prism formatted trace data
  */
 export function adaptObservaTraceToAgentPrism(
-  observaTrace: ObservaTraceData
+  observaTrace: ObservaTraceData,
 ): AgentPrismTraceData {
   const { summary, spans, signals } = observaTrace;
 
@@ -2209,7 +2251,7 @@ export function adaptObservaTraceToAgentPrism(
   // This prevents orphaned spans or multiple root spans from appearing at the top level
   let mainSpans = spans;
   const rootTraceSpan = spans.find(
-    (span) => (span as any).isRootTrace === true
+    (span) => (span as any).isRootTrace === true,
   );
 
   if (rootTraceSpan) {
@@ -2222,7 +2264,7 @@ export function adaptObservaTraceToAgentPrism(
     if (rootSpans.length > 0) {
       // Find the span with the longest duration (most likely the main trace)
       const mainSpan = rootSpans.reduce((prev, current) =>
-        current.duration_ms > prev.duration_ms ? current : prev
+        current.duration_ms > prev.duration_ms ? current : prev,
       );
       mainSpans = [mainSpan];
     }
@@ -2247,7 +2289,32 @@ export function adaptObservaTraceToAgentPrism(
   };
 
   // Convert signals to badges
-  const badges = signalsToBadges(signals);
+  let badges = signalsToBadges(signals);
+
+  // TRACE_TREE_VIEW_SPEC: Add attempt/failure badges from treeView for problem-first UX
+  const treeView = (observaTrace as ObservaTraceData).treeView;
+  const attemptCount =
+    observaTrace.summary?.attempt_count ?? treeView?.summary?.attempts;
+  const failureCount =
+    observaTrace.summary?.failure_count ?? treeView?.summary?.failures;
+  if (typeof attemptCount === "number" && attemptCount > 0) {
+    badges = [
+      ...badges,
+      {
+        label: `${attemptCount} attempt${attemptCount !== 1 ? "s" : ""}`,
+        variant: "default" as const,
+      },
+    ];
+  }
+  if (typeof failureCount === "number" && failureCount > 0) {
+    badges = [
+      ...badges,
+      {
+        label: `${failureCount} failure${failureCount !== 1 ? "s" : ""}`,
+        variant: "destructive" as const,
+      },
+    ];
+  }
 
   return {
     traceRecord,
