@@ -1683,14 +1683,20 @@ export class TraceQueryService {
         parentSpanId = null;
       }
 
-      // PHASE 6: medium_latency — badge only on LLM span, no duplicate error span
-      // Skip creating a separate span for medium_latency; it's attached as a signal to the LLM span
+      // PHASE 6: Latency threshold signals — badge only on LLM span, no duplicate error span
+      // Skip creating separate spans for medium_latency, high_latency; attach as signals only
       if (event.event_type === "error") {
         const sigData = event.attributes?.signal || event.attributes?.error;
+        const sigName = sigData?.signal_name;
         const sigType =
           sigData?.signal_type || sigData?.signal_name || sigData?.error_type;
-        if (sigType === "medium_latency") {
-          continue; // Handled later in signals attachment loop
+        const isBadgeOnlySignal =
+          sigName === "medium_latency" ||
+          sigName === "high_latency" ||
+          sigType === "medium_latency" ||
+          sigType === "high_latency";
+        if (isBadgeOnlySignal) {
+          continue; // Handled later in signals attachment loop (badge on span only)
         }
       }
 
@@ -3281,11 +3287,13 @@ export class TraceQueryService {
         signalData?.signal_name ||
         signalData?.error_type ||
         "error";
-      // medium_latency refers to LLM call; attach to LLM span if present
-      let targetSpan =
-        signalType === "medium_latency"
-          ? spansMap.get(`${targetSpanId}-llm_call`)
-          : null;
+      const signalName = signalData?.signal_name || signalType;
+      // medium_latency, high_latency refer to LLM call; attach to LLM span if present
+      const isLatencySignal =
+        signalName === "medium_latency" || signalName === "high_latency";
+      let targetSpan = isLatencySignal
+        ? spansMap.get(`${targetSpanId}-llm_call`)
+        : null;
       if (!targetSpan) {
         targetSpan =
           spansMap.get(targetSpanId) ||
@@ -3708,9 +3716,13 @@ export class TraceQueryService {
     const allSpans = Array.from(spansMap.values());
 
     // TRACE_TREE_VIEW_SPEC: Add synthetic child "Error" spans for signals (so tree shows Error under span)
+    // Skip badge-only signals (medium_latency, high_latency) — they render as badges, not error nodes
+    const BADGE_ONLY_SIGNALS = new Set(["medium_latency", "high_latency"]);
     for (const span of allSpans) {
       if (!span.signals || span.signals.length === 0) continue;
       for (const sig of span.signals) {
+        const sigName = sig.signal_name || sig.signal_type;
+        if (BADGE_ONLY_SIGNALS.has(sigName)) continue; // Badge only, no duplicate error child
         const errorChildId =
           `${span.id}-signal-${sig.signal_type}-${sig.signal_name || ""}`.replace(
             /\s/g,

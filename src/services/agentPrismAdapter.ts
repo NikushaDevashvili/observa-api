@@ -2486,6 +2486,20 @@ export function adaptObservaTraceToAgentPrism(
       },
     ];
   }
+  // When trace had failures but produced output, clarify that retry succeeded
+  if (
+    typeof failureCount === "number" &&
+    failureCount > 0 &&
+    (observaTrace.summary?.response ?? traceRecord.output)
+  ) {
+    badges = [
+      ...badges,
+      {
+        label: "Succeeded after retry",
+        variant: "default" as const,
+      },
+    ];
+  }
 
   return {
     traceRecord,
