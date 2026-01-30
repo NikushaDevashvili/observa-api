@@ -57,6 +57,11 @@ export interface ObservaSpan {
   events?: any[];
   children?: ObservaSpan[];
   metadata?: Record<string, any>;
+  // PHASE 1: Explicit input/output for Langfuse parity (Trace Start, Output span, root)
+  input?: string | null;
+  final_output?: string | null;
+  // PHASE 3: Optional observation type (Langfuse parity)
+  observation_type?: string | null;
   // Type-specific flattened data
   llm_call?: {
     model?: string;
@@ -239,6 +244,9 @@ export interface AgentPrismTraceRecord {
   spansCount: number;
   durationMs: number;
   agentDescription?: string;
+  // PHASE 4: Trace-level input/output (Langfuse parity)
+  input?: string | null;
+  output?: string | null;
 }
 
 /**
@@ -1248,82 +1256,113 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
     | "guardrail"
     | "unknown" = "unknown";
 
+  // PHASE 3: Use observation_type when present (Langfuse parity)
+  const obsType = span.observation_type?.toLowerCase();
+  if (obsType) {
+    const obsMap: Record<
+      string,
+      | "llm_call"
+      | "tool_execution"
+      | "agent_invocation"
+      | "chain_operation"
+      | "retrieval"
+      | "embedding"
+      | "create_agent"
+      | "span"
+      | "event"
+      | "guardrail"
+    > = {
+      generation: "llm_call",
+      tool: "tool_execution",
+      agent: "agent_invocation",
+      chain: "chain_operation",
+      retriever: "retrieval",
+      embedding: "embedding",
+      evaluator: "event",
+      guardrail: "guardrail",
+      span: "span",
+    };
+    if (obsMap[obsType]) category = obsMap[obsType];
+  }
+
   const spanName = span.name || "";
   const spanNameLower = spanName.toLowerCase();
 
-  // Check in priority order (most specific first)
-  if (
-    span.llm_call ||
-    span.event_type === "llm_call" ||
-    span.type === "llm_call"
-  ) {
-    category = "llm_call";
-  } else if (
-    span.tool_call ||
-    span.event_type === "tool_call" ||
-    span.type === "tool_call"
-  ) {
-    category = "tool_execution"; // Note: tool_call maps to tool_execution
-  } else if (
-    span.embedding ||
-    span.event_type === "embedding" ||
-    span.type === "embedding" ||
-    spanNameLower.includes("embedding")
-  ) {
-    category = "embedding";
-  } else if (
-    span.agent_create ||
-    span.event_type === "agent_create" ||
-    span.type === "agent_create" ||
-    spanNameLower.includes("create_agent") ||
-    spanNameLower.includes("agent create")
-  ) {
-    category = "create_agent";
-  } else if (
-    span.retrieval ||
-    span.event_type === "retrieval" ||
-    span.type === "retrieval"
-  ) {
-    category = "retrieval";
-  } else if (
-    span.feedback ||
-    span.feedback_metadata ||
-    span.feedback_type ||
-    span.event_type === "feedback" ||
-    span.type === "feedback" ||
-    spanNameLower.includes("feedback")
-  ) {
-    category = "event"; // Feedback events map to "event" category
-  } else if (
-    span.output ||
-    span.event_type === "output" ||
-    span.type === "output"
-  ) {
-    category = "event"; // Output events map to "event"
-  } else if (
-    span.type === "trace" ||
-    span.name === "Trace" ||
-    spanNameLower === "trace"
-  ) {
-    category = "span"; // Root trace spans
-  } else {
-    // Try to detect category from span name patterns (common in LangChain/LangGraph)
+  // Check in priority order (most specific first) - only if category not set from observation_type
+  if (category === "unknown") {
     if (
-      spanNameLower.includes("runnablesequence") ||
-      spanNameLower.includes("sequence") ||
-      spanNameLower.includes("chain") ||
-      spanNameLower.startsWith("runnable")
+      span.llm_call ||
+      span.event_type === "llm_call" ||
+      span.type === "llm_call"
     ) {
-      category = "chain_operation";
+      category = "llm_call";
     } else if (
-      spanNameLower.includes("agent") ||
-      spanNameLower.includes("agentexecutor") ||
-      spanNameLower.includes("runnableassign") ||
-      spanNameLower.includes("openaitoolsagent") ||
-      spanNameLower.includes("toolagent") ||
-      spanNameLower.includes("planandexecute")
+      span.tool_call ||
+      span.event_type === "tool_call" ||
+      span.type === "tool_call"
     ) {
-      category = "agent_invocation";
+      category = "tool_execution"; // Note: tool_call maps to tool_execution
+    } else if (
+      span.embedding ||
+      span.event_type === "embedding" ||
+      span.type === "embedding" ||
+      spanNameLower.includes("embedding")
+    ) {
+      category = "embedding";
+    } else if (
+      span.agent_create ||
+      span.event_type === "agent_create" ||
+      span.type === "agent_create" ||
+      spanNameLower.includes("create_agent") ||
+      spanNameLower.includes("agent create")
+    ) {
+      category = "create_agent";
+    } else if (
+      span.retrieval ||
+      span.event_type === "retrieval" ||
+      span.type === "retrieval"
+    ) {
+      category = "retrieval";
+    } else if (
+      span.feedback ||
+      span.feedback_metadata ||
+      span.feedback_type ||
+      span.event_type === "feedback" ||
+      span.type === "feedback" ||
+      spanNameLower.includes("feedback")
+    ) {
+      category = "event"; // Feedback events map to "event" category
+    } else if (
+      span.output ||
+      span.event_type === "output" ||
+      span.type === "output"
+    ) {
+      category = "event"; // Output events map to "event"
+    } else if (
+      span.type === "trace" ||
+      span.name === "Trace" ||
+      spanNameLower === "trace"
+    ) {
+      category = "span"; // Root trace spans
+    } else {
+      // Try to detect category from span name patterns (common in LangChain/LangGraph)
+      if (
+        spanNameLower.includes("runnablesequence") ||
+        spanNameLower.includes("sequence") ||
+        spanNameLower.includes("chain") ||
+        spanNameLower.startsWith("runnable")
+      ) {
+        category = "chain_operation";
+      } else if (
+        spanNameLower.includes("agent") ||
+        spanNameLower.includes("agentexecutor") ||
+        spanNameLower.includes("runnableassign") ||
+        spanNameLower.includes("openaitoolsagent") ||
+        spanNameLower.includes("toolagent") ||
+        spanNameLower.includes("planandexecute")
+      ) {
+        category = "agent_invocation";
+      }
     }
   }
 
@@ -1649,13 +1688,46 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
   const cost = span.llm_call?.cost || null;
 
   // Extract input/output for In/Out tab
-  // For LLM calls, use llm_call input/output
-  // For tool calls, use tool_call args/result
-  // For other spans, use attributes or metadata
+  // PHASE 1: Prefer explicitly set span.input/span.output from backend (Langfuse parity)
+  // Root trace = user question + final answer; Trace Start = question only; Output = answer only
   let input: string | undefined;
   let output: string | undefined;
 
-  if (span.llm_call) {
+  if (span.isRootTrace && (span.input != null || span.output != null)) {
+    // Root trace span: input = user query, output = final answer
+    input =
+      span.input != null
+        ? typeof span.input === "string"
+          ? span.input
+          : JSON.stringify(span.input, null, 2)
+        : undefined;
+    output =
+      span.output != null
+        ? typeof span.output === "string"
+          ? span.output
+          : JSON.stringify(span.output, null, 2)
+        : undefined;
+  } else if (span.trace_start && span.input != null) {
+    // Trace Start span: input = user query, output = null
+    input =
+      typeof span.input === "string"
+        ? span.input
+        : JSON.stringify(span.input, null, 2);
+    output = undefined;
+  } else if (span.type === "output" && span.input === null) {
+    // Output span: input = null, output = final_output only
+    input = undefined;
+    const outputObj = span.output as
+      | { final_output?: string | null }
+      | undefined;
+    const fo = span.final_output ?? outputObj?.final_output;
+    output =
+      fo != null
+        ? typeof fo === "string"
+          ? fo
+          : JSON.stringify(fo, null, 2)
+        : undefined;
+  } else if (span.llm_call) {
     if (span.llm_call.input !== null && span.llm_call.input !== undefined) {
       input =
         typeof span.llm_call.input === "string"
@@ -2286,6 +2358,8 @@ export function adaptObservaTraceToAgentPrism(
     spansCount: totalSpansCount, // Count all spans including nested children
     durationMs: summary.total_latency_ms || 0,
     agentDescription: summary.model || "", // Model name as agent description
+    input: summary.query ?? null,
+    output: summary.response ?? null,
   };
 
   // Convert signals to badges

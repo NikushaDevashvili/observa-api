@@ -101,7 +101,7 @@ async function logTraceContextReveal(params: {
 }
 
 function performanceBadgeFromLatency(
-  latencyMs: unknown
+  latencyMs: unknown,
 ): "fast" | "medium" | "slow" | null {
   const ms = typeof latencyMs === "number" ? latencyMs : null;
   if (ms === null) return null;
@@ -225,7 +225,7 @@ router.post("/ingest", async (req: Request, res: Response) => {
     }
 
     console.log(
-      `[Observa API] JWT validated - Tenant: ${payload.tenantId}, Project: ${payload.projectId}`
+      `[Observa API] JWT validated - Tenant: ${payload.tenantId}, Project: ${payload.projectId}`,
     );
 
     // Extract tenant context from JWT
@@ -235,7 +235,7 @@ router.post("/ingest", async (req: Request, res: Response) => {
 
     if (!tenantId || !projectId) {
       console.error(
-        `[Observa API] JWT missing tenantId or projectId - tenantId: ${tenantId}, projectId: ${projectId}`
+        `[Observa API] JWT missing tenantId or projectId - tenantId: ${tenantId}, projectId: ${projectId}`,
       );
       return res.status(401).json({
         error: "JWT token missing tenantId or projectId",
@@ -249,11 +249,11 @@ router.post("/ingest", async (req: Request, res: Response) => {
         traceData?.traceId
       }, query length: ${traceData?.query?.length || 0}, conversationId: ${
         traceData?.conversationId?.substring(0, 20) || "none"
-      }, messageIndex: ${traceData?.messageIndex || "none"}`
+      }, messageIndex: ${traceData?.messageIndex || "none"}`,
     );
     console.log(
       `[Observa API] Trace data keys:`,
-      traceData ? Object.keys(traceData) : "null"
+      traceData ? Object.keys(traceData) : "null",
     );
     // #region agent log
     fetch("http://127.0.0.1:7242/ingest/431a9fa4-96bd-46c7-8321-5ccac542c2c3", {
@@ -281,7 +281,7 @@ router.post("/ingest", async (req: Request, res: Response) => {
     if (!validationResult.success) {
       console.error(
         `[Observa API] Validation failed:`,
-        JSON.stringify(validationResult.error.issues, null, 2)
+        JSON.stringify(validationResult.error.issues, null, 2),
       );
       return res.status(400).json({
         error: "Invalid trace data structure",
@@ -324,9 +324,8 @@ router.post("/ingest", async (req: Request, res: Response) => {
 
     // Handle conversation/session tracking (if provided)
     if (trace.conversationId) {
-      const { ConversationService } = await import(
-        "../services/conversationService.js"
-      );
+      const { ConversationService } =
+        await import("../services/conversationService.js");
 
       try {
         // Get or create conversation
@@ -351,12 +350,12 @@ router.post("/ingest", async (req: Request, res: Response) => {
         });
 
         console.log(
-          `[Observa API] Updated conversation ${trace.conversationId} - TraceID: ${trace.traceId}`
+          `[Observa API] Updated conversation ${trace.conversationId} - TraceID: ${trace.traceId}`,
         );
       } catch (error) {
         console.error(
           `[Observa API] Failed to update conversation (non-fatal):`,
-          error
+          error,
         );
         // Don't throw - conversation tracking failure shouldn't break trace ingestion
       }
@@ -364,9 +363,8 @@ router.post("/ingest", async (req: Request, res: Response) => {
 
     // Handle session tracking (if provided)
     if (trace.sessionId) {
-      const { ConversationService } = await import(
-        "../services/conversationService.js"
-      );
+      const { ConversationService } =
+        await import("../services/conversationService.js");
 
       try {
         await ConversationService.getOrCreateSession({
@@ -383,12 +381,12 @@ router.post("/ingest", async (req: Request, res: Response) => {
         });
 
         console.log(
-          `[Observa API] Updated session ${trace.sessionId} - TraceID: ${trace.traceId}`
+          `[Observa API] Updated session ${trace.sessionId} - TraceID: ${trace.traceId}`,
         );
       } catch (error) {
         console.error(
           `[Observa API] Failed to update session (non-fatal):`,
-          error
+          error,
         );
         // Don't throw - session tracking failure shouldn't break trace ingestion
       }
@@ -399,35 +397,35 @@ router.post("/ingest", async (req: Request, res: Response) => {
     console.log(
       `[Observa API] Storing trace data in PostgreSQL - TraceID: ${
         trace.traceId
-      }, Query: ${trace.query?.substring(0, 50)}...`
+      }, Query: ${trace.query?.substring(0, 50)}...`,
     );
     try {
       await TraceService.storeTraceData(trace);
       console.log(
-        `[Observa API] ✅ Successfully stored trace data in PostgreSQL - TraceID: ${trace.traceId}`
+        `[Observa API] ✅ Successfully stored trace data in PostgreSQL - TraceID: ${trace.traceId}`,
       );
     } catch (storeError) {
       console.error(
         `[Observa API] ❌ Failed to store trace data in PostgreSQL - TraceID: ${trace.traceId}`,
-        storeError
+        storeError,
       );
       // Don't throw - continue to try Tinybird forwarding
     }
 
     // Forward to Tinybird for analytical workloads (async, can retry if fails)
     console.log(
-      `[Observa API] Forwarding trace to Tinybird - TraceID: ${trace.traceId}, Tenant: ${tenantId}, Project: ${projectId}`
+      `[Observa API] Forwarding trace to Tinybird - TraceID: ${trace.traceId}, Tenant: ${tenantId}, Project: ${projectId}`,
     );
     TraceService.forwardToTinybird(trace)
       .then(() => {
         console.log(
-          `[Observa API] ✅ Successfully forwarded trace to Tinybird - TraceID: ${trace.traceId}`
+          `[Observa API] ✅ Successfully forwarded trace to Tinybird - TraceID: ${trace.traceId}`,
         );
       })
       .catch((error) => {
         console.error(
           `[Observa API] ❌ Failed to forward trace to Tinybird (non-fatal) - TraceID: ${trace.traceId}:`,
-          error
+          error,
         );
         // Don't throw - Tinybird failure shouldn't break trace ingestion
       });
@@ -446,7 +444,7 @@ router.post("/ingest", async (req: Request, res: Response) => {
     }
 
     console.log(
-      `[Observa API] ✅ Trace ingestion completed successfully - TraceID: ${trace.traceId}`
+      `[Observa API] ✅ Trace ingestion completed successfully - TraceID: ${trace.traceId}`,
     );
     return res.status(200).json({
       success: true,
@@ -521,7 +519,7 @@ router.get("/", async (req: Request, res: Response) => {
     console.log(
       `[Traces API] Fetching traces for tenant ${
         user.tenantId
-      }, limit: ${limit}, offset: ${offset}, issueType: ${issueType || "all"}`
+      }, limit: ${limit}, offset: ${offset}, issueType: ${issueType || "all"}`,
     );
 
     // Use TraceQueryService for consistent querying
@@ -586,7 +584,7 @@ router.get("/", async (req: Request, res: Response) => {
     }));
 
     console.log(
-      `[Traces API] Found ${traces.length} traces (total: ${result.total})`
+      `[Traces API] Found ${traces.length} traces (total: ${result.total})`,
     );
 
     res.json({
@@ -792,7 +790,7 @@ router.get("/export", async (req: Request, res: Response) => {
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
       res.setHeader(
         "Content-Disposition",
-        `attachment; filename="traces-export.csv"`
+        `attachment; filename="traces-export.csv"`,
       );
       return res.status(200).send(csv);
     }
@@ -849,7 +847,7 @@ router.get("/:traceId/export", async (req: Request, res: Response) => {
     const traceTree = await TraceQueryService.getTraceDetailTree(
       traceId,
       user.tenantId,
-      projectId
+      projectId,
     );
 
     if (!traceTree) {
@@ -912,7 +910,7 @@ router.get("/:traceId/export", async (req: Request, res: Response) => {
           ? traceTree.signals.map((sig: any) =>
               `- **${sig.signal_type}** (${sig.severity}) ${
                 sig.score ?? sig.confidence ?? ""
-              }`.trim()
+              }`.trim(),
             )
           : [`- None`]),
         ``,
@@ -929,7 +927,7 @@ router.get("/:traceId/export", async (req: Request, res: Response) => {
               ``,
               `### Suggestions`,
               ...traceTree.performanceAnalysis.suggestions.map(
-                (x: string) => `- ${x}`
+                (x: string) => `- ${x}`,
               ),
             ]
           : []),
@@ -941,7 +939,7 @@ router.get("/:traceId/export", async (req: Request, res: Response) => {
               ``,
               `### Top Spans`,
               ...traceTree.costBreakdown.topSpans.map(
-                (x: any) => `- ${x.name} (${x.spanId}): $${x.costUsd}`
+                (x: any) => `- ${x.name} (${x.spanId}): $${x.costUsd}`,
               ),
             ]
           : [`- n/a`]),
@@ -1018,7 +1016,7 @@ router.get("/:traceId", async (req: Request, res: Response) => {
       const traceTree = await TraceQueryService.getTraceDetailTree(
         traceId,
         user.tenantId,
-        (req.query.projectId as string | undefined) || null
+        (req.query.projectId as string | undefined) || null,
       );
 
       if (!traceTree) {
@@ -1072,7 +1070,7 @@ router.get("/:traceId", async (req: Request, res: Response) => {
       const traceTree = await TraceQueryService.getTraceDetailTree(
         traceId,
         user.tenantId,
-        (req.query.projectId as string | undefined) || null
+        (req.query.projectId as string | undefined) || null,
       );
 
       if (!traceTree) {
@@ -1114,7 +1112,11 @@ router.get("/:traceId", async (req: Request, res: Response) => {
 
       return res.json({
         success: true,
-        trace: traceTree,
+        trace: {
+          ...traceTree,
+          input: traceTree.summary?.query ?? null,
+          output: traceTree.summary?.response ?? null,
+        },
         conversation: conversation || undefined,
       });
     }
@@ -1124,7 +1126,7 @@ router.get("/:traceId", async (req: Request, res: Response) => {
     const analysisResult = await TraceQueryService.getTraceDetail(
       traceId,
       user.tenantId,
-      (req.query.projectId as string | undefined) || null
+      (req.query.projectId as string | undefined) || null,
     );
 
     if (!analysisResult) {
@@ -1177,27 +1179,27 @@ router.get("/:traceId", async (req: Request, res: Response) => {
       const improvements: string[] = [];
       if (analysisResult.has_context_drop)
         improvements.push(
-          "Improve retrieval quality and ensure relevant context is included."
+          "Improve retrieval quality and ensure relevant context is included.",
         );
       if (analysisResult.has_faithfulness_issue)
         improvements.push(
-          "Add citations/grounding and tighten instructions to avoid unsupported claims."
+          "Add citations/grounding and tighten instructions to avoid unsupported claims.",
         );
       if (analysisResult.has_prompt_injection)
         improvements.push(
-          "Add prompt-injection guardrails and input sanitization."
+          "Add prompt-injection guardrails and input sanitization.",
         );
       if (analysisResult.has_context_overflow)
         improvements.push(
-          "Reduce prompt size with summarization or better chunk selection."
+          "Reduce prompt size with summarization or better chunk selection.",
         );
       if (analysisResult.has_latency_anomaly)
         improvements.push(
-          "Optimize slow spans and add caching where possible."
+          "Optimize slow spans and add caching where possible.",
         );
       if (analysisResult.has_cost_anomaly)
         improvements.push(
-          "Consider cheaper models, shorter prompts, and token budgeting."
+          "Consider cheaper models, shorter prompts, and token budgeting.",
         );
       return {
         overallScore:
@@ -1268,10 +1270,10 @@ router.get("/:traceId", async (req: Request, res: Response) => {
             tokensPerCharacter === null
               ? "average"
               : tokensPerCharacter > 1.2
-              ? "below_average"
-              : tokensPerCharacter < 0.6
-              ? "above_average"
-              : "average",
+                ? "below_average"
+                : tokensPerCharacter < 0.6
+                  ? "above_average"
+                  : "average",
         },
         qualityExplanation,
         analysis: {

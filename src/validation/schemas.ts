@@ -69,6 +69,18 @@ export const eventTypeSchema = z.enum([
   "agent_create",
 ]);
 
+const observationTypeSchema = z.enum([
+  "span",
+  "generation",
+  "tool",
+  "agent",
+  "chain",
+  "retriever",
+  "embedding",
+  "evaluator",
+  "guardrail",
+]);
+
 export const canonicalEventSchema = z.object({
   tenant_id: z.string().uuid(),
   project_id: z.string().uuid(),
@@ -85,7 +97,8 @@ export const canonicalEventSchema = z.object({
   agent_name: z.string().nullable().optional(),
   version: z.string().nullable().optional(),
   route: z.string().nullable().optional(),
-  attributes: z.record(z.string(), z.any()), // Flexible JSON object
+  observation_type: observationTypeSchema.nullable().optional(),
+  attributes: z.record(z.string(), z.any()), // Flexible JSON object (also accepts observation_type)
 });
 
 /**

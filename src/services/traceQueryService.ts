@@ -1845,23 +1845,6 @@ export class TraceQueryService {
       // Add event to span with unique ID
       const eventId = `${spanId}-${event.event_type}-${event.timestamp}`;
 
-      // Enhanced logging for llm_call events to verify attributes are preserved
-      const isLlmCall = event.event_type === "llm_call";
-      if (isLlmCall) {
-        console.log(
-          `[TraceQueryService] Adding llm_call event to span ${spanId}:`,
-        );
-        console.log(
-          `[TraceQueryService] event.attributes type: ${typeof event.attributes}`,
-        );
-        console.log(
-          `[TraceQueryService] event.attributes keys: ${Object.keys(event.attributes || {}).join(", ")}`,
-        );
-        console.log(
-          `[TraceQueryService] event.attributes.llm_call exists: ${!!event.attributes?.llm_call}`,
-        );
-      }
-
       spanEventsMap.get(spanId)!.push({
         id: eventId, // Add unique id for each event
         event_type: event.event_type,
@@ -1872,6 +1855,86 @@ export class TraceQueryService {
         original_span_id: event.span_id, // Keep original for frontend matching
       });
     }
+
+    // PHASE 1 (Langfuse parity): Precompute userQuery and finalOutput for input/output attribution
+    // Question and answer must be on different spans - Trace Start = question, Output span = answer
+    const outputEventForPrecompute = parsedEvents.find(
+      (e: any) => e.event_type === "output",
+    );
+    const llmCallEvents = parsedEvents.filter(
+      (e: any) => e.event_type === "llm_call",
+    );
+    const traceStartForPrecompute = parsedEvents.find(
+      (e: any) => e.event_type === "trace_start",
+    );
+
+    let userQuery: string | null = null;
+    // Extract from trace_start metadata if available, else first LLM input
+    if (traceStartForPrecompute?.attributes?.trace_start?.metadata?.input) {
+      const metaInput =
+        traceStartForPrecompute.attributes.trace_start.metadata.input;
+      userQuery =
+        typeof metaInput === "string" ? metaInput : JSON.stringify(metaInput);
+    }
+    if (!userQuery && llmCallEvents.length > 0) {
+      const firstLlm = llmCallEvents[0];
+      const llmAttrs = firstLlm?.attributes?.llm_call;
+      if (llmAttrs?.input) {
+        userQuery =
+          typeof llmAttrs.input === "string"
+            ? llmAttrs.input
+            : JSON.stringify(llmAttrs.input);
+      } else if (
+        Array.isArray(llmAttrs?.input_messages) &&
+        llmAttrs.input_messages.length > 0
+      ) {
+        const userMsg = llmAttrs.input_messages.find(
+          (m: any) => m.role === "user" || m.role === "human",
+        );
+        if (userMsg?.content) {
+          userQuery =
+            typeof userMsg.content === "string"
+              ? userMsg.content
+              : JSON.stringify(userMsg.content);
+        }
+      }
+    }
+
+    let finalOutput: string | null = null;
+    if (outputEventForPrecompute?.attributes?.output?.final_output != null) {
+      const fo = outputEventForPrecompute.attributes.output.final_output;
+      finalOutput = typeof fo === "string" ? fo : JSON.stringify(fo);
+    }
+    if (!finalOutput && llmCallEvents.length > 0) {
+      const lastLlm = llmCallEvents[llmCallEvents.length - 1];
+      const llmAttrs = lastLlm?.attributes?.llm_call;
+      let out: any = llmAttrs?.output;
+      if (
+        !out &&
+        Array.isArray(llmAttrs?.output_messages) &&
+        llmAttrs.output_messages.length > 0
+      ) {
+        out = llmAttrs.output_messages
+          .map((m: any) =>
+            typeof m?.content === "string"
+              ? m.content
+              : Array.isArray(m?.content)
+                ? m.content
+                    .map((c: any) => c?.text ?? c)
+                    .filter(Boolean)
+                    .join("\n")
+                : "",
+          )
+          .filter(Boolean)
+          .join("\n");
+      }
+      if (out != null) {
+        finalOutput = typeof out === "string" ? out : JSON.stringify(out);
+      }
+    }
+
+    const normalizeForCompare = (s: string | null): string =>
+      s == null ? "" : String(s).trim();
 
     // Second pass: calculate span durations, attach events, and extract detailed information
     for (const [spanId, span] of spansMap.entries()) {
@@ -2059,6 +2122,15 @@ export class TraceQueryService {
           tool_definitions: llmAttrs.tool_definitions || llmAttrs.tools || null,
           tools: llmAttrs.tools || llmAttrs.tool_definitions || null,
         };
+        // PHASE 1: When LLM output equals finalOutput, clear it so answer appears only on Output span
+        if (
+          span.llm_call.output != null &&
+          finalOutput != null &&
+          normalizeForCompare(String(span.llm_call.output)) ===
+            normalizeForCompare(finalOutput)
+        ) {
+          span.llm_call.output = null;
+        }
       }
 
       // Extract tool call details
@@ -2196,6 +2268,17 @@ export class TraceQueryService {
           final_output: outputAttrs.final_output || null,
           output_length: outputAttrs.output_length || null,
         };
+        // PHASE 1: Output span = answer only, no input
+        span.input = null;
+      }
+
+      // PHASE 3: Extract observation_type from event attributes (Langfuse parity)
+      for (const ev of spanEvents) {
+        const ot = ev.attributes?.observation_type;
+        if (ot && typeof ot === "string") {
+          span.observation_type = ot;
+          break;
+        }
       }
 
       // Extract trace lifecycle details
@@ -2208,6 +2291,9 @@ export class TraceQueryService {
           num_prompts: traceStartAttrs.num_prompts ?? null,
           created_at: traceStartAttrs.created_at || null,
         };
+        // PHASE 1: Trace Start span = user question only, no output
+        span.input = userQuery;
+        span.output = null;
       }
 
       if (traceEndEvent?.attributes?.trace_end) {
@@ -3234,6 +3320,47 @@ export class TraceQueryService {
       };
       // Mark that this is a root trace span (for frontend to handle differently)
       rootSpan.isRootTrace = true;
+      // PHASE 1: Root trace shows user question + final answer (Langfuse parity)
+      rootSpan.input = userQuery;
+      rootSpan.output = finalOutput;
+    }
+
+    // PHASE 1: Create synthetic Output span when no output event but finalOutput from last LLM
+    const hasOutputSpan = Array.from(spansMap.values()).some(
+      (s: any) => s.output?.final_output != null || s.type === "output",
+    );
+    if (!hasOutputSpan && finalOutput != null) {
+      const syntheticOutputId = `synthetic-output-${traceId}`;
+      const parentId =
+        originalRootSpanId ||
+        traceStartForPrecompute?.span_id ||
+        firstEvent?.span_id;
+      const syntheticOutputSpan: any = {
+        id: syntheticOutputId,
+        span_id: syntheticOutputId,
+        parent_span_id: parentId,
+        name: "Output",
+        start_time: lastEvent?.timestamp || new Date().toISOString(),
+        end_time: lastEvent?.timestamp || new Date().toISOString(),
+        duration_ms: 0,
+        events: [],
+        children: [],
+        metadata: {},
+        event_type: "output",
+        type: "output",
+        output: {
+          final_output: finalOutput,
+          output_length: finalOutput.length,
+        },
+        input: null,
+        final_output: finalOutput,
+        output_length: finalOutput.length,
+        hasOutput: true,
+        hasDetails: true,
+        selectable: true,
+      };
+      spansMap.set(syntheticOutputId, syntheticOutputSpan);
+      spanEventsMap.set(syntheticOutputId, []);
     }
 
     const rootSpans: any[] = [];
@@ -3466,11 +3593,12 @@ export class TraceQueryService {
       total_tokens: traceEndAttrs?.total_tokens || llmAttrs?.total_tokens || 0,
       total_cost: totalCost,
       model: llmAttrs?.model || null,
-      query: llmAttrs?.input || null, // User query from first LLM call input
+      query: userQuery ?? llmAttrs?.input ?? null,
       response:
-        outputEvent?.attributes?.output?.final_output ||
-        llmAttrs?.output ||
-        null, // Final response
+        finalOutput ??
+        outputEvent?.attributes?.output?.final_output ??
+        llmAttrs?.output ??
+        null,
       finish_reason: llmAttrs?.finish_reason || null, // Finish reason from LLM call
     };
 

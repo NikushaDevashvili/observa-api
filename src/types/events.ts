@@ -1,13 +1,13 @@
 /**
  * Canonical Event Envelope
- * 
+ *
  * Single unified event format for all observability events (LLM calls, tool calls, retrieval, errors, feedback).
  * This replaces the legacy "one trace row" model with a flexible event-based architecture.
  */
 
-export type EventType = 
+export type EventType =
   | "llm_call"
-  | "tool_call" 
+  | "tool_call"
   | "retrieval"
   | "error"
   | "feedback"
@@ -18,6 +18,21 @@ export type EventType =
   | "vector_db_operation"
   | "cache_operation"
   | "agent_create";
+
+/**
+ * Langfuse-style observation types for span display
+ * Optional; maps event_type when not provided
+ */
+export type ObservationType =
+  | "span"
+  | "generation"
+  | "tool"
+  | "agent"
+  | "chain"
+  | "retriever"
+  | "embedding"
+  | "evaluator"
+  | "guardrail";
 
 /**
  * Base canonical event envelope - all events share these fields
@@ -32,7 +47,7 @@ export interface CanonicalEvent {
   parent_span_id: string | null;
   timestamp: string; // ISO 8601 format
   event_type: EventType;
-  
+
   // Strongly recommended fields (present in most events)
   conversation_id?: string | null;
   session_id?: string | null;
@@ -40,7 +55,10 @@ export interface CanonicalEvent {
   agent_name?: string | null;
   version?: string | null;
   route?: string | null;
-  
+
+  // PHASE 3: Optional observation type (Langfuse parity)
+  observation_type?: ObservationType | null;
+
   // Event-specific attributes (JSON field for extensibility)
   attributes: EventAttributes;
 }
@@ -69,7 +87,12 @@ export interface EventAttributes {
     input_hash?: string | null;
     output_hash?: string | null;
     // TIER 1: OTEL Semantic Conventions
-    operation_name?: "chat" | "text_completion" | "generate_content" | string | null; // gen_ai.operation.name
+    operation_name?:
+      | "chat"
+      | "text_completion"
+      | "generate_content"
+      | string
+      | null; // gen_ai.operation.name
     provider_name?: string | null; // gen_ai.provider.name (e.g., "openai", "anthropic", "gcp.vertex_ai")
     response_model?: string | null; // gen_ai.response.model (actual model used vs requested)
     // TIER 2: Sampling parameters
@@ -111,7 +134,7 @@ export interface EventAttributes {
     time_to_first_token_ms?: number | null;
     streaming_duration_ms?: number | null;
   };
-  
+
   // Tool call attributes
   tool_call?: {
     tool_name: string;
@@ -130,7 +153,7 @@ export interface EventAttributes {
     error_type?: string | null; // error.type
     error_category?: string | null; // error.category
   };
-  
+
   // Retrieval attributes
   retrieval?: {
     retrieval_context_ids?: string[] | null;
@@ -149,7 +172,7 @@ export interface EventAttributes {
     deduplication_removed_count?: number | null; // Chunks filtered
     quality_score?: number | null; // Overall retrieval quality
   };
-  
+
   // Error attributes
   error?: {
     error_type: string;
@@ -160,7 +183,7 @@ export interface EventAttributes {
     error_category?: string | null; // error.category
     error_code?: string | null; // error.code
   };
-  
+
   // TIER 1: Embedding attributes
   embedding?: {
     model: string; // gen_ai.request.model
@@ -177,7 +200,7 @@ export interface EventAttributes {
     operation_name?: "embeddings" | string | null; // gen_ai.operation.name
     provider_name?: string | null; // gen_ai.provider.name
   };
-  
+
   // TIER 3: Vector DB operation attributes
   vector_db_operation?: {
     operation_type: "vector_search" | "index_upsert" | "delete" | string;
@@ -192,7 +215,7 @@ export interface EventAttributes {
     api_version?: string | null;
     provider_name?: string | null; // e.g., "pinecone", "weaviate", "qdrant"
   };
-  
+
   // TIER 3: Cache operation attributes
   cache_operation?: {
     cache_backend?: "redis" | "in_memory" | "memcached" | string | null;
@@ -204,7 +227,7 @@ export interface EventAttributes {
     ttl?: number | null; // Time to live
     eviction_info?: Record<string, any> | null;
   };
-  
+
   // TIER 3: Agent creation attributes
   agent_create?: {
     agent_name: string;
@@ -213,7 +236,7 @@ export interface EventAttributes {
     model_config?: Record<string, any> | null;
     operation_name?: "create_agent" | string | null; // gen_ai.operation.name
   };
-  
+
   // Feedback attributes
   feedback?: {
     type: "like" | "dislike" | "rating" | "correction";
@@ -221,20 +244,20 @@ export interface EventAttributes {
     comment?: string | null;
     outcome?: "success" | "failure" | "partial" | null;
   };
-  
+
   // Output attributes (final output event)
   output?: {
     final_output?: string | null;
     final_output_hash?: string | null;
     output_length?: number | null;
   };
-  
+
   // Trace lifecycle attributes
   trace_start?: {
     name?: string | null;
     metadata?: Record<string, any> | null;
   };
-  
+
   trace_end?: {
     total_latency_ms?: number | null;
     total_cost?: number | null;
@@ -263,4 +286,3 @@ export interface TinybirdCanonicalEvent {
   route: string | null;
   attributes_json: string; // JSON string of EventAttributes
 }
-

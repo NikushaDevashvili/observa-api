@@ -60,19 +60,22 @@ function sanitizeAttributes(value: any): any {
         if (
           trimmed.startsWith('"') &&
           !trimmed.startsWith('"{') &&
-          trimmed.includes(':') &&
+          trimmed.includes(":") &&
           trimmed.length > 3
         ) {
           // Try to extract key and value and reconstruct as valid JSON object
           const keyValueMatch = trimmed.match(/^"([^"]+)"\s*:\s*(.+)$/);
           if (keyValueMatch && keyValueMatch[1]) {
             const argKey: string = keyValueMatch[1];
-            let argVal: any = keyValueMatch[2] || '';
-            
+            let argVal: any = keyValueMatch[2] || "";
+
             // Parse the value
             if (argVal.startsWith('"') && argVal.endsWith('"')) {
               // Quoted string - extract and unescape
-              argVal = argVal.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+              argVal = argVal
+                .slice(1, -1)
+                .replace(/\\"/g, '"')
+                .replace(/\\\\/g, "\\");
             } else {
               // Try parsing as JSON (for numbers, booleans, etc.)
               try {
@@ -81,7 +84,7 @@ function sanitizeAttributes(value: any): any {
                 // Keep as string
               }
             }
-            
+
             // Reconstruct as valid JSON object
             try {
               sanitized[key] = { [argKey]: argVal };
@@ -95,7 +98,12 @@ function sanitizeAttributes(value: any): any {
         } else {
           sanitized[key] = tryParseJsonString(val);
         }
-      } else if (key === "function_call" && val && typeof val === "object" && "arguments" in val) {
+      } else if (
+        key === "function_call" &&
+        val &&
+        typeof val === "object" &&
+        "arguments" in val
+      ) {
         // Handle function_call.arguments
         const fc = { ...val } as Record<string, any>;
         if (typeof fc.arguments === "string") {
@@ -104,15 +112,18 @@ function sanitizeAttributes(value: any): any {
           if (
             trimmed.startsWith('"') &&
             !trimmed.startsWith('"{') &&
-            trimmed.includes(':') &&
+            trimmed.includes(":") &&
             trimmed.length > 3
           ) {
             const keyValueMatch = trimmed.match(/^"([^"]+)"\s*:\s*(.+)$/);
             if (keyValueMatch && keyValueMatch[1]) {
               const argKey: string = keyValueMatch[1];
-              let argVal: any = keyValueMatch[2] || '';
+              let argVal: any = keyValueMatch[2] || "";
               if (argVal.startsWith('"') && argVal.endsWith('"')) {
-                argVal = argVal.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                argVal = argVal
+                  .slice(1, -1)
+                  .replace(/\\"/g, '"')
+                  .replace(/\\\\/g, "\\");
               } else {
                 try {
                   argVal = JSON.parse(argVal);
@@ -133,7 +144,12 @@ function sanitizeAttributes(value: any): any {
           }
         }
         sanitized[key] = sanitizeAttributes(fc);
-      } else if (key === "function" && val && typeof val === "object" && "arguments" in val) {
+      } else if (
+        key === "function" &&
+        val &&
+        typeof val === "object" &&
+        "arguments" in val
+      ) {
         // Handle tool_calls[].function.arguments
         const fn = { ...val } as Record<string, any>;
         if (typeof fn.arguments === "string") {
@@ -141,15 +157,18 @@ function sanitizeAttributes(value: any): any {
           if (
             trimmed.startsWith('"') &&
             !trimmed.startsWith('"{') &&
-            trimmed.includes(':') &&
+            trimmed.includes(":") &&
             trimmed.length > 3
           ) {
             const keyValueMatch = trimmed.match(/^"([^"]+)"\s*:\s*(.+)$/);
             if (keyValueMatch && keyValueMatch[1]) {
               const argKey: string = keyValueMatch[1];
-              let argVal: any = keyValueMatch[2] || '';
+              let argVal: any = keyValueMatch[2] || "";
               if (argVal.startsWith('"') && argVal.endsWith('"')) {
-                argVal = argVal.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                argVal = argVal
+                  .slice(1, -1)
+                  .replace(/\\"/g, '"')
+                  .replace(/\\\\/g, "\\");
               } else {
                 try {
                   argVal = JSON.parse(argVal);
@@ -186,7 +205,7 @@ router.use((req, res, next) => {
     express.text({ limit: "5mb", type: "application/x-ndjson" })(
       req,
       res,
-      next
+      next,
     );
   } else {
     express.json({ limit: "5mb" })(req, res, next);
@@ -283,8 +302,8 @@ router.post(
         const bodyText = Buffer.isBuffer(req.body)
           ? req.body.toString("utf8")
           : typeof req.body === "string"
-          ? req.body
-          : JSON.stringify(req.body);
+            ? req.body
+            : JSON.stringify(req.body);
         const lines = bodyText
           .split("\n")
           .filter((line: string) => line.trim());
@@ -345,7 +364,7 @@ router.post(
         for (let i = 0; i < events.length; i++) {
           const eventSize = Buffer.byteLength(
             JSON.stringify(events[i]),
-            "utf8"
+            "utf8",
           );
           const sizeCheck = validateEventSize(eventSize, i);
           if (!sizeCheck.valid) {
@@ -388,7 +407,7 @@ router.post(
       // Scrub secrets from event attributes before storage
       const scrubbedEvents = validatedEvents.map((event) => {
         const scrubbingResult = SecretsScrubbingService.scrubEventAttributes(
-          event.attributes
+          event.attributes,
         );
 
         // Store scrubbing metadata in event (will be used to emit signal)
@@ -445,7 +464,7 @@ router.post(
               runId: "run1",
               hypothesisId: "D",
             }),
-          }
+          },
         ).catch(() => {});
       } catch {
         // ignore debug logging errors
@@ -466,8 +485,8 @@ router.post(
           typeof llm.total_tokens === "number"
             ? llm.total_tokens
             : inputTokens !== null || outputTokens !== null
-            ? (inputTokens || 0) + (outputTokens || 0)
-            : null;
+              ? (inputTokens || 0) + (outputTokens || 0)
+              : null;
 
         const inputCost =
           typeof llm.input_cost === "number" ? llm.input_cost : null;
@@ -484,8 +503,8 @@ router.post(
           !hasCost && costFromBreakdown !== null
             ? costFromBreakdown
             : !hasCost && totalTokens !== null && model
-            ? calculateCost(totalTokens, model)
-            : llm.cost;
+              ? calculateCost(totalTokens, model)
+              : llm.cost;
 
         return {
           ...event,
@@ -526,7 +545,7 @@ router.post(
               runId: "run1",
               hypothesisId: "E",
             }),
-          }
+          },
         ).catch(() => {});
       } catch {
         // ignore debug logging errors
@@ -591,9 +610,8 @@ router.post(
 
       // Convert to Tinybird format
       // Use utility function to handle nullable field formatting for strict type checking
-      const { formatTinybirdEvents, cleanNullValues } = await import(
-        "../utils/tinybirdEventFormatter.js"
-      );
+      const { formatTinybirdEvents, cleanNullValues } =
+        await import("../utils/tinybirdEventFormatter.js");
       const tinybirdEvents: TinybirdCanonicalEvent[] = validatedEvents.map(
         (event) => {
           // Preserve actual values when they exist, only use empty string as fallback
@@ -632,31 +650,45 @@ router.post(
               try {
                 // CRITICAL: Ensure attributes is always an object (not undefined/null)
                 // This prevents attributes_json from being lost during conversion
-                const attributes = sanitizeAttributes(event.attributes || {});
+                // PHASE 3: Include observation_type in attributes for storage (Langfuse parity)
+                const baseAttrs = event.attributes || {};
+                const attrsWithObservation =
+                  (event as any).observation_type != null
+                    ? {
+                        ...baseAttrs,
+                        observation_type: (event as any).observation_type,
+                      }
+                    : baseAttrs;
+                const attributes = sanitizeAttributes(attrsWithObservation);
                 const cleaned = cleanNullValues(attributes);
 
                 // Ensure cleaned is an object (not undefined)
                 const finalAttributes = cleaned !== undefined ? cleaned : {};
-                
+
                 // CRITICAL: Double-check for any remaining malformed arguments before stringifying
                 // This is a final safety net to catch any that might have been missed
                 const finalCheck = (obj: any): any => {
                   if (obj === null || obj === undefined) return obj;
-                  if (typeof obj === 'string') {
+                  if (typeof obj === "string") {
                     const trimmed = obj.trim();
                     if (
                       trimmed.startsWith('"') &&
                       !trimmed.startsWith('"{') &&
-                      trimmed.includes(':') &&
+                      trimmed.includes(":") &&
                       trimmed.length > 3
                     ) {
                       // This looks like malformed JSON - try to fix it
-                      const keyValueMatch = trimmed.match(/^"([^"]+)"\s*:\s*(.+)$/);
+                      const keyValueMatch = trimmed.match(
+                        /^"([^"]+)"\s*:\s*(.+)$/,
+                      );
                       if (keyValueMatch && keyValueMatch[1]) {
                         const key: string = keyValueMatch[1];
-                        let val: any = keyValueMatch[2] || '';
+                        let val: any = keyValueMatch[2] || "";
                         if (val.startsWith('"') && val.endsWith('"')) {
-                          val = val.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                          val = val
+                            .slice(1, -1)
+                            .replace(/\\"/g, '"')
+                            .replace(/\\\\/g, "\\");
                         } else {
                           try {
                             val = JSON.parse(val);
@@ -676,20 +708,36 @@ router.post(
                   if (Array.isArray(obj)) {
                     return obj.map(finalCheck);
                   }
-                  if (typeof obj === 'object') {
+                  if (typeof obj === "object") {
                     const result: Record<string, any> = {};
                     for (const [key, val] of Object.entries(obj)) {
-                      if (key === 'arguments' && typeof val === 'string') {
+                      if (key === "arguments" && typeof val === "string") {
                         result[key] = finalCheck(val);
-                      } else if (key === 'function_call' && val && typeof val === 'object' && 'arguments' in val) {
+                      } else if (
+                        key === "function_call" &&
+                        val &&
+                        typeof val === "object" &&
+                        "arguments" in val
+                      ) {
                         result[key] = {
                           ...val,
-                          arguments: typeof val.arguments === 'string' ? finalCheck(val.arguments) : finalCheck(val.arguments)
+                          arguments:
+                            typeof val.arguments === "string"
+                              ? finalCheck(val.arguments)
+                              : finalCheck(val.arguments),
                         };
-                      } else if (key === 'function' && val && typeof val === 'object' && 'arguments' in val) {
+                      } else if (
+                        key === "function" &&
+                        val &&
+                        typeof val === "object" &&
+                        "arguments" in val
+                      ) {
                         result[key] = {
                           ...val,
-                          arguments: typeof val.arguments === 'string' ? finalCheck(val.arguments) : finalCheck(val.arguments)
+                          arguments:
+                            typeof val.arguments === "string"
+                              ? finalCheck(val.arguments)
+                              : finalCheck(val.arguments),
                         };
                       } else {
                         result[key] = finalCheck(val);
@@ -699,7 +747,7 @@ router.post(
                   }
                   return obj;
                 };
-                
+
                 const fullySanitized = finalCheck(finalAttributes);
                 const jsonStr = JSON.stringify(fullySanitized);
 
@@ -710,22 +758,22 @@ router.post(
                 if (event.event_type === "feedback") {
                   console.log(
                     `[Events API] Feedback event attributes_json:`,
-                    jsonStr.substring(0, 500)
+                    jsonStr.substring(0, 500),
                   );
                   console.log(
                     `[Events API] Original attributes:`,
-                    JSON.stringify(attributes, null, 2).substring(0, 500)
+                    JSON.stringify(attributes, null, 2).substring(0, 500),
                   );
                   console.log(
                     `[Events API] Cleaned attributes:`,
-                    JSON.stringify(finalAttributes, null, 2).substring(0, 500)
+                    JSON.stringify(finalAttributes, null, 2).substring(0, 500),
                   );
                   console.log(
                     `[Events API] Has feedback object:`,
                     finalAttributes?.feedback ? "YES" : "NO",
                     finalAttributes?.feedback
                       ? JSON.stringify(finalAttributes.feedback)
-                      : "missing"
+                      : "missing",
                   );
                 }
 
@@ -733,27 +781,27 @@ router.post(
               } catch (e) {
                 console.error(
                   `[Events API] Failed to stringify attributes for event ${event.event_type}:`,
-                  e instanceof Error ? e.message : String(e)
+                  e instanceof Error ? e.message : String(e),
                 );
                 console.error(
                   `[Events API] Attributes that failed:`,
-                  JSON.stringify(event.attributes, null, 2).substring(0, 500)
+                  JSON.stringify(event.attributes, null, 2).substring(0, 500),
                 );
                 // Return empty JSON object as fallback
                 return "{}";
               }
             })(),
           };
-        }
+        },
       );
 
       // DEBUG: Check for feedback events BEFORE formatting
       const feedbackEventsBeforeFormat = tinybirdEvents.filter(
-        (e: any) => e.event_type === "feedback"
+        (e: any) => e.event_type === "feedback",
       );
       if (feedbackEventsBeforeFormat.length > 0) {
         console.log(
-          `[Events API] 🔍 Found ${feedbackEventsBeforeFormat.length} feedback event(s) BEFORE formatting`
+          `[Events API] 🔍 Found ${feedbackEventsBeforeFormat.length} feedback event(s) BEFORE formatting`,
         );
         feedbackEventsBeforeFormat.forEach((fe: any, i: number) => {
           console.log(`[Events API] Raw Feedback ${i + 1}:`, {
@@ -772,11 +820,11 @@ router.post(
 
       // DEBUG: Log feedback events AFTER formatting (before sending to Tinybird)
       const feedbackEventsAfterFormat = formattedEvents.filter(
-        (e: any) => e.event_type === "feedback"
+        (e: any) => e.event_type === "feedback",
       );
       if (feedbackEventsAfterFormat.length > 0) {
         console.log(
-          `[Events API] 📝 About to send ${feedbackEventsAfterFormat.length} feedback event(s) to Tinybird`
+          `[Events API] 📝 About to send ${feedbackEventsAfterFormat.length} feedback event(s) to Tinybird`,
         );
         feedbackEventsAfterFormat.forEach((fe: any, i: number) => {
           console.log(`[Events API] Formatted Feedback ${i + 1} before send:`, {
@@ -801,16 +849,16 @@ router.post(
           } catch (e) {
             console.error(
               `[Events API] Failed to parse formatted feedback ${i + 1}:`,
-              e
+              e,
             );
           }
         });
       } else if (feedbackEventsBeforeFormat.length > 0) {
         console.error(
-          `[Events API] ⚠️ WARNING: ${feedbackEventsBeforeFormat.length} feedback events BEFORE formatting, but 0 AFTER formatting!`
+          `[Events API] ⚠️ WARNING: ${feedbackEventsBeforeFormat.length} feedback events BEFORE formatting, but 0 AFTER formatting!`,
         );
         console.error(
-          `[Events API] This suggests formatTinybirdEvents is removing them!`
+          `[Events API] This suggests formatTinybirdEvents is removing them!`,
         );
       }
 
@@ -819,7 +867,7 @@ router.post(
       try {
         await CanonicalEventService.forwardToTinybird(formattedEvents);
         console.log(
-          `[Events API] Successfully forwarded ${formattedEvents.length} events to Tinybird`
+          `[Events API] Successfully forwarded ${formattedEvents.length} events to Tinybird`,
         );
       } catch (tinybirdError) {
         const errorMessage =
@@ -827,13 +875,13 @@ router.post(
             ? tinybirdError.message
             : "Unknown Tinybird error";
         console.error(
-          `[Events API] CRITICAL: Failed to forward events to Tinybird: ${errorMessage}`
+          `[Events API] CRITICAL: Failed to forward events to Tinybird: ${errorMessage}`,
         );
         console.error(
           `[Events API] Event count: ${formattedEvents.length}, First event:`,
           formattedEvents[0]
             ? JSON.stringify(formattedEvents[0], null, 2)
-            : "none"
+            : "none",
         );
         // Re-throw to fail the request - events must be stored in Tinybird
         throw new Error(`Failed to store events in Tinybird: ${errorMessage}`);
@@ -845,10 +893,10 @@ router.post(
         (error) => {
           console.error(
             "[Events API] Failed to store trace summaries (non-fatal):",
-            error
+            error,
           );
           // Don't fail the request if trace summary storage fails
-        }
+        },
       );
 
       // Generate Layer 2 signals (async, non-blocking)
@@ -857,13 +905,13 @@ router.post(
       SignalsService.processEvents(tinybirdEvents)
         .then(() => {
           console.log(
-            `[Events API] ✅ Processed signals for ${validatedEvents.length} events`
+            `[Events API] ✅ Processed signals for ${validatedEvents.length} events`,
           );
         })
         .catch((error) => {
           console.error(
             "[Events API] ❌ Failed to process signals (non-fatal):",
-            error
+            error,
           );
         });
 
@@ -872,12 +920,12 @@ router.post(
         await QuotaService.incrementUsage(
           tenantId,
           projectId,
-          validatedEvents.length
+          validatedEvents.length,
         );
       } catch (quotaError) {
         console.error(
           "[Events API] Failed to increment quota (non-fatal):",
-          quotaError
+          quotaError,
         );
         // Don't fail the request if quota increment fails
       }
@@ -898,7 +946,7 @@ router.post(
         },
       });
     }
-  }
+  },
 );
 
 /**
@@ -907,7 +955,7 @@ router.post(
  */
 function calculateCost(
   tokensTotal: number | null,
-  model: string | null
+  model: string | null,
 ): number {
   if (!tokensTotal || !model) return 0;
 
@@ -936,7 +984,7 @@ function calculateCost(
 async function storeTraceSummaries(
   events: CanonicalEvent[],
   tenantId: string,
-  projectId: string | null
+  projectId: string | null,
 ): Promise<void> {
   const { query } = await import("../db/client.js");
 
@@ -955,7 +1003,7 @@ async function storeTraceSummaries(
     const llmCallEvent = traceEvents.find((e) => e.event_type === "llm_call");
     const outputEvent = traceEvents.find((e) => e.event_type === "output");
     const traceStartEvent = traceEvents.find(
-      (e) => e.event_type === "trace_start"
+      (e) => e.event_type === "trace_start",
     );
     const traceEndEvent = traceEvents.find((e) => e.event_type === "trace_end");
 
@@ -978,7 +1026,7 @@ async function storeTraceSummaries(
         } catch (e) {
           console.warn(
             `[storeTraceSummaries] Failed to parse attributes_json for ${event.event_type}:`,
-            e instanceof Error ? e.message : String(e)
+            e instanceof Error ? e.message : String(e),
           );
           return {};
         }
@@ -1025,7 +1073,7 @@ async function storeTraceSummaries(
         } catch (e) {
           console.warn(
             `[storeTraceSummaries] Failed to parse attributes_json for event ${event.event_type}:`,
-            e instanceof Error ? e.message : String(e)
+            e instanceof Error ? e.message : String(e),
           );
           return {};
         }
@@ -1134,7 +1182,7 @@ async function storeTraceSummaries(
     // Store in analysis_results using TraceService
     await TraceService.storeTraceData(traceData);
     console.log(
-      `[Events API] Stored trace summary for ${traceId} in analysis_results`
+      `[Events API] Stored trace summary for ${traceId} in analysis_results`,
     );
 
     // Handle conversation tracking (if provided)
@@ -1155,18 +1203,18 @@ async function storeTraceSummaries(
           tokensTotal: traceData.tokensTotal ?? null,
           cost: calculateCost(
             traceData.tokensTotal ?? null,
-            traceData.model || null
+            traceData.model || null,
           ),
           hasIssues, // Basic detection from canonical events
         });
 
         console.log(
-          `[Events API] Updated conversation ${conversationId} - TraceID: ${traceId}`
+          `[Events API] Updated conversation ${conversationId} - TraceID: ${traceId}`,
         );
       } catch (error) {
         console.error(
           `[Events API] Failed to update conversation (non-fatal):`,
-          error
+          error,
         );
         // Don't throw - conversation tracking failure shouldn't break event ingestion
       }
@@ -1189,12 +1237,12 @@ async function storeTraceSummaries(
         });
 
         console.log(
-          `[Events API] Updated session ${sessionId} - TraceID: ${traceId}`
+          `[Events API] Updated session ${sessionId} - TraceID: ${traceId}`,
         );
       } catch (error) {
         console.error(
           `[Events API] Failed to update session (non-fatal):`,
-          error
+          error,
         );
         // Don't throw - session tracking failure shouldn't break event ingestion
       }
