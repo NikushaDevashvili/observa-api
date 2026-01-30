@@ -746,8 +746,16 @@ function determineImpact(
  * Transform a single Observa span to Agent-Prism TraceSpan
  */
 function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
-  const startTime = isoToUnixMs(span.start_time);
-  const endTime = isoToUnixMs(span.end_time);
+  let startTime = isoToUnixMs(span.start_time);
+  let endTime = isoToUnixMs(span.end_time);
+  // Agent-prism uses endTime - startTime for bar width; ensure correct duration when we have it
+  if (
+    span.duration_ms != null &&
+    span.duration_ms > 0 &&
+    (endTime <= startTime || !Number.isFinite(endTime))
+  ) {
+    endTime = startTime + span.duration_ms;
+  }
 
   // Start with metadata as base attributes
   const attributes: Record<string, any> = {

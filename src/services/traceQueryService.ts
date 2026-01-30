@@ -3331,9 +3331,19 @@ export class TraceQueryService {
         const earliestStart = Math.min(
           ...allChildSpans.map((s: any) => new Date(s.start_time).getTime()),
         );
-        const latestEnd = Math.max(
+        let latestEnd = Math.max(
           ...allChildSpans.map((s: any) => new Date(s.end_time).getTime()),
         );
+        // Extend to total_latency_ms when larger so timeline bars explain full duration
+        const traceEndMs =
+          traceEnd?.attributes?.trace_end?.total_latency_ms ?? 0;
+        if (
+          typeof traceEndMs === "number" &&
+          traceEndMs > 0 &&
+          latestEnd < earliestStart + traceEndMs
+        ) {
+          latestEnd = earliestStart + traceEndMs;
+        }
         rootSpan.start_time = new Date(earliestStart).toISOString();
         rootSpan.end_time = new Date(latestEnd).toISOString();
         rootSpan.duration_ms = latestEnd - earliestStart;
@@ -3566,6 +3576,34 @@ export class TraceQueryService {
         }
       }
     }
+
+    // PHASE 6: Sort children so Output appears before Trace End (logical order: ... → Output → Trace End)
+    const childOrderPriority = (s: any): number => {
+      const t = s.type || s.event_type || "";
+      const id = String(s.id || s.span_id || "");
+      if (t === "trace_start" || id.endsWith("-trace_start")) return 0;
+      if (t === "trace_end" || id.endsWith("-trace_end")) return 3;
+      if (
+        t === "output" ||
+        id.endsWith("-output") ||
+        id.startsWith("synthetic-output-")
+      )
+        return 2;
+      return 1; // llm_call, tool_call, etc.
+    };
+    const sortChildrenRecursive = (span: any) => {
+      if (!span?.children?.length) return;
+      span.children.sort((a: any, b: any) => {
+        const pa = childOrderPriority(a);
+        const pb = childOrderPriority(b);
+        if (pa !== pb) return pa - pb;
+        const ta = new Date(a.start_time || 0).getTime();
+        const tb = new Date(b.start_time || 0).getTime();
+        return ta - tb;
+      });
+      for (const c of span.children) sortChildrenRecursive(c);
+    };
+    for (const root of rootSpans) sortChildrenRecursive(root);
 
     // Build summary from events
     const llmAttrs = llmCall?.attributes?.llm_call;
