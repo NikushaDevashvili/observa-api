@@ -1,6 +1,6 @@
 /**
  * Signals Service
- * 
+ *
  * Layer 2: Deterministic/free signals (run on 100% of events)
  * - Latency thresholds (p95/p99 by route/model)
  * - Error rate by tool/model/version
@@ -41,7 +41,10 @@ export class SignalsService {
       // Safely parse attributes_json - skip events with invalid JSON
       let attributes: any;
       try {
-        if (typeof event.attributes_json === "string" && event.attributes_json.trim()) {
+        if (
+          typeof event.attributes_json === "string" &&
+          event.attributes_json.trim()
+        ) {
           attributes = JSON.parse(event.attributes_json);
         } else {
           // Skip events without valid attributes_json
@@ -53,7 +56,7 @@ export class SignalsService {
         if (parseErrors <= 3) {
           console.warn(
             `[SignalsService] Failed to parse attributes_json for event ${event.event_type} (trace: ${event.trace_id}):`,
-            e instanceof Error ? e.message : String(e)
+            e instanceof Error ? e.message : String(e),
           );
         }
         // Skip this event and continue processing others
@@ -252,92 +255,99 @@ export class SignalsService {
     // In a full implementation, you might want a dedicated "signal" event_type
     // For now, we'll use a metadata approach or store as error events with signal attributes
     if (signals.length > 0) {
-        // Get environment from first event (all events in batch should have same env)
-        const environment = events.length > 0 ? events[0].environment : "prod";
+      // Get environment from first event (all events in batch should have same env)
+      const environment = events.length > 0 ? events[0].environment : "prod";
 
-        // Create a map to look up original events by trace_id + span_id
-        // This allows signals to inherit conversation_id, session_id, and user_id from source events
-        const eventMap = new Map<string, TinybirdCanonicalEvent>();
-        for (const event of events) {
-          const key = `${event.trace_id}:${event.span_id}`;
-          // Use the first event with this key (prefer events with non-empty conversation/session/user IDs)
-          if (!eventMap.has(key)) {
+      // Create a map to look up original events by trace_id + span_id
+      // This allows signals to inherit conversation_id, session_id, and user_id from source events
+      const eventMap = new Map<string, TinybirdCanonicalEvent>();
+      for (const event of events) {
+        const key = `${event.trace_id}:${event.span_id}`;
+        // Use the first event with this key (prefer events with non-empty conversation/session/user IDs)
+        if (!eventMap.has(key)) {
+          eventMap.set(key, event);
+        } else {
+          // Prefer events with actual conversation/session/user IDs over empty strings
+          const existing = eventMap.get(key)!;
+          const hasExistingValues =
+            (existing.conversation_id &&
+              existing.conversation_id.trim() !== "") ||
+            (existing.session_id && existing.session_id.trim() !== "") ||
+            (existing.user_id && existing.user_id.trim() !== "");
+          const hasNewValues =
+            (event.conversation_id && event.conversation_id.trim() !== "") ||
+            (event.session_id && event.session_id.trim() !== "") ||
+            (event.user_id && event.user_id.trim() !== "");
+          if (!hasExistingValues && hasNewValues) {
             eventMap.set(key, event);
-          } else {
-            // Prefer events with actual conversation/session/user IDs over empty strings
-            const existing = eventMap.get(key)!;
-            const hasExistingValues = 
-              (existing.conversation_id && existing.conversation_id.trim() !== "") ||
-              (existing.session_id && existing.session_id.trim() !== "") ||
-              (existing.user_id && existing.user_id.trim() !== "");
-            const hasNewValues = 
-              (event.conversation_id && event.conversation_id.trim() !== "") ||
-              (event.session_id && event.session_id.trim() !== "") ||
-              (event.user_id && event.user_id.trim() !== "");
-            if (!hasExistingValues && hasNewValues) {
-              eventMap.set(key, event);
-            }
           }
         }
+      }
 
-        const signalEvents: TinybirdCanonicalEvent[] = signals.map((signal) => {
-          // Find the original event that generated this signal
-          const key = `${signal.trace_id}:${signal.span_id}`;
-          const sourceEvent = eventMap.get(key);
-          
-          // Inherit conversation_id, session_id, user_id from source event
-          // Use empty string only if source event doesn't have them
-          // CRITICAL: These fields are REQUIRED (not nullable) in Tinybird
-          const conversationId = sourceEvent?.conversation_id && 
-            sourceEvent.conversation_id.trim() !== "" 
-            ? sourceEvent.conversation_id 
+      const signalEvents: TinybirdCanonicalEvent[] = signals.map((signal) => {
+        // Find the original event that generated this signal
+        const key = `${signal.trace_id}:${signal.span_id}`;
+        const sourceEvent = eventMap.get(key);
+
+        // Inherit conversation_id, session_id, user_id from source event
+        // Use empty string only if source event doesn't have them
+        // CRITICAL: These fields are REQUIRED (not nullable) in Tinybird
+        const conversationId =
+          sourceEvent?.conversation_id &&
+          sourceEvent.conversation_id.trim() !== ""
+            ? sourceEvent.conversation_id
             : "";
-          const sessionId = sourceEvent?.session_id && 
-            sourceEvent.session_id.trim() !== "" 
-            ? sourceEvent.session_id 
+        const sessionId =
+          sourceEvent?.session_id && sourceEvent.session_id.trim() !== ""
+            ? sourceEvent.session_id
             : "";
-          const userId = sourceEvent?.user_id && 
-            sourceEvent.user_id.trim() !== "" 
-            ? sourceEvent.user_id 
+        const userId =
+          sourceEvent?.user_id && sourceEvent.user_id.trim() !== ""
+            ? sourceEvent.user_id
             : "";
 
-          return {
-            tenant_id: signal.tenant_id,
-            project_id: signal.project_id,
-            environment: environment,
-            trace_id: signal.trace_id,
-            span_id: signal.span_id,
-            parent_span_id: null,
-            timestamp: signal.timestamp,
-            event_type: "error" as EventType, // Use error type as placeholder for signals
-            // Inherit conversation/session/user IDs from source event (required fields)
-            conversation_id: conversationId,
-            session_id: sessionId,
-            user_id: userId,
-            agent_name: null,
-            version: null,
-            route: null,
-            attributes_json: JSON.stringify({
-              signal: {
-                signal_name: signal.signal_name,
-                signal_type: signal.signal_type,
-                signal_value: signal.signal_value,
-                signal_severity: signal.signal_severity,
-                metadata: signal.metadata,
-              },
-            }),
-          };
-        });
+        // CRITICAL: Inherit parent_span_id from source event so signal doesn't create a false "second attempt"
+        // (Signals with parent_span_id null were being counted as separate roots → bogus "2 attempts")
+        const parentSpanId = sourceEvent?.parent_span_id ?? null;
+
+        return {
+          tenant_id: signal.tenant_id,
+          project_id: signal.project_id,
+          environment: environment,
+          trace_id: signal.trace_id,
+          span_id: signal.span_id,
+          parent_span_id: parentSpanId,
+          timestamp: signal.timestamp,
+          event_type: "error" as EventType, // Use error type as placeholder for signals
+          // Inherit conversation/session/user IDs from source event (required fields)
+          conversation_id: conversationId,
+          session_id: sessionId,
+          user_id: userId,
+          agent_name: null,
+          version: null,
+          route: null,
+          attributes_json: JSON.stringify({
+            signal: {
+              signal_name: signal.signal_name,
+              signal_type: signal.signal_type,
+              signal_value: signal.signal_value,
+              signal_severity: signal.signal_severity,
+              metadata: signal.metadata,
+            },
+          }),
+        };
+      });
 
       // Format signals before forwarding (ensures required fields are present)
-      const { formatTinybirdEvents } = await import("../utils/tinybirdEventFormatter.js");
+      const { formatTinybirdEvents } =
+        await import("../utils/tinybirdEventFormatter.js");
       const formattedSignalEvents = formatTinybirdEvents(signalEvents);
 
       // Forward signals to Tinybird
       try {
         await CanonicalEventService.forwardToTinybird(formattedSignalEvents);
         console.log(
-          `[SignalsService] ✅ Stored ${signals.length} signals to Tinybird (${signals.filter(s => s.signal_severity === "high").length} high-severity)`
+          `[SignalsService] ✅ Stored ${signals.length} signals to Tinybird (${signals.filter((s) => s.signal_severity === "high").length} high-severity)`,
         );
       } catch (error) {
         console.error("[SignalsService] ❌ Failed to store signals:", error);
@@ -347,16 +357,16 @@ export class SignalsService {
       // SOTA: Trigger Layer 3/4 analysis for high-severity signals
       // This is the event-driven approach - analysis only runs when needed
       const highSeveritySignals = signals.filter(
-        (s) => s.signal_severity === "high"
+        (s) => s.signal_severity === "high",
       );
       const mediumSeveritySignals = signals.filter(
-        (s) => s.signal_severity === "medium"
+        (s) => s.signal_severity === "medium",
       );
 
       if (highSeveritySignals.length > 0 || mediumSeveritySignals.length > 0) {
         // Get trace data from events (find LLM call or output event)
         const traceEvent = events.find(
-          (e) => e.event_type === "llm_call" || e.event_type === "output"
+          (e) => e.event_type === "llm_call" || e.event_type === "output",
         );
 
         if (traceEvent) {
@@ -365,9 +375,8 @@ export class SignalsService {
 
           // Queue analysis job for high-severity signals
           try {
-            const { queueAnalysisForHighSeveritySignal } = await import(
-              "./analysisDispatcher.js"
-            );
+            const { queueAnalysisForHighSeveritySignal } =
+              await import("./analysisDispatcher.js");
 
             const signalNames = [
               ...highSeveritySignals,
@@ -396,12 +405,12 @@ export class SignalsService {
                 route: traceEvent.route || undefined,
                 agent_name: traceEvent.agent_name || undefined,
                 version: traceEvent.version || undefined,
-              }
+              },
             );
           } catch (error) {
             console.error(
               "[SignalsService] Failed to queue analysis job (non-fatal):",
-              error
+              error,
             );
             // Don't throw - analysis queue failure shouldn't break ingestion
           }
@@ -411,10 +420,9 @@ export class SignalsService {
       // Log if we had parse errors but no signals generated
       if (parseErrors > 0) {
         console.warn(
-          `[SignalsService] ⚠️  Skipped ${parseErrors} events due to JSON parsing errors (no signals generated)`
+          `[SignalsService] ⚠️  Skipped ${parseErrors} events due to JSON parsing errors (no signals generated)`,
         );
       }
     }
   }
 }
-

@@ -4132,10 +4132,15 @@ export class TraceQueryService {
     }
 
     // TRACE_TREE_VIEW_SPEC: Attempt grouping and treeView for problem-first UX
+    // Exclude signal events (event_type=error with attributes.signal) — they use span_id of the
+    // span they describe (e.g. LLM), not the trace root; with parent_span_id null they falsely
+    // create "2 attempts" when there was only 1 (SignalsService bug now fixed for new data)
+    const isSignalEvent = (e: any) =>
+      e.event_type === "error" && (e.attributes?.signal || e.attributes?.error);
     const attemptRootIds = [
       ...new Set(
         parsedEvents
-          .filter((e: any) => e.parent_span_id === null)
+          .filter((e: any) => e.parent_span_id === null && !isSignalEvent(e))
           .map((e: any) => e.span_id),
       ),
     ].filter(Boolean);
