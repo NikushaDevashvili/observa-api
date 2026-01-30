@@ -247,6 +247,10 @@ export interface AgentPrismTraceRecord {
   // PHASE 4: Trace-level input/output (Langfuse parity)
   input?: string | null;
   output?: string | null;
+  // PHASE 2: Context header (Langfuse-style)
+  session_id?: string | null;
+  user_id?: string | null;
+  environment?: string | null;
 }
 
 /**
@@ -2213,6 +2217,58 @@ function transformSpan(span: ObservaSpan): AgentPrismTraceSpan {
 }
 
 /**
+ * PHASE 2: Transform treeView attempt node to AgentPrismTraceSpan (Langfuse-style attempt grouping)
+ */
+function transformAttemptNodeToSpan(attemptNode: {
+  id: string;
+  name: string;
+  status?: "failed" | "success";
+  start_time?: string;
+  end_time?: string;
+  duration_ms?: number;
+  children?: ObservaSpan[];
+}): AgentPrismTraceSpan {
+  const startTime = attemptNode.start_time
+    ? new Date(attemptNode.start_time).getTime()
+    : Date.now();
+  const endTime = attemptNode.end_time
+    ? new Date(attemptNode.end_time).getTime()
+    : startTime;
+  const duration =
+    attemptNode.duration_ms ?? (endTime > startTime ? endTime - startTime : 0);
+  const children = (attemptNode.children || []).map(transformSpan);
+  const isFailed = attemptNode.status === "failed";
+
+  return {
+    id: attemptNode.id,
+    parentId: null,
+    name: attemptNode.name,
+    title: attemptNode.name,
+    startTime,
+    endTime,
+    duration,
+    attributes: [],
+    type: "span",
+    status: isFailed ? "error" : "success",
+    input: undefined,
+    output: undefined,
+    raw: JSON.stringify(
+      { attempt: attemptNode.name, status: attemptNode.status },
+      null,
+      2,
+    ),
+    children,
+    ...(isFailed && {
+      errorInfo: {
+        type: "attempt_failed",
+        message: "This attempt failed",
+        fullMessage: attemptNode.name,
+      },
+    }),
+  };
+}
+
+/**
  * Convert signals to badges for agent-prism
  */
 function signalsToBadges(signals?: any[]): Array<{
@@ -2342,8 +2398,47 @@ export function adaptObservaTraceToAgentPrism(
     }
   }
 
-  // Transform all spans (recursive transformation handles children)
-  const transformedSpans = mainSpans.map(transformSpan);
+  // PHASE 2: Use treeView when multiple attempts exist (Langfuse-style attempt grouping)
+  const treeView = (observaTrace as ObservaTraceData).treeView;
+  let transformedSpans: AgentPrismTraceSpan[];
+  if (
+    treeView?.children &&
+    Array.isArray(treeView.children) &&
+    treeView.children.length > 1
+  ) {
+    transformedSpans = treeView.children.map((attemptNode: any) =>
+      transformAttemptNodeToSpan(attemptNode),
+    );
+  } else {
+    transformedSpans = mainSpans.map(transformSpan);
+  }
+
+  // PHASE 2: Inject trace context (session_id, user_id, environment) into root span for context header
+  const rootSpan = transformedSpans[0];
+  if (rootSpan && observaTrace.summary) {
+    const ctxAttrs: AgentPrismTraceSpanAttribute[] = [];
+    if (observaTrace.summary.session_id) {
+      ctxAttrs.push({
+        key: "observa.session_id",
+        value: { stringValue: observaTrace.summary.session_id },
+      });
+    }
+    if (observaTrace.summary.user_id) {
+      ctxAttrs.push({
+        key: "observa.user_id",
+        value: { stringValue: observaTrace.summary.user_id },
+      });
+    }
+    if (observaTrace.summary.environment) {
+      ctxAttrs.push({
+        key: "observa.environment",
+        value: { stringValue: observaTrace.summary.environment },
+      });
+    }
+    if (ctxAttrs.length > 0) {
+      rootSpan.attributes = [...(rootSpan.attributes || []), ...ctxAttrs];
+    }
+  }
 
   // Count all spans recursively (including nested children)
   const totalSpansCount = countAllSpansRecursively(transformedSpans);
@@ -2360,13 +2455,15 @@ export function adaptObservaTraceToAgentPrism(
     agentDescription: summary.model || "", // Model name as agent description
     input: summary.query ?? null,
     output: summary.response ?? null,
+    session_id: summary.session_id ?? null,
+    user_id: summary.user_id ?? null,
+    environment: summary.environment ?? null,
   };
 
   // Convert signals to badges
   let badges = signalsToBadges(signals);
 
   // TRACE_TREE_VIEW_SPEC: Add attempt/failure badges from treeView for problem-first UX
-  const treeView = (observaTrace as ObservaTraceData).treeView;
   const attemptCount =
     observaTrace.summary?.attempt_count ?? treeView?.summary?.attempts;
   const failureCount =

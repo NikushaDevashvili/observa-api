@@ -2,25 +2,38 @@
 
 This document explains all the trace information available in the API and how to access it.
 
+**Trace vs. Observation:** A trace represents one request (user question → final answer). Observations are individual steps within the trace (LLM call, tool call, retrieval, etc.). Each observation has its own input/output. Trace-level `summary.query` and `summary.response` hold the overall user question and final answer; per-span data holds that step's I/O only.
+
 ## API Endpoints
 
 ### 1. Get Trace Detail (Tree Format)
+
 **Endpoint:** `GET /api/v1/traces/:traceId?format=tree`
 
 **Response Structure:**
+
 ```json
 {
   "success": true,
   "trace": {
-    "summary": { /* Trace summary metadata */ },
-    "spans": [ /* Array of spans */ ],
-    "signals": [ /* Array of detected issues */ ],
-    "analysis": { /* Full analysis results */ }
+    "summary": {
+      /* Trace summary metadata */
+    },
+    "spans": [
+      /* Array of spans */
+    ],
+    "signals": [
+      /* Array of detected issues */
+    ],
+    "analysis": {
+      /* Full analysis results */
+    }
   }
 }
 ```
 
 ### 2. Get Trace Detail (Legacy Format)
+
 **Endpoint:** `GET /api/v1/traces/:traceId`
 
 Returns a flat structure with all trace and analysis data.
@@ -28,7 +41,9 @@ Returns a flat structure with all trace and analysis data.
 ## Complete Data Structure
 
 ### Summary Object
+
 Contains high-level trace metadata:
+
 - `trace_id` - Unique trace identifier
 - `tenant_id` - Tenant identifier
 - `project_id` - Project identifier
@@ -52,7 +67,9 @@ Contains high-level trace metadata:
 - `analyzed_at` - When analysis was completed
 
 ### Spans Array
+
 Each span contains:
+
 - `span_id` - Span identifier
 - `parent_span_id` - Parent span (null for root)
 - `name` - Span name (e.g., "LLM Call")
@@ -78,6 +95,7 @@ Each span contains:
 ### Events within Spans
 
 #### LLM Call Event
+
 - `event_type`: "llm_call"
 - `timestamp`: Event timestamp
 - `attributes.llm_call`:
@@ -96,6 +114,7 @@ Each span contains:
   - `system_fingerprint` - System fingerprint
 
 #### Retrieval Event
+
 - `event_type`: "retrieval"
 - `timestamp`: Event timestamp
 - `attributes.retrieval`:
@@ -105,6 +124,7 @@ Each span contains:
   - `latency_ms` - Retrieval latency
 
 #### Output Event
+
 - `event_type`: "output"
 - `timestamp`: Event timestamp
 - `attributes.output`:
@@ -112,7 +132,9 @@ Each span contains:
   - `output_length` - Output length
 
 ### Signals Array
+
 Array of detected issues (only populated if issues are found):
+
 - `signal_type` - Type: "hallucination", "context_drop", "faithfulness", "model_drift", "cost_anomaly"
 - `severity` - "high", "medium", "low"
 - `confidence` - Confidence score (for hallucination)
@@ -120,7 +142,9 @@ Array of detected issues (only populated if issues are found):
 - `score` - Numeric score (for other signals)
 
 ### Analysis Object
+
 Complete analysis results (all fields, even if null):
+
 - `isHallucination` - Boolean
 - `hallucinationConfidence` - Confidence score (0-1)
 - `hallucinationReasoning` - Explanation text
@@ -158,6 +182,7 @@ If you're only seeing the span object in your frontend, it's likely because:
 ## Checking Analysis Status
 
 To check if analysis has run:
+
 1. Look for `analyzed_at` in the summary - if present, analysis has completed
 2. Check if `analysis.analysisModel` is not null
 3. Check if any analysis scores are populated
@@ -165,11 +190,13 @@ To check if analysis has run:
 ## Diagnostic Script
 
 Use the diagnostic script to check what's in the database:
+
 ```bash
 node scripts/check-trace-data.js <trace_id>
 ```
 
 This will show:
+
 - What analysis fields are populated
 - Whether analysis has run
 - All available trace data
@@ -178,6 +205,7 @@ This will show:
 ## Environment Variables
 
 Required for analysis:
+
 - `ANALYSIS_SERVICE_URL` - URL of the Python analysis service (optional, analysis will be skipped if not set)
 
 ## Notes
@@ -187,4 +215,3 @@ Required for analysis:
 - All fields are optional and may be `null` if not available
 - The tree format is designed for waterfall/timeline views
 - The legacy format is better for simple display of all data at once
-

@@ -1683,6 +1683,17 @@ export class TraceQueryService {
         parentSpanId = null;
       }
 
+      // PHASE 6: medium_latency — badge only on LLM span, no duplicate error span
+      // Skip creating a separate span for medium_latency; it's attached as a signal to the LLM span
+      if (event.event_type === "error") {
+        const sigData = event.attributes?.signal || event.attributes?.error;
+        const sigType =
+          sigData?.signal_type || sigData?.signal_name || sigData?.error_type;
+        if (sigType === "medium_latency") {
+          continue; // Handled later in signals attachment loop
+        }
+      }
+
       // CRITICAL: For error events with parent_span_id, ensure they create separate spans
       // This ensures error spans appear as children in the tree (e.g., error under tool call)
       // Note: Error events without parent_span_id are handled below in rootEventTypes
@@ -1868,9 +1879,26 @@ export class TraceQueryService {
       (e: any) => e.event_type === "trace_start",
     );
 
+    const traceEndForPrecompute = parsedEvents.find(
+      (e: any) => e.event_type === "trace_end",
+    );
+    const traceEndAttrsForPrecompute =
+      traceEndForPrecompute?.attributes?.trace_end;
+
     let userQuery: string | null = null;
-    // Extract from trace_start metadata if available, else first LLM input
-    if (traceStartForPrecompute?.attributes?.trace_start?.metadata?.input) {
+    // PHASE 5: Prefer trace_level_input from updateTrace() if set
+    if (
+      traceEndAttrsForPrecompute?.trace_level_input != null &&
+      traceEndAttrsForPrecompute.trace_level_input !== ""
+    ) {
+      const tli = traceEndAttrsForPrecompute.trace_level_input;
+      userQuery = typeof tli === "string" ? tli : JSON.stringify(tli);
+    }
+    // Else extract from trace_start metadata if available, else first LLM input
+    if (
+      !userQuery &&
+      traceStartForPrecompute?.attributes?.trace_start?.metadata?.input
+    ) {
       const metaInput =
         traceStartForPrecompute.attributes.trace_start.metadata.input;
       userQuery =
@@ -1901,7 +1929,18 @@ export class TraceQueryService {
     }
 
     let finalOutput: string | null = null;
-    if (outputEventForPrecompute?.attributes?.output?.final_output != null) {
+    // PHASE 5: Prefer trace_level_output from updateTrace() if set
+    if (
+      traceEndAttrsForPrecompute?.trace_level_output != null &&
+      traceEndAttrsForPrecompute.trace_level_output !== ""
+    ) {
+      const tlo = traceEndAttrsForPrecompute.trace_level_output;
+      finalOutput = typeof tlo === "string" ? tlo : JSON.stringify(tlo);
+    }
+    if (
+      !finalOutput &&
+      outputEventForPrecompute?.attributes?.output?.final_output != null
+    ) {
       const fo = outputEventForPrecompute.attributes.output.final_output;
       finalOutput = typeof fo === "string" ? fo : JSON.stringify(fo);
     }

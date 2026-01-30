@@ -4,6 +4,8 @@
 **Trace ID:** `baf12b45-6531-4386-976e-a3854c5102a4`  
 **Goal:** Best CX for devs to see the full workflow and **where the problem resides** in &lt;5 seconds.
 
+**Trace vs. Observation (Langfuse parity):** A **trace** is the overall request (user question → final answer). **Observations** are individual steps (LLM call, tool call, etc.). Each observation has its own input/output. The trace-level input (user question) and output (final answer) are shown at the root; per-step I/O is shown only on that step.
+
 **Frontend:** Use the **existing tree view in observa-app** (the one you already display). The API now returns `treeView`, `summary.attempt_count`, `summary.failure_count`, and spans with `signals` / synthetic error children. Update the existing observa-app tree view component to consume these fields for problem-first display (see §4 and §6 for payload shape).
 
 ---
