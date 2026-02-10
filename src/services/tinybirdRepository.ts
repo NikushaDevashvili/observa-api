@@ -26,11 +26,11 @@ export class TinybirdRepository {
    */
   static async query(
     queryName: string,
-    options: TinybirdQueryOptions
+    options: TinybirdQueryOptions,
   ): Promise<any> {
     if (!options.tenantId) {
       throw new Error(
-        "TinybirdRepository: tenantId is required for all queries"
+        "TinybirdRepository: tenantId is required for all queries",
       );
     }
 
@@ -50,7 +50,7 @@ export class TinybirdRepository {
     }
 
     const url = `${this.baseUrl}/v0/sql?q=${encodeURIComponent(
-      queryName
+      queryName,
     )}&${params.toString()}`;
 
     try {
@@ -64,7 +64,7 @@ export class TinybirdRepository {
       if (!response.ok) {
         const errorText = await response.text().catch(() => "Unknown error");
         throw new Error(
-          `Tinybird query failed: ${response.status} ${response.statusText} - ${errorText}`
+          `Tinybird query failed: ${response.status} ${response.statusText} - ${errorText}`,
         );
       }
 
@@ -87,36 +87,45 @@ export class TinybirdRepository {
    */
   static async rawQuery(
     sql: string,
-    options: TinybirdQueryOptions
+    options: TinybirdQueryOptions,
   ): Promise<any> {
     if (!options.tenantId) {
       throw new Error(
-        "TinybirdRepository: tenantId is required for all queries"
+        "TinybirdRepository: tenantId is required for all queries",
       );
     }
 
     // SECURITY: Validate tenantId format (must be UUID) to prevent injection
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(options.tenantId)) {
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        options.tenantId,
+      )
+    ) {
       throw new Error("Invalid tenant_id format: must be a valid UUID");
     }
 
     // SECURITY: Validate projectId format if provided
-    if (options.projectId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(options.projectId)) {
+    if (
+      options.projectId &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        options.projectId,
+      )
+    ) {
       throw new Error("Invalid project_id format: must be a valid UUID");
     }
 
     // SECURITY: Enhanced validation - SQL must include proper tenant_id filter
     const sqlLower = sql.toLowerCase();
-    const hasTenantFilter = 
-      sqlLower.includes("tenant_id") && 
-      (sqlLower.includes("where tenant_id") || 
-       sqlLower.includes("and tenant_id") ||
-       sqlLower.includes("tenant_id ="));
-    
+    const hasTenantFilter =
+      sqlLower.includes("tenant_id") &&
+      (sqlLower.includes("where tenant_id") ||
+        sqlLower.includes("and tenant_id") ||
+        sqlLower.includes("tenant_id ="));
+
     if (!hasTenantFilter) {
       throw new Error(
         "TinybirdRepository.rawQuery: SQL must explicitly filter by tenant_id for security. " +
-        "Query must include 'WHERE tenant_id = ...' or 'AND tenant_id = ...'"
+          "Query must include 'WHERE tenant_id = ...' or 'AND tenant_id = ...'",
       );
     }
 
@@ -125,22 +134,28 @@ export class TinybirdRepository {
     const whereIndex = sqlLower.indexOf("where");
     if (whereIndex === -1) {
       throw new Error(
-        "TinybirdRepository.rawQuery: SQL must include a WHERE clause"
+        "TinybirdRepository.rawQuery: SQL must include a WHERE clause",
       );
     }
-    
+
     // Check if tenant_id appears after WHERE (allowing for whitespace/newlines)
     const afterWhereClause = sqlLower.substring(whereIndex);
     const tenantIdInWhere = afterWhereClause.includes("tenant_id");
     if (!tenantIdInWhere) {
       throw new Error(
-        "TinybirdRepository.rawQuery: tenant_id filter must appear in WHERE clause"
+        "TinybirdRepository.rawQuery: tenant_id filter must appear in WHERE clause",
       );
     }
 
+    // Append FORMAT JSON to the SQL if not already present to guarantee JSON output
+    const trimmedSql = sql.trim().replace(/;+\s*$/, ""); // Remove trailing semicolons
+    const sqlWithFormat = /\bFORMAT\s+\w/i.test(trimmedSql)
+      ? trimmedSql
+      : `${trimmedSql} FORMAT JSON`;
+
     const params = new URLSearchParams();
-    params.append("q", sql);
-    params.append("format", "json"); // Explicitly request JSON format
+    params.append("q", sqlWithFormat);
+    params.append("format", "json"); // Also request via URL param as fallback
 
     // Always inject tenant_id as a parameter for safety
     params.append("tenant_id", options.tenantId);
@@ -157,10 +172,10 @@ export class TinybirdRepository {
     }
 
     const url = `${this.baseUrl}/v0/sql?${params.toString()}`;
-    
+
     // Log the query for debugging (without sensitive data)
     console.log(
-      `[TinybirdRepository] Executing SQL query (trace_id filter present: ${sql.includes('trace_id')})`
+      `[TinybirdRepository] Executing SQL query (trace_id filter present: ${sql.includes("trace_id")})`,
     );
 
     try {
@@ -173,38 +188,55 @@ export class TinybirdRepository {
 
       // Read response as text first to handle both JSON and error cases
       const responseText = await response.text();
-      
+
       if (!response.ok) {
         throw new Error(
-          `Tinybird raw query failed: ${response.status} ${response.statusText} - ${responseText}`
+          `Tinybird raw query failed: ${response.status} ${response.statusText} - ${responseText}`,
         );
       }
 
       // Check content-type to determine format
       const contentType = response.headers.get("content-type") || "";
-      
+
       // Try to parse as JSON first
-      if (contentType.includes("application/json") || responseText.trim().startsWith("{")) {
+      const trimmedResponse = responseText.trim();
+      if (
+        contentType.includes("application/json") ||
+        trimmedResponse.startsWith("{") ||
+        trimmedResponse.startsWith("[")
+      ) {
         try {
-          const data = JSON.parse(responseText);
+          const data = JSON.parse(trimmedResponse);
+          // Tinybird FORMAT JSON returns { data: [...], meta: [...], rows: N, ... }
+          // Normalize: always return the parsed object as-is (callers handle both formats)
           return data;
         } catch (parseError) {
+          console.warn(
+            `[TinybirdRepository] JSON parse failed, falling through to TSV:`,
+            (parseError instanceof Error
+              ? parseError.message
+              : String(parseError)
+            ).substring(0, 100),
+          );
           // Fall through to TSV parsing if JSON fails
         }
       }
-      
+
       // Parse as TSV (Tinybird often returns TSV by default)
-      if (responseText.includes("\t") || contentType.includes("text/tab-separated-values")) {
+      if (
+        responseText.includes("\t") ||
+        contentType.includes("text/tab-separated-values")
+      ) {
         return this.parseTSVResponse(responseText);
       }
-      
+
       // If neither JSON nor TSV, log and throw
       console.error(
         `[TinybirdRepository] Unexpected response format (status ${response.status}, content-type: ${contentType}):`,
-        responseText.substring(0, 500)
+        responseText.substring(0, 500),
       );
       throw new Error(
-        `Tinybird returned unexpected format. Content-Type: ${contentType}. Response preview: ${responseText.substring(0, 200)}`
+        `Tinybird returned unexpected format. Content-Type: ${contentType}. Response preview: ${responseText.substring(0, 200)}`,
       );
     } catch (error) {
       const errorMessage =
@@ -216,72 +248,111 @@ export class TinybirdRepository {
   /**
    * Parse TSV (Tab-Separated Values) response from Tinybird
    * Converts TSV rows into array of objects
+   *
+   * Tinybird's SQL API returns TabSeparated format by default (no headers).
+   * However, some responses may include headers (TabSeparatedWithNames).
+   * We detect headers heuristically: if the first row consists entirely
+   * of identifier-like tokens (letters, digits, underscores) we treat it
+   * as a header row. Otherwise we fall back to positional column naming.
    */
   private static parseTSVResponse(tsv: string): any {
-    const lines = tsv.trim().split("\n").filter((line) => line.trim());
+    const lines = tsv
+      .trim()
+      .split("\n")
+      .filter((line) => line.trim());
     if (lines.length === 0) {
       return { data: [] };
     }
 
-    // First line might be headers, or it might be data
-    // For canonical_events, we know the column order from our SELECT statement
-    const columns = [
-      "tenant_id",
-      "project_id",
-      "environment",
-      "trace_id",
-      "span_id",
-      "parent_span_id",
-      "timestamp",
-      "event_type",
-      "conversation_id",
-      "session_id",
-      "user_id",
-      "attributes_json",
-    ];
+    const firstLineValues = lines[0].split("\t");
 
-    const data = lines.map((line) => {
+    // Heuristic: the first row is a header when every cell looks like
+    // a SQL column name / alias (only word-chars, not a UUID, not purely numeric).
+    const looksLikeHeader =
+      firstLineValues.length > 0 &&
+      firstLineValues.every((v) => {
+        const trimmed = v.trim();
+        // Must be non-empty, match identifier pattern, and not look like data
+        return (
+          trimmed.length > 0 &&
+          /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(trimmed) &&
+          !/^[0-9a-f]{8}-[0-9a-f]{4}/i.test(trimmed) // not a UUID prefix
+        );
+      });
+
+    let columns: string[];
+    let dataLines: string[];
+
+    if (looksLikeHeader) {
+      columns = firstLineValues.map((v) => v.trim());
+      dataLines = lines.slice(1);
+    } else {
+      // No header detected – generate positional column names (col_0, col_1, …)
+      // so that downstream code that accesses result[0].some_alias still works
+      // when the query was something like `SELECT count(*) as count`.
+      // We try to infer from common patterns; fall back to generic names.
+      columns = firstLineValues.map((_v, index) => `col_${index}`);
+      dataLines = lines; // all lines are data
+    }
+
+    const data = dataLines.map((line) => {
       const values = line.split("\t");
       const row: any = {};
-      
+
       columns.forEach((col, index) => {
         let value = values[index];
-        
-        // Handle null values (\N in TSV)
+
+        // Handle null values (\N in TSV from ClickHouse)
         if (value === "\\N" || value === null || value === undefined) {
           row[col] = null;
         } else {
           row[col] = value;
         }
       });
-      
+
       return row;
     });
 
-    return { data, meta: columns.map((col) => ({ name: col, type: "String" })) };
+    return {
+      data,
+      meta: columns.map((col) => ({ name: col, type: "String" })),
+    };
   }
 
   /**
    * Get events for a trace (with tenant isolation)
-   * 
+   *
    * Note: Using string interpolation for parameters because Tinybird's {param:Type} syntax
    * requires secrets configuration. We validate tenant_id before interpolation for security.
-   * 
+   *
    * IMPORTANT: Queries the canonical_events datasource, NOT the traces datasource.
    */
   static async getTraceEvents(
     traceId: string,
     tenantId: string,
-    projectId?: string | null
+    projectId?: string | null,
   ): Promise<any[]> {
     // Validate UUIDs to prevent SQL injection
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        tenantId,
+      )
+    ) {
       throw new Error("Invalid tenant_id format");
     }
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(traceId)) {
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        traceId,
+      )
+    ) {
       throw new Error("Invalid trace_id format");
     }
-    if (projectId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(projectId)) {
+    if (
+      projectId &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        projectId,
+      )
+    ) {
       throw new Error("Invalid project_id format");
     }
 
@@ -325,25 +396,25 @@ export class TinybirdRepository {
 
       console.log(
         `[TinybirdRepository] Query result for trace ${traceId}:`,
-        JSON.stringify(result, null, 2).substring(0, 500)
+        JSON.stringify(result, null, 2).substring(0, 500),
       );
 
       // Tinybird returns { data: [...], meta: [...] }
       if (result && Array.isArray(result)) {
         console.log(
-          `[TinybirdRepository] Found ${result.length} events (array format)`
+          `[TinybirdRepository] Found ${result.length} events (array format)`,
         );
         return result;
       } else if (result?.data && Array.isArray(result.data)) {
         console.log(
-          `[TinybirdRepository] Found ${result.data.length} events (object.data format)`
+          `[TinybirdRepository] Found ${result.data.length} events (object.data format)`,
         );
         return result.data;
       }
-      
+
       console.log(
         `[TinybirdRepository] No events found or unexpected format:`,
-        typeof result
+        typeof result,
       );
       return [];
     } catch (error) {
@@ -353,12 +424,12 @@ export class TinybirdRepository {
       // The system will fall back to PostgreSQL analysis_results
       if (errorMessage.includes("429") || errorMessage.includes("rate limit")) {
         console.warn(
-          `[TinybirdRepository] Tinybird rate limited for trace ${traceId}, falling back to PostgreSQL`
+          `[TinybirdRepository] Tinybird rate limited for trace ${traceId}, falling back to PostgreSQL`,
         );
       } else {
         console.warn(
           `[TinybirdRepository] Tinybird unavailable for trace ${traceId}, falling back to PostgreSQL:`,
-          errorMessage.substring(0, 100)
+          errorMessage.substring(0, 100),
         );
       }
       // Return empty array on error (fallback to analysis_results)
@@ -373,7 +444,7 @@ export class TinybirdRepository {
     tenantId: string,
     projectId?: string | null,
     limit: number = 100,
-    offset: number = 0
+    offset: number = 0,
   ): Promise<any[]> {
     const sql = `
       SELECT 

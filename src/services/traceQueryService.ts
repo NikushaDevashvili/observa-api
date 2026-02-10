@@ -1079,6 +1079,27 @@ export class TraceQueryService {
           `[TraceQueryService] ❌ Error fetching canonical events from Tinybird for trace ${traceId}:`,
           errorMessage,
         );
+        // CRITICAL: Fall back to PostgreSQL instead of returning null
+        // This ensures trace detail is always available even when Tinybird fails
+        console.log(
+          `[TraceQueryService] Falling back to PostgreSQL analysis_results for trace ${traceId}`,
+        );
+        try {
+          const pgRow = await this.getTraceDetail(traceId, tenantId, projectId);
+          if (pgRow) {
+            return this.buildTreeFromAnalysisResult(
+              pgRow,
+              traceId,
+              tenantId,
+              projectId || null,
+            );
+          }
+        } catch (pgError) {
+          console.error(
+            `[TraceQueryService] PostgreSQL fallback also failed for trace ${traceId}:`,
+            pgError instanceof Error ? pgError.message : String(pgError),
+          );
+        }
         return null;
       }
 
@@ -1734,6 +1755,17 @@ export class TraceQueryService {
       };
     });
 
+    // Normalize parent_span_id on all events (TSV may return "\\N", empty string, or "null")
+    for (const e of parsedEvents) {
+      if (
+        e.parent_span_id === "" ||
+        e.parent_span_id === "null" ||
+        e.parent_span_id === "\\N"
+      ) {
+        e.parent_span_id = null;
+      }
+    }
+
     // Find trace_start and trace_end for summary
     const traceStart = parsedEvents.find(
       (e: any) => e.event_type === "trace_start",
@@ -1827,7 +1859,13 @@ export class TraceQueryService {
       let spanId = event.span_id;
       let parentSpanId = event.parent_span_id;
 
-      if (parentSpanId === "" || parentSpanId === "null") {
+      // Normalize parent_span_id: treat empty, "null", "\N" (TSV null), and undefined as null
+      if (
+        parentSpanId === "" ||
+        parentSpanId === "null" ||
+        parentSpanId === "\\N" ||
+        parentSpanId == null
+      ) {
         parentSpanId = null;
       }
 

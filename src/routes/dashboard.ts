@@ -32,19 +32,22 @@ function initializeCacheCleanup(): void {
   if (cacheCleanupInterval) return;
 
   // Clean up expired cache entries every 5 minutes
-  cacheCleanupInterval = setInterval(() => {
-    const now = Date.now();
-    let cleaned = 0;
-    for (const [key, value] of dashboardCache.entries()) {
-      if (value.expires <= now) {
-        dashboardCache.delete(key);
-        cleaned++;
+  cacheCleanupInterval = setInterval(
+    () => {
+      const now = Date.now();
+      let cleaned = 0;
+      for (const [key, value] of dashboardCache.entries()) {
+        if (value.expires <= now) {
+          dashboardCache.delete(key);
+          cleaned++;
+        }
       }
-    }
-    if (cleaned > 0) {
-      console.log(`[Dashboard] Cleaned up ${cleaned} expired cache entries`);
-    }
-  }, 5 * 60 * 1000);
+      if (cleaned > 0) {
+        console.log(`[Dashboard] Cleaned up ${cleaned} expired cache entries`);
+      }
+    },
+    5 * 60 * 1000,
+  );
 }
 
 // Initialize cache cleanup on module load
@@ -92,32 +95,43 @@ router.get("/overview", async (req: Request, res: Response) => {
     const startTime = req.query.startTime as string | undefined;
     const endTime = req.query.endTime as string | undefined;
 
-    // Default to last 7 days if no time range provided
-    let start: string;
-    let end: string;
+    // Helper: validate that a time param is a real, parseable date string
+    const isValidTimeParam = (param: string | undefined): param is string => {
+      if (
+        !param ||
+        param.trim() === "" ||
+        param === "null" ||
+        param === "undefined"
+      )
+        return false;
+      const d = new Date(param);
+      return !isNaN(d.getTime());
+    };
 
-    if (startTime && endTime) {
+    // Determine time range:
+    //   - If both startTime and endTime are valid dates → use them
+    //   - Otherwise → query ALL data (no time filter) so "all time" works
+    let start: string | undefined;
+    let end: string | undefined;
+
+    if (isValidTimeParam(startTime) && isValidTimeParam(endTime)) {
       // Explicit time range provided
       start = startTime;
       end = endTime;
       console.log(
-        `[Dashboard] Querying metrics for explicit time range: ${start} to ${end}`
+        `[Dashboard] Querying metrics for explicit time range: ${start} to ${end}`,
       );
     } else {
-      // Default to last 7 days
-      end = new Date().toISOString();
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - 7);
-      start = startDate.toISOString();
-      console.log(
-        `[Dashboard] Querying metrics for default time range (last 7 days): ${start} to ${end}`
-      );
+      // No valid time range → query all time (no time filter)
+      start = undefined;
+      end = undefined;
+      console.log(`[Dashboard] Querying metrics for ALL TIME (no time filter)`);
     }
 
     // Build cache key with tenant_id FIRST to prevent cross-tenant access
     const cacheKey = `dashboard:${user.tenantId}:${
       projectId || "all"
-    }:${start}:${end}`;
+    }:${start || "all"}:${end || "all"}`;
 
     // Check cache
     const cached = dashboardCache.get(cacheKey);
@@ -130,7 +144,7 @@ router.get("/overview", async (req: Request, res: Response) => {
         // Security violation detected - remove bad cache entry
         dashboardCache.delete(cacheKey);
         console.error(
-          `[Dashboard] Security: Cache tenant mismatch detected for key: ${cacheKey}`
+          `[Dashboard] Security: Cache tenant mismatch detected for key: ${cacheKey}`,
         );
       }
     }
@@ -139,7 +153,7 @@ router.get("/overview", async (req: Request, res: Response) => {
     console.log(
       `[Dashboard] Cache miss - fetching metrics for tenant ${
         user.tenantId
-      }, project ${projectId || "all"}`
+      }, project ${projectId || "all"}`,
     );
 
     const [
@@ -156,49 +170,49 @@ router.get("/overview", async (req: Request, res: Response) => {
         user.tenantId,
         projectId || null,
         start,
-        end
+        end,
       ),
       DashboardMetricsService.getErrorRateMetrics(
         user.tenantId,
         projectId || null,
         start,
-        end
+        end,
       ),
       DashboardMetricsService.getCostMetrics(
         user.tenantId,
         projectId || null,
         start,
-        end
+        end,
       ),
       DashboardMetricsService.getTokenMetrics(
         user.tenantId,
         projectId || null,
         start,
-        end
+        end,
       ),
       DashboardMetricsService.getTraceCount(
         user.tenantId,
         projectId || null,
         start,
-        end
+        end,
       ),
       SignalsQueryService.getSignalCountsBySeverity(
         user.tenantId,
         projectId || null,
         start,
-        end
+        end,
       ),
       SignalsQueryService.getSignalSummary(
         user.tenantId,
         projectId || null,
         start,
-        end
+        end,
       ),
       DashboardMetricsService.getFeedbackMetrics(
         user.tenantId,
         projectId || null,
         start,
-        end
+        end,
       ),
     ]);
 
@@ -219,8 +233,8 @@ router.get("/overview", async (req: Request, res: Response) => {
           errorRateMetrics.error_rate < 1
             ? "healthy"
             : errorRateMetrics.error_rate < 5
-            ? "warning"
-            : "critical",
+              ? "warning"
+              : "critical",
         threshold: 5.0,
         value: errorRateMetrics.error_rate,
       },
@@ -229,8 +243,8 @@ router.get("/overview", async (req: Request, res: Response) => {
           latency.p95 < 1000
             ? "healthy"
             : latency.p95 < 5000
-            ? "warning"
-            : "critical",
+              ? "warning"
+              : "critical",
         threshold: 5000,
         value: latency.p95,
       },
@@ -239,8 +253,8 @@ router.get("/overview", async (req: Request, res: Response) => {
           signalCounts.high === 0
             ? "healthy"
             : signalCounts.high < 10
-            ? "warning"
-            : "critical",
+              ? "warning"
+              : "critical",
         threshold: 10,
         value: signalCounts.high,
       },
@@ -253,10 +267,10 @@ router.get("/overview", async (req: Request, res: Response) => {
       healthIndicators.active_issues.status === "critical"
         ? "critical"
         : healthIndicators.error_rate.status === "warning" ||
-          healthIndicators.latency.status === "warning" ||
-          healthIndicators.active_issues.status === "warning"
-        ? "warning"
-        : "healthy";
+            healthIndicators.latency.status === "warning" ||
+            healthIndicators.active_issues.status === "warning"
+          ? "warning"
+          : "healthy";
 
     // Get top 5 issues
     const topIssues = signalSummary.slice(0, 5).map((issue) => ({
@@ -285,7 +299,7 @@ router.get("/overview", async (req: Request, res: Response) => {
     console.log(`[Dashboard] Metrics fetched:`);
     console.log(`  - Trace count: ${traceCount}`);
     console.log(
-      `  - Error rate: ${errorRateMetrics.error_rate}% (${errorRateMetrics.errors}/${errorRateMetrics.total})`
+      `  - Error rate: ${errorRateMetrics.error_rate}% (${errorRateMetrics.errors}/${errorRateMetrics.total})`,
     );
     console.log(`  - Latency P95: ${latency.p95}ms`);
     console.log(`  - Cost: $${costMetrics.total_cost}`);
@@ -293,18 +307,18 @@ router.get("/overview", async (req: Request, res: Response) => {
     console.log(
       `  - Active issues: ${
         signalCounts.high + signalCounts.medium + signalCounts.low
-      }`
+      }`,
     );
     console.log(
-      `  - Feedback: ${feedbackMetrics.total} total (${feedbackMetrics.likes} likes, ${feedbackMetrics.dislikes} dislikes, ${feedbackMetrics.feedback_rate}% rate)`
+      `  - Feedback: ${feedbackMetrics.total} total (${feedbackMetrics.likes} likes, ${feedbackMetrics.dislikes} dislikes, ${feedbackMetrics.feedback_rate}% rate)`,
     );
     console.log(`  - Overall health: ${overallHealth}`);
 
     const responseData = {
       success: true,
       period: {
-        start: start,
-        end: end,
+        start: start || "all",
+        end: end || new Date().toISOString(),
       },
       metrics: {
         error_rate: {
@@ -336,7 +350,7 @@ router.get("/overview", async (req: Request, res: Response) => {
         tokens: {
           total: tokenMetrics.total_tokens,
           avg_per_trace: parseFloat(
-            tokenMetrics.avg_tokens_per_trace.toFixed(2)
+            tokenMetrics.avg_tokens_per_trace.toFixed(2),
           ),
           input: tokenMetrics.input_tokens,
           output: tokenMetrics.output_tokens,
@@ -578,7 +592,7 @@ router.get("/overview/time-series", async (req: Request, res: Response) => {
       projectId || null,
       startTime,
       endTime,
-      selectedInterval
+      selectedInterval,
     );
 
     return res.status(200).json({
@@ -650,7 +664,7 @@ router.get("/overview/comparison", async (req: Request, res: Response) => {
       user.tenantId,
       projectId || null,
       startTime,
-      endTime
+      endTime,
     );
 
     return res.status(200).json({
@@ -660,7 +674,7 @@ router.get("/overview/comparison", async (req: Request, res: Response) => {
         previous: {
           start: new Date(
             new Date(startTime).getTime() -
-              (new Date(endTime).getTime() - new Date(startTime).getTime())
+              (new Date(endTime).getTime() - new Date(startTime).getTime()),
           ).toISOString(),
           end: startTime,
         },
@@ -714,31 +728,42 @@ router.get("/metrics/breakdown", async (req: Request, res: Response) => {
     const startTime = req.query.startTime as string | undefined;
     const endTime = req.query.endTime as string | undefined;
 
-    // Default to last 7 days if no time range provided
-    let start: string;
-    let end: string;
-    if (startTime && endTime) {
+    // Helper: validate that a time param is a real, parseable date string
+    const isValidTime = (param: string | undefined): param is string => {
+      if (
+        !param ||
+        param.trim() === "" ||
+        param === "null" ||
+        param === "undefined"
+      )
+        return false;
+      const d = new Date(param);
+      return !isNaN(d.getTime());
+    };
+
+    // No valid time range → query all time (no time filter)
+    let start: string | undefined;
+    let end: string | undefined;
+    if (isValidTime(startTime) && isValidTime(endTime)) {
       start = startTime;
       end = endTime;
     } else {
-      end = new Date().toISOString();
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - 7);
-      start = startDate.toISOString();
+      start = undefined;
+      end = undefined;
     }
 
     const breakdown = await DashboardMetricsService.getMetricsBreakdown(
       user.tenantId,
       projectId || null,
       start,
-      end
+      end,
     );
 
     return res.status(200).json({
       success: true,
       period: {
-        start,
-        end,
+        start: start || "all",
+        end: end || new Date().toISOString(),
       },
       breakdown,
       timestamp: new Date().toISOString(),
@@ -790,7 +815,7 @@ router.get("/feedback/debug", async (req: Request, res: Response) => {
     const { projectId, days = 1 } = req.query; // Default to 1 day to get recent events
     const end = new Date();
     const start = new Date(
-      end.getTime() - parseInt(days as string) * 24 * 60 * 60 * 1000
+      end.getTime() - parseInt(days as string) * 24 * 60 * 60 * 1000,
     );
 
     // Get raw feedback events from Tinybird
@@ -810,9 +835,8 @@ router.get("/feedback/debug", async (req: Request, res: Response) => {
     // The TSV parser expects: tenant_id, project_id, environment, trace_id, span_id, parent_span_id, timestamp, event_type, conversation_id, session_id, user_id, attributes_json
     const sql = `SELECT tenant_id, project_id, environment, trace_id, span_id, parent_span_id, timestamp, event_type, conversation_id, session_id, user_id, attributes_json FROM canonical_events ${whereClause} ORDER BY timestamp DESC LIMIT 10`;
 
-    const { TinybirdRepository } = await import(
-      "../services/tinybirdRepository.js"
-    );
+    const { TinybirdRepository } =
+      await import("../services/tinybirdRepository.js");
     const result = await TinybirdRepository.rawQuery(sql, {
       tenantId: user.tenantId,
       projectId: projectId as string | null | undefined,
@@ -889,35 +913,46 @@ router.get("/feedback", async (req: Request, res: Response) => {
     const startTime = req.query.startTime as string | undefined;
     const endTime = req.query.endTime as string | undefined;
 
-    // Default to last 7 days if no time range provided
-    let start: string;
-    let end: string;
-    if (startTime && endTime) {
+    // Helper: validate that a time param is a real, parseable date string
+    const isValidTimeFb = (param: string | undefined): param is string => {
+      if (
+        !param ||
+        param.trim() === "" ||
+        param === "null" ||
+        param === "undefined"
+      )
+        return false;
+      const d = new Date(param);
+      return !isNaN(d.getTime());
+    };
+
+    // No valid time range → query all time (no time filter)
+    let start: string | undefined;
+    let end: string | undefined;
+    if (isValidTimeFb(startTime) && isValidTimeFb(endTime)) {
       start = startTime;
       end = endTime;
     } else {
-      end = new Date().toISOString();
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - 7);
-      start = startDate.toISOString();
+      start = undefined;
+      end = undefined;
     }
 
     const feedbackMetrics = await DashboardMetricsService.getFeedbackMetrics(
       user.tenantId,
       projectId || null,
       start,
-      end
+      end,
     );
 
     // Calculate additional insights
     const likeDislikeRatio =
       feedbackMetrics.dislikes > 0
         ? parseFloat(
-            (feedbackMetrics.likes / feedbackMetrics.dislikes).toFixed(2)
+            (feedbackMetrics.likes / feedbackMetrics.dislikes).toFixed(2),
           )
         : feedbackMetrics.likes > 0
-        ? 999
-        : 0;
+          ? 999
+          : 0;
 
     const satisfactionScore =
       feedbackMetrics.total > 0
@@ -927,15 +962,15 @@ router.get("/feedback", async (req: Request, res: Response) => {
                 feedbackMetrics.ratings * (feedbackMetrics.avg_rating / 5)) /
                 feedbackMetrics.total) *
               100
-            ).toFixed(2)
+            ).toFixed(2),
           )
         : 0;
 
     return res.status(200).json({
       success: true,
       period: {
-        start,
-        end,
+        start: start || "all",
+        end: end || new Date().toISOString(),
       },
       metrics: feedbackMetrics,
       insights: {
@@ -947,15 +982,15 @@ router.get("/feedback", async (req: Request, res: Response) => {
                 (
                   (feedbackMetrics.dislikes / feedbackMetrics.total) *
                   100
-                ).toFixed(2)
+                ).toFixed(2),
               )
             : 0,
         positive_feedback_rate:
           feedbackMetrics.total > 0
             ? parseFloat(
                 ((feedbackMetrics.likes / feedbackMetrics.total) * 100).toFixed(
-                  2
-                )
+                  2,
+                ),
               )
             : 0,
       },
@@ -1024,7 +1059,7 @@ router.get("/health", async (req: Request, res: Response) => {
         user.tenantId,
         projectId || null,
         start,
-        end
+        end,
       );
       diagnostics.tests.trace_count = { success: true, value: traceCount };
     } catch (error) {
@@ -1040,7 +1075,7 @@ router.get("/health", async (req: Request, res: Response) => {
         user.tenantId,
         projectId || null,
         start,
-        end
+        end,
       );
       diagnostics.tests.latency = { success: true, value: latency };
     } catch (error) {
@@ -1056,7 +1091,7 @@ router.get("/health", async (req: Request, res: Response) => {
         user.tenantId,
         projectId || null,
         start,
-        end
+        end,
       );
       diagnostics.tests.error_rate = { success: true, value: errorRate };
     } catch (error) {
