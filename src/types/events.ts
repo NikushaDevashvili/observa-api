@@ -17,7 +17,10 @@ export type EventType =
   | "embedding"
   | "vector_db_operation"
   | "cache_operation"
-  | "agent_create";
+  | "agent_create"
+  | "guardrail"
+  | "reasoning_step"
+  | "prompt_template";
 
 /**
  * Langfuse-style observation types for span display

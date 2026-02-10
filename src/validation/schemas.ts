@@ -67,6 +67,9 @@ export const eventTypeSchema = z.enum([
   "vector_db_operation",
   "cache_operation",
   "agent_create",
+  "guardrail",
+  "reasoning_step",
+  "prompt_template",
 ]);
 
 const observationTypeSchema = z.enum([

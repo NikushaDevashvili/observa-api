@@ -231,6 +231,149 @@ export class SignalsService {
         });
       }
 
+      // Process embedding events
+      if (event.event_type === "embedding" && attributes.embedding) {
+        const emb = attributes.embedding;
+        if (emb.latency_ms && emb.latency_ms > 5000) {
+          signals.push({
+            tenant_id: event.tenant_id,
+            project_id: event.project_id,
+            trace_id: event.trace_id,
+            span_id: event.span_id,
+            signal_name: "embedding_high_latency",
+            signal_type: "threshold",
+            signal_value: emb.latency_ms,
+            signal_severity: "medium",
+            metadata: {
+              model: emb.model,
+              dimension_count: emb.dimension_count,
+              threshold_ms: 5000,
+            },
+            timestamp: eventTimestamp,
+          });
+        }
+        if (
+          emb.dimension_count &&
+          (emb.dimension_count < 1 || emb.dimension_count > 10000)
+        ) {
+          signals.push({
+            tenant_id: event.tenant_id,
+            project_id: event.project_id,
+            trace_id: event.trace_id,
+            span_id: event.span_id,
+            signal_name: "embedding_dimension_anomaly",
+            signal_type: "threshold",
+            signal_value: emb.dimension_count,
+            signal_severity: "low",
+            metadata: { model: emb.model },
+            timestamp: eventTimestamp,
+          });
+        }
+      }
+
+      // Process vector_db_operation events
+      if (
+        event.event_type === "vector_db_operation" &&
+        attributes.vector_db_operation
+      ) {
+        const vdb = attributes.vector_db_operation;
+        if (vdb.latency_ms && vdb.latency_ms > 3000) {
+          signals.push({
+            tenant_id: event.tenant_id,
+            project_id: event.project_id,
+            trace_id: event.trace_id,
+            span_id: event.span_id,
+            signal_name: "vector_db_slow_query",
+            signal_type: "threshold",
+            signal_value: vdb.latency_ms,
+            signal_severity: "medium",
+            metadata: {
+              operation_type: vdb.operation_type,
+              index_name: vdb.index_name,
+              results_count: vdb.results_count,
+              threshold_ms: 3000,
+            },
+            timestamp: eventTimestamp,
+          });
+        }
+        if (
+          vdb.operation_type === "vector_search" &&
+          typeof vdb.results_count === "number" &&
+          vdb.results_count === 0
+        ) {
+          signals.push({
+            tenant_id: event.tenant_id,
+            project_id: event.project_id,
+            trace_id: event.trace_id,
+            span_id: event.span_id,
+            signal_name: "vector_db_empty_results",
+            signal_type: "threshold",
+            signal_value: 0,
+            signal_severity: "low",
+            metadata: {
+              operation_type: vdb.operation_type,
+              index_name: vdb.index_name,
+            },
+            timestamp: eventTimestamp,
+          });
+        }
+      }
+
+      // Process cache_operation events (high latency or repeated misses could indicate issues)
+      if (
+        event.event_type === "cache_operation" &&
+        attributes.cache_operation
+      ) {
+        const cache = attributes.cache_operation;
+        if (cache.latency_ms && cache.latency_ms > 1000) {
+          signals.push({
+            tenant_id: event.tenant_id,
+            project_id: event.project_id,
+            trace_id: event.trace_id,
+            span_id: event.span_id,
+            signal_name: "cache_high_latency",
+            signal_type: "threshold",
+            signal_value: cache.latency_ms,
+            signal_severity: "medium",
+            metadata: {
+              cache_backend: cache.cache_backend,
+              hit_status: cache.hit_status,
+              threshold_ms: 1000,
+            },
+            timestamp: eventTimestamp,
+          });
+        }
+      }
+
+      // Process agent_create events (e.g. missing tools when agent type suggests tools)
+      if (event.event_type === "agent_create" && attributes.agent_create) {
+        const agent = attributes.agent_create;
+        const toolsBound = agent.tools_bound;
+        const hasTools = Array.isArray(toolsBound) && toolsBound.length > 0;
+        const config = agent.agent_config || {};
+        const suggestsTools =
+          config.tools !== undefined ||
+          config.tool_choice !== undefined ||
+          (typeof config.model === "string" && config.model.includes("agent"));
+        if (suggestsTools && !hasTools) {
+          signals.push({
+            tenant_id: event.tenant_id,
+            project_id: event.project_id,
+            trace_id: event.trace_id,
+            span_id: event.span_id,
+            signal_name: "agent_create_no_tools",
+            signal_type: "mismatch",
+            signal_value: true,
+            signal_severity: "low",
+            metadata: {
+              agent_name: agent.agent_name,
+              operation_name: agent.operation_name,
+            },
+            timestamp: eventTimestamp,
+          });
+        }
+      }
+
       // Check for secrets (from scrubbing metadata)
       if ((event as any)._scrubbing_metadata?.contains_secrets) {
         signals.push({
