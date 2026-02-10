@@ -805,6 +805,145 @@ export class TraceQueryService {
     }
   }
 
+  /**
+   * Build a minimal trace tree from a single analysis_results row.
+   * Used when Tinybird has no canonical_events for the trace (e.g. trace only in Postgres).
+   * Ensures "Trace not found" does not appear for traces that exist in the list (from analysis_results).
+   */
+  private static buildTreeFromAnalysisResult(
+    row: any,
+    traceId: string,
+    tenantId: string,
+    projectId: string | null,
+  ): any {
+    const timestamp = row.timestamp ?? row.analyzed_at ?? new Date();
+    const ts = typeof timestamp === "string" ? new Date(timestamp) : timestamp;
+    const startTime = ts.toISOString();
+    const latencyMs = row.latency_ms != null ? Number(row.latency_ms) : 0;
+    const endTime =
+      latencyMs > 0
+        ? new Date(ts.getTime() + latencyMs).toISOString()
+        : startTime;
+
+    const summary = {
+      trace_id: traceId,
+      tenant_id: tenantId,
+      project_id: row.project_id ?? projectId ?? null,
+      query: row.query ?? null,
+      response: row.response ?? null,
+      model: row.model ?? null,
+      total_latency_ms: latencyMs,
+      total_tokens: row.tokens_total != null ? Number(row.tokens_total) : null,
+      total_cost: row.estimated_cost_usd ?? null,
+      start_time: startTime,
+      end_time: endTime,
+      session_id: row.session_id ?? null,
+      user_id: row.user_id ?? null,
+      environment: row.environment ?? null,
+      conversation_id: row.conversation_id ?? null,
+      message_index: row.message_index ?? null,
+      status: row.status ?? null,
+      status_text: row.status_text ?? null,
+      finish_reason: row.finish_reason ?? null,
+    };
+
+    const rootSpanId = `${traceId}-root`;
+    const rootSpan = {
+      id: rootSpanId,
+      span_id: rootSpanId,
+      parent_span_id: null,
+      name: row.query
+        ? String(row.query).slice(0, 80) +
+          (String(row.query).length > 80 ? "..." : "")
+        : "Trace",
+      start_time: startTime,
+      end_time: endTime,
+      duration_ms: latencyMs,
+      event_type: "trace",
+      type: "trace",
+      isRootTrace: true,
+      input: row.query ?? null,
+      output: row.response ?? null,
+      children: [],
+      events: [],
+      signals: [],
+      metadata: {},
+      key: rootSpanId,
+      original_span_id: rootSpanId,
+    };
+
+    const allSpans = [rootSpan];
+    const spansById: Record<string, any> = { [rootSpanId]: rootSpan };
+
+    const signals: any[] = [];
+    if (row.is_hallucination === true) {
+      signals.push({
+        signal_type: "hallucination",
+        severity: "high",
+        confidence: row.hallucination_confidence,
+        reasoning: row.hallucination_reasoning,
+      });
+    }
+    if (row.has_context_drop) {
+      signals.push({
+        signal_type: "context_drop",
+        severity: "medium",
+        score: row.context_relevance_score,
+      });
+    }
+    if (row.has_faithfulness_issue) {
+      signals.push({
+        signal_type: "faithfulness",
+        severity: "medium",
+        score: row.answer_faithfulness_score,
+      });
+    }
+
+    const analysisData = {
+      isHallucination: row.is_hallucination,
+      hallucinationConfidence: row.hallucination_confidence,
+      qualityScore: row.quality_score,
+      hasContextDrop: row.has_context_drop,
+      hasFaithfulnessIssue: row.has_faithfulness_issue,
+      hasModelDrift: row.has_model_drift,
+      hasCostAnomaly: row.has_cost_anomaly,
+      contextRelevanceScore: row.context_relevance_score,
+      answerFaithfulnessScore: row.answer_faithfulness_score,
+    };
+
+    return {
+      summary,
+      treeView: {
+        id: traceId,
+        name: `Trace ${traceId.slice(0, 8)}...`,
+        duration_ms: latencyMs,
+        summary: {
+          attempts: 1,
+          failures: 0,
+          environment: row.environment || "prod",
+        },
+        children: [rootSpan],
+      },
+      spans: [rootSpan],
+      allSpans,
+      spansById,
+      signals,
+      analysis: analysisData,
+      costBreakdown: {
+        totalCostUsd: row.estimated_cost_usd ?? null,
+        topSpans: [],
+      },
+      performanceAnalysis: {
+        bottleneckSpanId: null,
+        bottleneckDurationMs: null,
+        suggestions: [],
+      },
+      tokenEfficiency: { tokensPerCharacter: null, benchmarkComparison: null },
+      qualityExplanation: null,
+      _meta: { totalSpans: 1, rootSpans: 1, hasChildren: false },
+    };
+  }
+
   static async getConversationContext(params: {
     tenantId: string;
     projectId?: string | null;
@@ -916,8 +1055,17 @@ export class TraceQueryService {
 
         if (canonicalEvents.length === 0) {
           console.log(
-            `[TraceQueryService] ⚠️  No canonical events found in Tinybird for trace ${traceId}`,
+            `[TraceQueryService] ⚠️  No canonical events found in Tinybird for trace ${traceId}, falling back to PostgreSQL analysis_results`,
           );
+          const pgRow = await this.getTraceDetail(traceId, tenantId, projectId);
+          if (pgRow) {
+            return this.buildTreeFromAnalysisResult(
+              pgRow,
+              traceId,
+              tenantId,
+              projectId || null,
+            );
+          }
           return null;
         }
 
