@@ -95,26 +95,11 @@ router.get("/overview", async (req: Request, res: Response) => {
     const startTime = req.query.startTime as string | undefined;
     const endTime = req.query.endTime as string | undefined;
 
-    // Helper: validate that a time param is a real, parseable date string
-    const isValidTimeParam = (param: string | undefined): param is string => {
-      if (
-        !param ||
-        param.trim() === "" ||
-        param === "null" ||
-        param === "undefined"
-      )
-        return false;
-      const d = new Date(param);
-      return !isNaN(d.getTime());
-    };
+    // Default to last 7 days if no time range provided
+    let start: string;
+    let end: string;
 
-    // Determine time range:
-    //   - If both startTime and endTime are valid dates → use them
-    //   - Otherwise → query ALL data (no time filter) so "all time" works
-    let start: string | undefined;
-    let end: string | undefined;
-
-    if (isValidTimeParam(startTime) && isValidTimeParam(endTime)) {
+    if (startTime && endTime) {
       // Explicit time range provided
       start = startTime;
       end = endTime;
@@ -122,16 +107,20 @@ router.get("/overview", async (req: Request, res: Response) => {
         `[Dashboard] Querying metrics for explicit time range: ${start} to ${end}`,
       );
     } else {
-      // No valid time range → query all time (no time filter)
-      start = undefined;
-      end = undefined;
-      console.log(`[Dashboard] Querying metrics for ALL TIME (no time filter)`);
+      // Default to last 7 days
+      end = new Date().toISOString();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - 7);
+      start = startDate.toISOString();
+      console.log(
+        `[Dashboard] Querying metrics for default time range (last 7 days): ${start} to ${end}`,
+      );
     }
 
     // Build cache key with tenant_id FIRST to prevent cross-tenant access
     const cacheKey = `dashboard:${user.tenantId}:${
       projectId || "all"
-    }:${start || "all"}:${end || "all"}`;
+    }:${start}:${end}`;
 
     // Check cache
     const cached = dashboardCache.get(cacheKey);
@@ -317,8 +306,8 @@ router.get("/overview", async (req: Request, res: Response) => {
     const responseData = {
       success: true,
       period: {
-        start: start || "all",
-        end: end || new Date().toISOString(),
+        start: start,
+        end: end,
       },
       metrics: {
         error_rate: {
@@ -728,28 +717,17 @@ router.get("/metrics/breakdown", async (req: Request, res: Response) => {
     const startTime = req.query.startTime as string | undefined;
     const endTime = req.query.endTime as string | undefined;
 
-    // Helper: validate that a time param is a real, parseable date string
-    const isValidTime = (param: string | undefined): param is string => {
-      if (
-        !param ||
-        param.trim() === "" ||
-        param === "null" ||
-        param === "undefined"
-      )
-        return false;
-      const d = new Date(param);
-      return !isNaN(d.getTime());
-    };
-
-    // No valid time range → query all time (no time filter)
-    let start: string | undefined;
-    let end: string | undefined;
-    if (isValidTime(startTime) && isValidTime(endTime)) {
+    // Default to last 7 days if no time range provided
+    let start: string;
+    let end: string;
+    if (startTime && endTime) {
       start = startTime;
       end = endTime;
     } else {
-      start = undefined;
-      end = undefined;
+      end = new Date().toISOString();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - 7);
+      start = startDate.toISOString();
     }
 
     const breakdown = await DashboardMetricsService.getMetricsBreakdown(
@@ -762,8 +740,8 @@ router.get("/metrics/breakdown", async (req: Request, res: Response) => {
     return res.status(200).json({
       success: true,
       period: {
-        start: start || "all",
-        end: end || new Date().toISOString(),
+        start,
+        end,
       },
       breakdown,
       timestamp: new Date().toISOString(),
@@ -913,28 +891,17 @@ router.get("/feedback", async (req: Request, res: Response) => {
     const startTime = req.query.startTime as string | undefined;
     const endTime = req.query.endTime as string | undefined;
 
-    // Helper: validate that a time param is a real, parseable date string
-    const isValidTimeFb = (param: string | undefined): param is string => {
-      if (
-        !param ||
-        param.trim() === "" ||
-        param === "null" ||
-        param === "undefined"
-      )
-        return false;
-      const d = new Date(param);
-      return !isNaN(d.getTime());
-    };
-
-    // No valid time range → query all time (no time filter)
-    let start: string | undefined;
-    let end: string | undefined;
-    if (isValidTimeFb(startTime) && isValidTimeFb(endTime)) {
+    // Default to last 7 days if no time range provided
+    let start: string;
+    let end: string;
+    if (startTime && endTime) {
       start = startTime;
       end = endTime;
     } else {
-      start = undefined;
-      end = undefined;
+      end = new Date().toISOString();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - 7);
+      start = startDate.toISOString();
     }
 
     const feedbackMetrics = await DashboardMetricsService.getFeedbackMetrics(
@@ -969,8 +936,8 @@ router.get("/feedback", async (req: Request, res: Response) => {
     return res.status(200).json({
       success: true,
       period: {
-        start: start || "all",
-        end: end || new Date().toISOString(),
+        start,
+        end,
       },
       metrics: feedbackMetrics,
       insights: {
