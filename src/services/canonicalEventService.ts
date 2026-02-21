@@ -6,6 +6,7 @@
 
 import { env } from "../config/env.js";
 import { TinybirdCanonicalEvent } from "../types/events.js";
+import { waitForTinybirdSlot } from "./tinybirdRequestLimiter.js";
 
 export class CanonicalEventService {
   /**
@@ -62,7 +63,8 @@ export class CanonicalEventService {
       console.log(
         `[CanonicalEventService] Forwarding ${events.length} events to Tinybird at ${url}`
       );
-      
+
+      await waitForTinybirdSlot();
       const response = await fetch(url, {
         method: "POST",
         headers: {

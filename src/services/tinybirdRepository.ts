@@ -6,6 +6,7 @@
  */
 
 import { env } from "../config/env.js";
+import { waitForTinybirdSlot } from "./tinybirdRequestLimiter.js";
 
 export interface TinybirdQueryOptions {
   tenantId: string;
@@ -54,6 +55,7 @@ export class TinybirdRepository {
     )}&${params.toString()}`;
 
     try {
+      await waitForTinybirdSlot();
       const response = await fetch(url, {
         method: "GET",
         headers: {
@@ -147,15 +149,9 @@ export class TinybirdRepository {
       );
     }
 
-    // Append FORMAT JSON to the SQL if not already present to guarantee JSON output
-    const trimmedSql = sql.trim().replace(/;+\s*$/, ""); // Remove trailing semicolons
-    const sqlWithFormat = /\bFORMAT\s+\w/i.test(trimmedSql)
-      ? trimmedSql
-      : `${trimmedSql} FORMAT JSON`;
-
     const params = new URLSearchParams();
-    params.append("q", sqlWithFormat);
-    params.append("format", "json"); // Also request via URL param as fallback
+    params.append("q", sql);
+    params.append("format", "json"); // Explicitly request JSON format
 
     // Always inject tenant_id as a parameter for safety
     params.append("tenant_id", options.tenantId);
@@ -179,6 +175,7 @@ export class TinybirdRepository {
     );
 
     try {
+      await waitForTinybirdSlot();
       const response = await fetch(url, {
         method: "GET",
         headers: {
@@ -199,25 +196,14 @@ export class TinybirdRepository {
       const contentType = response.headers.get("content-type") || "";
 
       // Try to parse as JSON first
-      const trimmedResponse = responseText.trim();
       if (
         contentType.includes("application/json") ||
-        trimmedResponse.startsWith("{") ||
-        trimmedResponse.startsWith("[")
+        responseText.trim().startsWith("{")
       ) {
         try {
-          const data = JSON.parse(trimmedResponse);
-          // Tinybird FORMAT JSON returns { data: [...], meta: [...], rows: N, ... }
-          // Normalize: always return the parsed object as-is (callers handle both formats)
+          const data = JSON.parse(responseText);
           return data;
         } catch (parseError) {
-          console.warn(
-            `[TinybirdRepository] JSON parse failed, falling through to TSV:`,
-            (parseError instanceof Error
-              ? parseError.message
-              : String(parseError)
-            ).substring(0, 100),
-          );
           // Fall through to TSV parsing if JSON fails
         }
       }
@@ -248,12 +234,6 @@ export class TinybirdRepository {
   /**
    * Parse TSV (Tab-Separated Values) response from Tinybird
    * Converts TSV rows into array of objects
-   *
-   * Tinybird's SQL API returns TabSeparated format by default (no headers).
-   * However, some responses may include headers (TabSeparatedWithNames).
-   * We detect headers heuristically: if the first row consists entirely
-   * of identifier-like tokens (letters, digits, underscores) we treat it
-   * as a header row. Otherwise we fall back to positional column naming.
    */
   private static parseTSVResponse(tsv: string): any {
     const lines = tsv
@@ -264,45 +244,31 @@ export class TinybirdRepository {
       return { data: [] };
     }
 
-    const firstLineValues = lines[0].split("\t");
+    // First line might be headers, or it might be data
+    // For canonical_events, we know the column order from our SELECT statement
+    const columns = [
+      "tenant_id",
+      "project_id",
+      "environment",
+      "trace_id",
+      "span_id",
+      "parent_span_id",
+      "timestamp",
+      "event_type",
+      "conversation_id",
+      "session_id",
+      "user_id",
+      "attributes_json",
+    ];
 
-    // Heuristic: the first row is a header when every cell looks like
-    // a SQL column name / alias (only word-chars, not a UUID, not purely numeric).
-    const looksLikeHeader =
-      firstLineValues.length > 0 &&
-      firstLineValues.every((v) => {
-        const trimmed = v.trim();
-        // Must be non-empty, match identifier pattern, and not look like data
-        return (
-          trimmed.length > 0 &&
-          /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(trimmed) &&
-          !/^[0-9a-f]{8}-[0-9a-f]{4}/i.test(trimmed) // not a UUID prefix
-        );
-      });
-
-    let columns: string[];
-    let dataLines: string[];
-
-    if (looksLikeHeader) {
-      columns = firstLineValues.map((v) => v.trim());
-      dataLines = lines.slice(1);
-    } else {
-      // No header detected – generate positional column names (col_0, col_1, …)
-      // so that downstream code that accesses result[0].some_alias still works
-      // when the query was something like `SELECT count(*) as count`.
-      // We try to infer from common patterns; fall back to generic names.
-      columns = firstLineValues.map((_v, index) => `col_${index}`);
-      dataLines = lines; // all lines are data
-    }
-
-    const data = dataLines.map((line) => {
+    const data = lines.map((line) => {
       const values = line.split("\t");
       const row: any = {};
 
       columns.forEach((col, index) => {
         let value = values[index];
 
-        // Handle null values (\N in TSV from ClickHouse)
+        // Handle null values (\N in TSV)
         if (value === "\\N" || value === null || value === undefined) {
           row[col] = null;
         } else {
